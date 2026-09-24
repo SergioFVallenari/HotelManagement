@@ -3,4 +3,5 @@ export interface AuthUser {
   username: string;
   role: 'ADMIN' | 'RECEPCIONISTA';
   name?: string | null;
+  companyId: number;
 }

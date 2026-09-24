@@ -4,13 +4,15 @@ import { api, buildQuery } from '../api/client';
 import type { Guest, PageMeta, Reservation, Room, Service } from '../api/types';
 import { Modal } from './Modal';
 import { PaginationBar } from './pagination';
-import { money } from '../lib/format';
+import { money, nightsCount, CHARGE_TYPES } from '../lib/format';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: (reservation: Reservation) => void;
   onError: (err: unknown) => void;
+  error?: string | null;
+  onDismissError?: () => void;
 }
 
 interface GuestSelection {
@@ -19,12 +21,13 @@ interface GuestSelection {
   lastName: string;
 }
 
-export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
+export function ReservationForm({ open, onClose, onCreated, onError, error, onDismissError }: Props) {
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [searchingRooms, setSearchingRooms] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [persons, setPersons] = useState(1);
 
   const [guestMode, setGuestMode] = useState<'existing' | 'new'>('new');
   const [guestSearch, setGuestSearch] = useState('');
@@ -60,6 +63,7 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
     setServices([]);
     setSelectedRoom(null);
     setRooms([]);
+    setPersons(1);
     setSelectedGuest(null);
     setGuestMode('new');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,11 +124,38 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
     }
   }
 
+  function nights(): number {
+    return checkIn && checkOut ? Math.max(1, nightsCount(checkIn, checkOut)) : 1;
+  }
+
+  function autoQuantity(service: Service, current?: number): number {
+    switch (service.chargeType) {
+      case 'PER_PERSON':
+        return Math.max(1, persons) * nights();
+      case 'PER_DAY':
+        return nights();
+      case 'PACK':
+        return current ?? 1;
+    }
+  }
+
+  function chooseRoom(room: Room) {
+    setSelectedRoom(room);
+    setPersons(room.capacity);
+  }
+
+  useEffect(() => {
+    setServices((prev) =>
+      prev.map((s) => (s.service.chargeType === 'PACK' ? s : { ...s, quantity: autoQuantity(s.service) })),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkIn, checkOut, persons]);
+
   function toggleService(service: Service) {
     setServices((prev) => {
       const exists = prev.find((s) => s.service.id === service.id);
       if (exists) return prev.filter((s) => s.service.id !== service.id);
-      return [...prev, { service, quantity: 1 }];
+      return [...prev, { service, quantity: autoQuantity(service) }];
     });
   }
 
@@ -148,6 +179,7 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
         roomId: selectedRoom.id,
         checkIn,
         checkOut,
+        persons,
         notes: notes.trim() || null,
         services: services.map((s) => ({ serviceId: s.service.id, quantity: s.quantity })),
       };
@@ -185,19 +217,19 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
   if (!open) return null;
 
   return (
-    <Modal open={open} title="Nueva reserva" onClose={onClose} wide>
+    <Modal open={open} title="Nueva reserva" onClose={onClose} error={error} onDismissError={onDismissError} wide>
       <form onSubmit={handleSubmit}>
         <div className="form-section">
           <h3 className="section-title">1 · Fechas y habitación</h3>
           <div className="filter-row">
-            <label className="field-inline">
-              <span className="form-label mb-0">Check-in *</span>
-              <input type="date" className="form-control" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} required />
-            </label>
-            <label className="field-inline">
-              <span className="form-label mb-0">Check-out *</span>
-              <input type="date" className="form-control" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} required />
-            </label>
+            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+              <span className="input-group-text">Desde</span>
+              <input type="date" className="form-control" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
+            </div>
+            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+              <span className="input-group-text">Hasta</span>
+              <input type="date" className="form-control" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
+            </div>
             <button type="button" className="btn btn-primary" onClick={searchAvailable} disabled={searchingRooms}>
               {searchingRooms ? 'Buscando…' : 'Buscar disponibles'}
             </button>
@@ -206,13 +238,30 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
             <div className="radio-list">
               {rooms.map((room) => (
                 <label key={room.id} className={`radio-item ${selectedRoom?.id === room.id ? 'selected' : ''}`}>
-                  <input type="radio" name="room" className="form-check-input" checked={selectedRoom?.id === room.id} onChange={() => setSelectedRoom(room)} />
+                  <input type="radio" name="room" className="form-check-input" checked={selectedRoom?.id === room.id} onChange={() => chooseRoom(room)} />
                   <span className="flex-grow-1">
                     <strong>{room.number}</strong> · {room.type?.name} · Cap. {room.capacity}
                   </span>
                   <span className="text-secondary">{money(room.price)}/noche</span>
                 </label>
               ))}
+            </div>
+          )}
+          {selectedRoom && (
+            <div className="filter-row mt-3">
+              <label className="field-inline">
+                <span className="form-label mb-0">Personas</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={selectedRoom.capacity}
+                  className="form-control"
+                  style={{ width: 90 }}
+                  value={persons}
+                  onChange={(e) => setPersons(Math.min(selectedRoom.capacity, Math.max(1, Number(e.target.value))))}
+                />
+              </label>
+              <span className="text-secondary small align-self-center">Capacidad máxima de la habitación: {selectedRoom.capacity}</span>
             </div>
           )}
           {rooms.length === 0 && <p className="text-secondary mt-2 mb-0">Buscá habitaciones disponibles para el rango elegido.</p>}
@@ -317,14 +366,23 @@ export function ReservationForm({ open, onClose, onCreated, onError }: Props) {
                       </div>
                       {selected && (
                         <div className="d-flex align-items-center gap-2 mt-2">
-                          <label className="form-label mb-0 small">Cant.</label>
-                          <input
-                            type="number"
-                            min={1}
-                            className="form-control form-control-sm w-auto"
-                            value={selected.quantity}
-                            onChange={(e) => setQuantity(service.id, Math.max(1, Number(e.target.value)))}
-                          />
+                          {service.chargeType === 'PACK' ? (
+                            <>
+                              <label className="form-label mb-0 small">Cant.</label>
+                              <input
+                                type="number"
+                                min={1}
+                                className="form-control form-control-sm w-auto"
+                                value={selected.quantity}
+                                onChange={(e) => setQuantity(service.id, Math.max(1, Number(e.target.value)))}
+                              />
+                              <span className="text-secondary small">· {CHARGE_TYPES[service.chargeType]}</span>
+                            </>
+                          ) : (
+                            <span className="text-secondary small">
+                              {selected.quantity} unidades = {service.chargeType === 'PER_PERSON' ? `${Math.max(1, persons)} pers. × ${nights()} noche(s)` : `${nights()} noche(s)`} · {CHARGE_TYPES[service.chargeType]}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

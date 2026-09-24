@@ -6,8 +6,33 @@ import type { Guest, Page, Reservation } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/Badge';
-import { useApiError, PaginationBar } from '../components/pagination';
+import { useApiError } from '../components/pagination';
+import { DataTable } from '../components/DataTable';
+import type { Column } from '../components/DataTable';
 import { dateShort, money } from '../lib/format';
+
+const GUESTS_COLUMNS: Column<Guest>[] = [
+  { header: 'ID', render: (g) => g.id },
+  {
+    header: 'Nombre',
+    render: (g) => (
+      <strong>
+        {g.lastName}, {g.firstName}
+      </strong>
+    ),
+  },
+  { header: 'Email', render: (g) => g.email },
+  { header: 'Teléfono', render: (g) => g.phone },
+  { header: 'Reservas', align: 'end', render: (g) => g._count?.reservations ?? 0 },
+];
+
+const GUEST_DETAIL_RES_COLUMNS: Column<Reservation>[] = [
+  { header: 'Código', render: (r) => <strong>{r.code}</strong> },
+  { header: 'Habitación', render: (r) => r.room?.number ?? r.roomId },
+  { header: 'Período', render: (r) => `${dateShort(r.checkIn)} → ${dateShort(r.checkOut)}` },
+  { header: 'Total', align: 'end', render: (r) => money(r.totals?.total ?? 0) },
+  { header: 'Estado', render: (r) => <StatusBadge status={r.status} /> },
+];
 
 interface GuestForm {
   firstName: string;
@@ -34,7 +59,8 @@ export function GuestsPage() {
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<GuestDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const { error: apiError, handleError } = useApiError();
+  const [detailFailed, setDetailFailed] = useState(false);
+  const { error: apiError, handleError, clearError } = useApiError();
 
   const guests = data?.data ?? [];
 
@@ -46,12 +72,14 @@ export function GuestsPage() {
   function openCreate() {
     setEditing(null);
     setForm({ firstName: '', lastName: '', phone: '', email: '' });
+    clearError();
     setOpen(true);
   }
 
   function openEdit(guest: Guest) {
     setEditing(guest);
     setForm({ firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone, email: guest.email });
+    clearError();
     setOpen(true);
   }
 
@@ -72,13 +100,16 @@ export function GuestsPage() {
   }
 
   async function openDetail(id: number) {
+    clearError();
     setDetail(null);
+    setDetailFailed(false);
     setDetailLoading(true);
     try {
       const result = await api<{ data: GuestDetail }>(`/guests/${id}`);
       setDetail(result.data);
     } catch (err) {
       handleError(err);
+      setDetailFailed(true);
     } finally {
       setDetailLoading(false);
     }
@@ -113,61 +144,37 @@ export function GuestsPage() {
         </div>
       </div>
 
-      {apiError && <LoadState loading={false} error={apiError} onRetry={reload} />}
+      <DataTable<Guest>
+        columns={GUESTS_COLUMNS}
+        rows={guests}
+        keyField="id"
+        loading={loading}
+        error={error}
+        onRetry={reload}
+        meta={data?.meta}
+        onPageChange={setPage}
+        actions={(guest) => (
+          <div className="d-inline-flex gap-1">
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openDetail(guest.id)}>
+              Ver
+            </button>
+            <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => openEdit(guest)}>
+              Editar
+            </button>
+          </div>
+        )}
+      />
 
-      <div className="card shadow-sm">
-        <div className="card-body p-0">
-          <LoadState loading={loading} error={error} onRetry={reload} empty={guests.length === 0} />
-          {guests.length > 0 && (
-            <>
-              <div className="table-responsive">
-                <table className="table align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Nombre</th>
-                      <th>Email</th>
-                      <th>Teléfono</th>
-                      <th className="text-end">Reservas</th>
-                      <th className="text-end">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {guests.map((guest) => (
-                      <tr key={guest.id}>
-                        <td>{guest.id}</td>
-                        <td>
-                          <strong>
-                            {guest.lastName}, {guest.firstName}
-                          </strong>
-                        </td>
-                        <td>{guest.email}</td>
-                        <td>{guest.phone}</td>
-                        <td className="text-end">{guest._count?.reservations ?? 0}</td>
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-1">
-                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openDetail(guest.id)}>
-                              Ver
-                            </button>
-                            <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => openEdit(guest)}>
-                              Editar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-3 border-top">
-                <PaginationBar meta={data?.meta} onChange={setPage} />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <Modal open={open} title={editing ? `Editar ${editing.firstName} ${editing.lastName}` : 'Nuevo huésped'} onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title={editing ? `Editar ${editing.firstName} ${editing.lastName}` : 'Nuevo huésped'}
+        onClose={() => {
+          setOpen(false);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+      >
         <form onSubmit={handleSave}>
           <div className="row g-3">
             <div className="col-sm-6">
@@ -198,8 +205,28 @@ export function GuestsPage() {
         </form>
       </Modal>
 
-      <Modal open={!!detail || detailLoading} title={detail ? `${detail.lastName}, ${detail.firstName}` : 'Huésped'} onClose={() => setDetail(null)} wide>
+      <Modal
+        open={!!detail || detailLoading || detailFailed}
+        title={detail ? `${detail.lastName}, ${detail.firstName}` : 'Huésped'}
+        onClose={() => {
+          setDetail(null);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+        wide
+      >
         {detailLoading && <LoadState loading error={null} />}
+        {detailFailed && !detailLoading && (
+          <div>
+            <p className="text-secondary mb-0">No se pudo cargar el detalle del huésped.</p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline-secondary" onClick={() => { setDetail(null); clearError(); }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
         {detail && !detailLoading && (
           <div>
             <div className="row g-4">
@@ -217,32 +244,13 @@ export function GuestsPage() {
                 {detail.reservations.length === 0 ? (
                   <p className="text-secondary mb-0">Sin reservas registradas.</p>
                 ) : (
-                  <div className="table-responsive">
-                    <table className="table table-sm align-middle mb-0">
-                      <thead>
-                        <tr>
-                          <th>Código</th>
-                          <th>Habitación</th>
-                          <th>Período</th>
-                          <th className="text-end">Total</th>
-                          <th>Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.reservations.map((r) => (
-                          <tr key={r.id}>
-                            <td><strong>{r.code}</strong></td>
-                            <td>{r.room?.number ?? r.roomId}</td>
-                            <td>
-                              {dateShort(r.checkIn)} → {dateShort(r.checkOut)}
-                            </td>
-                            <td className="text-end">{money(r.totals?.total ?? 0)}</td>
-                            <td><StatusBadge status={r.status} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable<Reservation>
+                    columns={GUEST_DETAIL_RES_COLUMNS}
+                    rows={detail.reservations}
+                    keyField="id"
+                    size="sm"
+                    variant="bare"
+                  />
                 )}
               </div>
             </div>
@@ -250,7 +258,7 @@ export function GuestsPage() {
               <button type="button" className="btn btn-primary" onClick={() => openEdit(detail)}>
                 Editar datos
               </button>
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setDetail(null)}>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => { setDetail(null); clearError(); }}>
                 Cerrar
               </button>
             </div>

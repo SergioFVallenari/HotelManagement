@@ -2,6 +2,15 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './config/prisma.js';
 
+console.log('[GH] server module loading');
+
+process.on('uncaughtException', (err) => {
+  console.error('[GH] uncaughtException', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[GH] unhandledRejection', reason);
+});
+
 const app = createApp();
 
 const server = app.listen(env.port, () => {

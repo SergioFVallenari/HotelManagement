@@ -16,17 +16,53 @@ async function main(): Promise<void> {
   const adminPassword = bcrypt.hashSync('admin123', 10);
   const recepcionPassword = bcrypt.hashSync('recepcion123', 10);
 
+  const principal = await prisma.company.upsert({
+    where: { name: 'Hotel Principal' },
+    update: {},
+    create: { name: 'Hotel Principal' },
+  });
+
   await prisma.user.upsert({
-    where: { username: 'admin' },
+    where: { companyId_username: { companyId: principal.id, username: 'admin' } },
     update: { passwordHash: adminPassword, typeId: adminType.id, isActive: true },
-    create: { username: 'admin', passwordHash: adminPassword, name: 'Administrador', typeId: adminType.id },
+    create: {
+      username: 'admin',
+      passwordHash: adminPassword,
+      name: 'Administrador',
+      typeId: adminType.id,
+      companyId: principal.id,
+    },
   });
   await prisma.user.upsert({
-    where: { username: 'recepcion' },
+    where: { companyId_username: { companyId: principal.id, username: 'recepcion' } },
     update: { passwordHash: recepcionPassword, typeId: recepcionType.id, isActive: true },
-    create: { username: 'recepcion', passwordHash: recepcionPassword, name: 'Recepción', typeId: recepcionType.id },
+    create: {
+      username: 'recepcion',
+      passwordHash: recepcionPassword,
+      name: 'Recepción',
+      typeId: recepcionType.id,
+      companyId: principal.id,
+    },
   });
-  console.log('Usuarios listos (admin/admin123, recepcion/recepcion123)');
+  console.log(`Empresa "${principal.name}" y sus usuarios listos (admin/admin123, recepcion/recepcion123)`);
+
+  const sol = await prisma.company.upsert({
+    where: { name: 'Hotel Sol' },
+    update: {},
+    create: { name: 'Hotel Sol' },
+  });
+  await prisma.user.upsert({
+    where: { companyId_username: { companyId: sol.id, username: 'sol' } },
+    update: { passwordHash: adminPassword, typeId: adminType.id, isActive: true },
+    create: {
+      username: 'sol',
+      passwordHash: adminPassword,
+      name: 'Administrador Hotel Sol',
+      typeId: adminType.id,
+      companyId: sol.id,
+    },
+  });
+  console.log(`Empresa "${sol.name}" lista (usuario sol/admin123)`);
 
   // const typeSeeds = [
   //   { name: 'Individual', rooms: [['101', 1, 40], ['102', 1, 45], ['103', 1, 45]] as const },
@@ -67,11 +103,11 @@ async function main(): Promise<void> {
   // }
 
   // const serviceSeeds = [
-  //   { name: 'Desayuno', price: 8 },
-  //   { name: 'Cena', price: 18 },
-  //   { name: 'Estacionamiento', price: 10 },
-  //   { name: 'Lavandería (por kg)', price: 6 },
-  //   { name: 'Servicio a la habitación', price: 5 },
+  //   { name: 'Desayuno', price: 8, chargeType: 'PER_PERSON' },
+  //   { name: 'Cena', price: 18, chargeType: 'PER_PERSON' },
+  //   { name: 'Estacionamiento', price: 10, chargeType: 'PER_DAY' },
+  //   { name: 'Lavandería (por kg)', price: 6, chargeType: 'PACK' },
+  //   { name: 'Servicio a la habitación', price: 5, chargeType: 'PACK' },
   // ];
   // for (const s of serviceSeeds) {
   //   await prisma.service.upsert({

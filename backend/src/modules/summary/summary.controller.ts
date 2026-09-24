@@ -6,6 +6,7 @@ import { decToNum, round2 } from '../../lib/money.js';
 
 export async function summary(req: Request, res: Response): Promise<void> {
   const now = new Date();
+  const companyId = req.user!.companyId;
   const to = req.query.to !== undefined ? parseDate(req.query.to, 'to') : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const from =
     req.query.from !== undefined
@@ -50,7 +51,7 @@ export async function summary(req: Request, res: Response): Promise<void> {
 
   const [payments, statusGroup, createdCount, checkIns, checkOuts] = await Promise.all([
     prisma.payment.findMany({
-      where: { paidAt: { gte: from, lt: toExclusive } },
+      where: { paidAt: { gte: from, lt: toExclusive }, reservation: { companyId } },
       select: { amount: true, method: true },
     }),
     prisma.reservation.groupBy({

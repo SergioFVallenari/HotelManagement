@@ -4,12 +4,24 @@ import { useAuth } from '../auth/AuthContext';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { Page, Room, RoomType } from '../api/types';
-import { LoadState } from '../components/Feedback';
 import { ActiveBadge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { useApiError, PaginationBar } from '../components/pagination';
-import { money, today, addDays } from '../lib/format';
+import { useApiError } from '../components/pagination';
+import { DataTable } from '../components/DataTable';
+import type { Column } from '../components/DataTable';
+import { dateShort, money, today, addDays } from '../lib/format';
+
+const ROOMS_COLUMNS: Column<Room>[] = [
+  { header: 'N°', render: (r) => <strong>{r.number}</strong> },
+  { header: 'Nombre', render: (r) => r.name ?? '—' },
+  { header: 'Tipo', render: (r) => r.type?.name ?? r.typeId },
+  { header: 'Cap.', render: (r) => r.capacity },
+  { header: 'Precio/noche', render: (r) => money(r.price) },
+  { header: 'Amenities', className: 'text-secondary', render: (r) => (r.amenities.length ? r.amenities.join(' · ') : '—') },
+  { header: 'Estado', render: (r) => <ActiveBadge active={r.isActive} /> },
+  { header: 'Reservas', render: (r) => r._count?.reservations ?? 0 },
+];
 
 interface RoomForm {
   id?: number;
@@ -39,7 +51,7 @@ export function RoomsPage() {
   const [form, setForm] = useState<RoomForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Room | null>(null);
-  const { error: apiError, handleError } = useApiError();
+  const { error: apiError, handleError, clearError } = useApiError();
 
   const [availOpen, setAvailOpen] = useState(false);
   const [availDates, setAvailDates] = useState({ checkIn: addDays(today(), 1), checkOut: addDays(today(), 2) });
@@ -59,6 +71,7 @@ export function RoomsPage() {
   function openCreate() {
     setEditing(null);
     setForm({ ...emptyForm, typeId: types[0]?.id ?? 0, price: 0 });
+    clearError();
     setFormOpen(true);
   }
 
@@ -74,6 +87,7 @@ export function RoomsPage() {
       amenities: room.amenities.join(', '),
       isActive: room.isActive,
     });
+    clearError();
     setFormOpen(true);
   }
 
@@ -166,8 +180,6 @@ export function RoomsPage() {
         </div>
       </div>
 
-      {apiError && <LoadState loading={false} error={apiError} onRetry={() => reload()} />}
-
       {availOpen && (
         <div className="card shadow-sm mb-4">
           <div className="card-body">
@@ -199,7 +211,7 @@ export function RoomsPage() {
             {availError && <p className="text-danger fw-medium mt-3 mb-0">{availError}</p>}
             {availResult && (
               <p className="text-success fw-medium mt-3 mb-0">
-                {availResult.length} habitación(es) disponible(s) del {availDates.checkIn} al {availDates.checkOut}
+                {availResult.length} habitación(es) disponible(s) del {dateShort(availDates.checkIn)} al {dateShort(availDates.checkOut)}
               </p>
             )}
             {availResult && (
@@ -230,63 +242,41 @@ export function RoomsPage() {
         </div>
       )}
 
-      <div className="card shadow-sm">
-        <div className="card-body p-0">
-          <LoadState loading={loading} error={error} onRetry={reload} empty={rooms.length === 0 && !loading} />
-          {rooms.length > 0 && (
-            <>
-              <div className="table-responsive">
-                <table className="table align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>N°</th>
-                      <th>Nombre</th>
-                      <th>Tipo</th>
-                      <th>Cap.</th>
-                      <th>Precio/noche</th>
-                      <th>Amenities</th>
-                      <th>Estado</th>
-                      <th>Reservas</th>
-                      {isAdmin && <th className="text-end">Acciones</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rooms.map((room) => (
-                      <tr key={room.id}>
-                        <td><strong>{room.number}</strong></td>
-                        <td>{room.name ?? '—'}</td>
-                        <td>{room.type?.name ?? room.typeId}</td>
-                        <td>{room.capacity}</td>
-                        <td>{money(room.price)}</td>
-                        <td className="text-secondary">{room.amenities.length ? room.amenities.join(' · ') : '—'}</td>
-                        <td><ActiveBadge active={room.isActive} /></td>
-                        <td>{room._count?.reservations ?? 0}</td>
-                        {isAdmin && (
-                          <td className="text-end">
-                            <div className="d-inline-flex gap-1">
-                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(room)}>
-                                Editar
-                              </button>
-                              <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setDeleting(room)}>
-                                Eliminar
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-3 border-top">
-                <PaginationBar meta={data?.meta} onChange={setPage} />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      <DataTable<Room>
+        columns={ROOMS_COLUMNS}
+        rows={rooms}
+        keyField="id"
+        loading={loading}
+        error={error}
+        onRetry={reload}
+        meta={data?.meta}
+        onPageChange={setPage}
+        actions={
+          isAdmin
+            ? (room) => (
+                <div className="d-inline-flex gap-1">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(room)}>
+                    Editar
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(room); }}>
+                    Eliminar
+                  </button>
+                </div>
+              )
+            : undefined
+        }
+      />
 
-      <Modal open={formOpen} title={editing ? `Editar habitación ${editing.number}` : 'Nueva habitación'} onClose={() => setFormOpen(false)}>
+      <Modal
+        open={formOpen}
+        title={editing ? `Editar habitación ${editing.number}` : 'Nueva habitación'}
+        onClose={() => {
+          setFormOpen(false);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+      >
         <form onSubmit={handleSave}>
           <div className="row g-3">
             <div className="col-sm-6">
@@ -350,7 +340,11 @@ export function RoomsPage() {
         confirmLabel="Eliminar"
         danger
         busy={saving}
-        onCancel={() => setDeleting(null)}
+        error={apiError}
+        onCancel={() => {
+          setDeleting(null);
+          clearError();
+        }}
         onConfirm={handleDelete}
       />
     </div>

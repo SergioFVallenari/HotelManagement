@@ -25,7 +25,7 @@ export async function getRoomType(req: Request, res: Response): Promise<void> {
 
 export async function createRoomType(req: Request, res: Response): Promise<void> {
   const input = createRoomTypeSchema.parse(req.body) as CreateRoomTypeInput;
-  const roomType = await prisma.roomType.create({ data: input });
+  const roomType = await prisma.roomType.create({ data: { ...input, companyId: req.user!.companyId } });
   res.status(201).json({ data: roomType });
 }
 

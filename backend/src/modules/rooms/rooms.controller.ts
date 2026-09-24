@@ -97,14 +97,17 @@ export async function availableRooms(req: Request, res: Response): Promise<void>
 
 export async function createRoom(req: Request, res: Response): Promise<void> {
   const input = createRoomSchema.parse(req.body) as CreateRoomInput;
+  const companyId = req.user!.companyId;
 
   const type = await prisma.roomType.findUnique({ where: { id: input.typeId } });
   if (!type) throw notFound('Tipo de habitación', input.typeId);
 
-  const existing = await prisma.room.findUnique({ where: { number: input.number } });
+  const existing = await prisma.room.findUnique({
+    where: { companyId_number: { companyId, number: input.number } },
+  });
   if (existing) throw conflict('DUPLICATE', `La habitación "${input.number}" ya existe`);
 
-  const room = await prisma.room.create({ data: input, include: { type: true } });
+  const room = await prisma.room.create({ data: { ...input, companyId }, include: { type: true } });
   res.status(201).json({ data: room });
 }
 

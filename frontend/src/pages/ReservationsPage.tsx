@@ -3,11 +3,12 @@ import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { Page, Reservation } from '../api/types';
 import { LoadState } from '../components/Feedback';
-import { StatusBadge } from '../components/Badge';
+import { StatusBadge, RefundBadge } from '../components/Badge';
+import { Modal } from '../components/Modal';
 import { ReservationForm } from '../components/ReservationForm';
 import { ReservationDetail } from '../components/ReservationDetail';
 import { useApiError, PaginationBar } from '../components/pagination';
-import { money } from '../lib/format';
+import { dateShort, money } from '../lib/format';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -32,7 +33,7 @@ export function ReservationsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Reservation | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
-  const { error: apiError, handleError } = useApiError();
+  const { error: apiError, handleError, clearError } = useApiError();
 
   const reservations = data?.data ?? [];
 
@@ -49,22 +50,24 @@ export function ReservationsPage() {
   async function openDetail(id: number) {
     setDetailId(id);
     setSelected(null);
+    clearError();
     try {
       const result = await api<{ data: Reservation }>(`/reservations/${id}`);
       setSelected(result.data);
     } catch (err) {
       handleError(err);
-      setDetailId(null);
     }
   }
 
   function handleChanged(updated: Reservation) {
     setSelected(updated);
+    clearError();
     reload();
   }
 
   async function handleDetailChanged(updated: Reservation) {
     setSelected(updated);
+    clearError();
     reload();
     if (updated.id !== detailId) setDetailId(updated.id);
   }
@@ -76,7 +79,7 @@ export function ReservationsPage() {
           <h1 className="h4 mb-1">Reservas</h1>
           <p className="text-secondary mb-0">{data?.meta.total ?? 0} reservas encontradas</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+        <button type="button" className="btn btn-primary" onClick={() => { clearError(); setCreateOpen(true); }}>
           + Nueva reserva
         </button>
       </div>
@@ -98,22 +101,20 @@ export function ReservationsPage() {
                 </option>
               ))}
             </select>
-            <label className="field-inline">
-              <span className="text-secondary small">Desde</span>
-              <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </label>
-            <label className="field-inline">
-              <span className="text-secondary small">Hasta</span>
-              <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
-            </label>
+            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+                <span className="input-group-text">Desde</span>
+                <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+                <span className="input-group-text">Hasta</span>
+                <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
             <button type="button" className="btn btn-primary" onClick={applyFilters}>
               Filtrar
             </button>
           </div>
         </div>
       </div>
-
-      {apiError && <LoadState loading={false} error={apiError} onRetry={reload} />}
 
       <div className="card shadow-sm">
         <div className="card-body p-0">
@@ -143,13 +144,18 @@ export function ReservationsPage() {
                           {r.guest ? `${r.guest.lastName}, ${r.guest.firstName}` : `#${r.guestId}`}
                         </td>
                         <td>
-                          {r.checkIn} → {r.checkOut}
+                          {dateShort(r.checkIn)} → {dateShort(r.checkOut)}
                         </td>
                         <td className="text-end">{money(r.totals.total)}</td>
                         <td className={`text-end ${r.totals.balance > 0 ? 'text-danger' : 'text-success'}`}>
                           {money(r.totals.balance)}
                         </td>
-                        <td><StatusBadge status={r.status} /></td>
+                        <td>
+                          <span className="d-inline-flex align-items-center gap-2">
+                            <StatusBadge status={r.status} />
+                            <RefundBadge reservation={r} />
+                          </span>
+                        </td>
                         <td className="text-end">
                           <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openDetail(r.id)}>
                             Ver
@@ -170,16 +176,53 @@ export function ReservationsPage() {
 
       <ReservationForm
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setCreateOpen(false);
+          clearError();
+        }}
         onCreated={handleChanged}
         onError={handleError}
+        error={apiError}
+        onDismissError={clearError}
       />
+
+      {detailId !== null && !selected && (
+        <Modal
+          open
+          title="Reserva"
+          onClose={() => {
+            setDetailId(null);
+            clearError();
+          }}
+          error={apiError}
+          onDismissError={clearError}
+        >
+          <p className="text-secondary mb-0">No se pudo cargar el detalle de la reserva.</p>
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => {
+                setDetailId(null);
+                clearError();
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </Modal>
+      )}
 
       <ReservationDetail
         reservation={selected}
-        onClose={() => setDetailId(null)}
+        onClose={() => {
+          setDetailId(null);
+          clearError();
+        }}
         onChanged={handleDetailChanged}
         onError={handleError}
+        error={apiError}
+        onDismissError={clearError}
       />
     </div>
   );

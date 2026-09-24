@@ -7,16 +7,34 @@ datasource db {
   provider = "postgresql"
 }
 
+model Company {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users      User[]
+  roomTypes  RoomType[]
+  rooms      Room[]
+  guests     Guest[]
+  services   Service[]
+  reservations Reservation[]
+}
+
 model User {
   id           Int      @id @default(autoincrement())
-  username     String   @unique
+  username     String
   passwordHash String
   name         String?
   typeId       Int
+  companyId    Int
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   type         UserType @relation(fields: [typeId], references: [id])
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, username])
+  @@index([companyId])
 }
 
 enum UserRole {
@@ -31,16 +49,22 @@ model UserType {
 }
 
 model RoomType {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
-  rooms Room[]
+  id        Int      @id @default(autoincrement())
+  name      String
+  companyId Int
+  rooms     Room[]
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model Room {
   id           Int           @id @default(autoincrement())
-  number       String        @unique
+  number       String
   name         String?
   typeId       Int
+  companyId    Int
   capacity     Int           @default(2)
   price        Decimal       @db.Decimal(10, 2)
   amenities    String[]
@@ -48,9 +72,12 @@ model Room {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   type         RoomType      @relation(fields: [typeId], references: [id])
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   reservations Reservation[]
 
+  @@unique([companyId, number])
   @@index([typeId])
+  @@index([companyId])
 }
 
 model Guest {
@@ -58,19 +85,36 @@ model Guest {
   firstName    String
   lastName     String
   phone        String
-  email        String        @unique
+  email        String
+  companyId    Int
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   reservations Reservation[]
+
+  @@unique([companyId, email])
+  @@index([companyId])
+}
+
+enum ServiceChargeType {
+  PER_PERSON
+  PER_DAY
+  PACK
 }
 
 model Service {
   id           Int                  @id @default(autoincrement())
-  name         String               @unique
+  name         String
   price        Decimal              @db.Decimal(10, 2)
+  chargeType   ServiceChargeType    @default(PACK)
   isActive     Boolean              @default(true)
+  companyId    Int
   createdAt    DateTime             @default(now())
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
   reservations ReservationService[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 enum ReservationStatus {
@@ -85,19 +129,28 @@ model Reservation {
   code         String             @unique
   roomId       Int
   guestId      Int
+  companyId    Int
   checkIn      DateTime           @db.Date
   checkOut     DateTime           @db.Date
+  persons      Int                @default(1)
   status       ReservationStatus  @default(RESERVED)
   checkedInAt  DateTime?
   checkedOutAt DateTime?
+  cancelledAt  DateTime?
+  refundEligible Boolean          @default(false)
+  refundAmount   Decimal?         @db.Decimal(10, 2)
+  refunded       Boolean          @default(false)
+  refundedAt     DateTime?
   notes        String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   room         Room               @relation(fields: [roomId], references: [id], onDelete: Restrict)
   guest        Guest              @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   payments     Payment[]
   services     ReservationService[]
 
+  @@index([companyId, code])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([status])

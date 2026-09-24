@@ -1,21 +1,4 @@
-const TOKEN_KEY = 'gh_token';
-
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token: string | null): void {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // storage no disponible (p. ej. modo privado / file://) — sesión solo en memoria
-  }
-}
+const URL_BACKEND = import.meta.env.VITE_URL_BACKEND;
 
 export class ApiError extends Error {
   status: number;
@@ -37,16 +20,15 @@ interface RequestOptions {
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const token = getToken();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   let response: Response;
   try {
-    response = await fetch(`http://localhost:3000/api${path}`, {
+    response = await fetch(`${URL_BACKEND}/api${path}`, {
       method: options.method ?? 'GET',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
@@ -61,7 +43,6 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (!response.ok) {
     const message = json?.error?.message ?? `Error ${response.status}`;
     if (response.status === 401) {
-      setToken(null);
       window.dispatchEvent(new Event('auth:expired'));
     }
     throw new ApiError(message, response.status, json?.error?.code, json?.error?.details);

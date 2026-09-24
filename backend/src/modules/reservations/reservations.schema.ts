@@ -21,6 +21,7 @@ export const createReservationSchema = z
     guest: guestInputSchema.optional(),
     checkIn: dateStringSchema,
     checkOut: dateStringSchema,
+    persons: z.number().int().min(1).default(1),
     services: z.array(serviceInputSchema).default([]),
     notes: z.string().max(500).optional().nullable(),
   })
@@ -40,6 +41,7 @@ export const updateReservationSchema = z
     guest: guestInputSchema.optional(),
     checkIn: dateStringSchema.optional(),
     checkOut: dateStringSchema.optional(),
+    persons: z.number().int().min(1).optional(),
     services: z.array(serviceInputSchema).optional(),
     notes: z.string().max(500).optional().nullable(),
   })

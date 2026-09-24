@@ -3,7 +3,9 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
+import { CompanyPickerPage } from './pages/CompanyPickerPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { CalendarPage } from './pages/CalendarPage';
 import { RoomsPage } from './pages/RoomsPage';
 import { ReservationsPage } from './pages/ReservationsPage';
 import { GuestsPage } from './pages/GuestsPage';
@@ -14,6 +16,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/login/company" element={<CompanyPickerPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -22,6 +25,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<DashboardPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
         <Route path="rooms" element={<RoomsPage />} />
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="guests" element={<GuestsPage />} />

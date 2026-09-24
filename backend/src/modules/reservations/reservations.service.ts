@@ -1,8 +1,9 @@
-import { Prisma } from '../../generated/prisma/client.js';
+import { Prisma, type ServiceChargeType } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
-import { nightsBetween, parseDate } from '../../lib/date.js';
+import { nightsBetween, parseDate, todayUtc } from '../../lib/date.js';
+import { getTenantId } from '../../lib/tenant.js';
 import type { CreateReservationInput, ServiceInput, UpdateReservationInput } from './reservations.schema.js';
 
 export interface ReservationRow {
@@ -12,9 +13,15 @@ export interface ReservationRow {
   guestId: number;
   checkIn: Date;
   checkOut: Date;
+  persons: number;
   status: string;
   checkedInAt: Date | null;
   checkedOutAt: Date | null;
+  cancelledAt: Date | null;
+  refundEligible: boolean;
+  refundAmount: unknown;
+  refunded: boolean;
+  refundedAt: Date | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -38,7 +45,7 @@ export interface ReservationRow {
     serviceId: number;
     quantity: number;
     unitPrice: unknown;
-    service?: { id: number; name: string } | null;
+    service?: { id: number; name: string; chargeType: ServiceChargeType } | null;
   }[];
   payments?: {
     id: number;
@@ -74,9 +81,15 @@ export function serializeReservation(row: ReservationRow) {
     guestId: row.guestId,
     checkIn: row.checkIn.toISOString().slice(0, 10),
     checkOut: row.checkOut.toISOString().slice(0, 10),
+    persons: row.persons,
     status: row.status,
     checkedInAt: row.checkedInAt,
     checkedOutAt: row.checkedOutAt,
+    cancelledAt: row.cancelledAt,
+    refundEligible: row.refundEligible,
+    refundAmount: row.refundAmount === null || row.refundAmount === undefined ? null : decToNum(row.refundAmount),
+    refunded: row.refunded,
+    refundedAt: row.refundedAt,
     notes: row.notes,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -95,6 +108,7 @@ export function serializeReservation(row: ReservationRow) {
       id: s.id,
       serviceId: s.serviceId,
       name: s.service?.name ?? null,
+      chargeType: s.service?.chargeType ?? null,
       quantity: s.quantity,
       unitPrice: decToNum(s.unitPrice),
       lineTotal: round2(s.quantity * decToNum(s.unitPrice)),
@@ -128,7 +142,18 @@ function generateCode(): string {
   return `RSV-${Date.now().toString(36).toUpperCase()}${rand}`;
 }
 
-async function loadServices(items: ServiceInput[]) {
+function computeQuantity(chargeType: ServiceChargeType, persons: number, nights: number, requested?: number): number {
+  switch (chargeType) {
+    case 'PER_PERSON':
+      return persons * nights;
+    case 'PER_DAY':
+      return nights;
+    case 'PACK':
+      return requested ?? 1;
+  }
+}
+
+async function loadServices(items: ServiceInput[], ctx: { persons: number; nights: number }) {
   const ids = [...new Set(items.map((i) => i.serviceId))];
   const services = await prisma.service.findMany({
     where: { id: { in: ids }, isActive: true },
@@ -138,7 +163,12 @@ async function loadServices(items: ServiceInput[]) {
   const byId = new Map(services.map((s) => [s.id, s]));
   return items.map((item) => {
     const service = byId.get(item.serviceId)!;
-    return { id: service.id, quantity: item.quantity, price: service.price };
+    return {
+      id: service.id,
+      chargeType: service.chargeType,
+      quantity: computeQuantity(service.chargeType, ctx.persons, ctx.nights, item.quantity),
+      price: service.price,
+    };
   });
 }
 
@@ -146,15 +176,23 @@ export async function createReservation(input: CreateReservationInput) {
   const checkIn = parseDate(input.checkIn, 'checkIn');
   const checkOut = parseDate(input.checkOut, 'checkOut');
   assertValidRange(checkIn, checkOut);
+  const companyId = getTenantId()!;
 
-  const room = await prisma.room.findFirst({ where: { id: input.roomId, isActive: true } });
+  const room = await prisma.room.findFirst({ where: { id: input.roomId, isActive: true, companyId } });
   if (!room) throw notFound('Habitación', input.roomId);
 
-  const services = await loadServices(input.services ?? []);
+  const persons = input.persons;
+  if (persons > room.capacity) {
+    throw badRequest(`La habitación admite hasta ${room.capacity} personas`);
+  }
+
+  const nights = nightsBetween(checkIn, checkOut);
+  const services = await loadServices(input.services ?? [], { persons, nights });
 
   return prisma.$transaction(async (tx) => {
     const conflictReservation = await tx.reservation.findFirst({
       where: {
+        companyId,
         roomId: input.roomId,
         status: { in: ['RESERVED', 'CHECKED_IN'] },
         AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
@@ -167,15 +205,15 @@ export async function createReservation(input: CreateReservationInput) {
 
     let guestId: number;
     if (input.guestId !== undefined) {
-      const guest = await tx.guest.findUnique({ where: { id: input.guestId } });
+      const guest = await tx.guest.findUnique({ where: { id: input.guestId, companyId } });
       if (!guest) throw notFound('Huésped', input.guestId);
       guestId = guest.id;
     } else {
       const guest = input.guest!;
       const upserted = await tx.guest.upsert({
-        where: { email: guest.email },
+        where: { companyId_email: { companyId, email: guest.email } },
         update: { firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone },
-        create: guest,
+        create: { ...guest, companyId },
       });
       guestId = upserted.id;
     }
@@ -185,8 +223,10 @@ export async function createReservation(input: CreateReservationInput) {
         code: generateCode(),
         roomId: input.roomId,
         guestId,
+        companyId,
         checkIn,
         checkOut,
+        persons,
         notes: input.notes,
         services: {
           create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, unitPrice: s.price })),
@@ -200,7 +240,11 @@ export async function createReservation(input: CreateReservationInput) {
 }
 
 export async function updateReservation(id: number, input: UpdateReservationInput) {
-  const existing = await prisma.reservation.findUnique({ where: { id }, include: FULL_INCLUDE });
+  const companyId = getTenantId()!;
+  const existing = await prisma.reservation.findUnique({
+    where: { id, companyId },
+    include: FULL_INCLUDE,
+  });
   if (!existing) throw notFound('Reserva', id);
   if (existing.status !== 'RESERVED') {
     throw conflict('INVALID_STATE', 'Solo una reserva en estado RESERVED puede modificarse');
@@ -212,12 +256,24 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
   if (input.checkOut !== undefined) checkOut = parseDate(input.checkOut, 'checkOut');
   assertValidRange(checkIn, checkOut);
 
+  const persons = input.persons ?? existing.persons;
+  const nights = nightsBetween(checkIn, checkOut);
+
   let roomId = existing.roomId;
-  const services = input.services !== undefined ? await loadServices(input.services) : undefined;
+  if (input.roomId !== undefined) roomId = input.roomId;
+  const contextChanged =
+    input.checkIn !== undefined ||
+    input.checkOut !== undefined ||
+    (input.persons !== undefined && input.persons !== existing.persons) ||
+    roomId !== existing.roomId;
+  const roomOrContextChanged = roomId !== existing.roomId || contextChanged;
+
+  const services = input.services !== undefined ? await loadServices(input.services, { persons, nights }) : undefined;
 
   return prisma.$transaction(async (tx) => {
     const conflictReservation = await tx.reservation.findFirst({
       where: {
+        companyId,
         roomId,
         status: { in: ['RESERVED', 'CHECKED_IN'] },
         NOT: { id },
@@ -231,37 +287,56 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
 
     let guestId = existing.guestId;
     if (input.guestId !== undefined) {
-      const guest = await tx.guest.findUnique({ where: { id: input.guestId } });
+      const guest = await tx.guest.findUnique({ where: { id: input.guestId, companyId } });
       if (!guest) throw notFound('Huésped', input.guestId);
       guestId = guest.id;
     }
     if (input.guest !== undefined && input.guestId === undefined) {
       const upserted = await tx.guest.upsert({
-        where: { email: input.guest.email },
+        where: { companyId_email: { companyId, email: input.guest.email } },
         update: { firstName: input.guest.firstName, lastName: input.guest.lastName, phone: input.guest.phone },
-        create: input.guest,
+        create: { ...input.guest, companyId },
       });
       guestId = upserted.id;
     }
 
-    if (roomId !== existing.roomId || input.checkIn !== undefined || input.checkOut !== undefined) {
-      const room = await tx.room.findFirst({ where: { id: roomId, isActive: true } });
+    if (roomOrContextChanged) {
+      const room = await tx.room.findFirst({ where: { id: roomId, isActive: true, companyId } });
       if (!room) throw notFound('Habitación', roomId);
+      if (persons > room.capacity) {
+        throw badRequest(`La habitación admite hasta ${room.capacity} personas`);
+      }
     }
 
+    const shouldRecomputeLines =
+      services === undefined && contextChanged && (existing.services?.length ?? 0) > 0;
+
     const updated = await tx.reservation.update({
-      where: { id },
+      where: { id, companyId },
       data: {
         roomId,
         guestId,
         checkIn,
         checkOut,
+        ...(input.persons !== undefined ? { persons } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(services !== undefined
           ? {
               services: {
                 deleteMany: {},
                 create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, unitPrice: s.price })),
+              },
+            }
+          : {}),
+        ...(shouldRecomputeLines
+          ? {
+              services: {
+                update: (existing.services ?? []).map((line) => ({
+                  where: { id: line.id },
+                  data: {
+                    quantity: computeQuantity(line.service.chargeType, persons, nights, line.quantity),
+                  },
+                })),
               },
             }
           : {}),
@@ -280,7 +355,10 @@ export async function getReservation(id: number) {
 }
 
 export async function changeStatus(id: number, status: 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED') {
-  const reservation = await prisma.reservation.findUnique({ where: { id } });
+  const reservation = await prisma.reservation.findUnique({
+    where: { id },
+    include: { payments: { orderBy: { paidAt: 'desc' } } },
+  });
   if (!reservation) throw notFound('Reserva', id);
 
   let data: Prisma.ReservationUpdateInput;
@@ -302,9 +380,40 @@ export async function changeStatus(id: number, status: 'CHECKED_IN' | 'CHECKED_O
     if (reservation.status === 'CHECKED_OUT') {
       throw conflict('INVALID_STATE', 'No se puede cancelar una reserva finalizada');
     }
-    data = { status: 'CANCELLED' };
+    const daysUntilCheckIn = nightsBetween(todayUtc(), reservation.checkIn);
+    const refundEligible = daysUntilCheckIn >= 10;
+    const amountPaid = round2((reservation.payments ?? []).reduce((acc, p) => acc + decToNum(p.amount), 0));
+    data = {
+      status: 'CANCELLED',
+      cancelledAt: new Date(),
+      refundEligible,
+      refundAmount: refundEligible ? amountPaid : null,
+      refunded: false,
+      refundedAt: null,
+    };
   }
 
   const updated = await prisma.reservation.update({ where: { id }, data, include: FULL_INCLUDE });
+  return serializeReservation(updated);
+}
+
+export async function markRefunded(id: number) {
+  const reservation = await prisma.reservation.findUnique({ where: { id } });
+  if (!reservation) throw notFound('Reserva', id);
+  if (reservation.status !== 'CANCELLED') {
+    throw conflict('INVALID_STATE', 'Solo una reserva cancelada puede registrar devolución');
+  }
+  if (!reservation.refundEligible) {
+    throw conflict('INVALID_STATE', 'Esta cancelación no corresponde a devolución');
+  }
+  if (reservation.refunded) {
+    throw conflict('INVALID_STATE', 'La devolución ya fue registrada');
+  }
+
+  const updated = await prisma.reservation.update({
+    where: { id },
+    data: { refunded: true, refundedAt: new Date() },
+    include: FULL_INCLUDE,
+  });
   return serializeReservation(updated);
 }

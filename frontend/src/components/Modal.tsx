@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { Modal as BsModal } from 'bootstrap';
+import { ErrorBanner } from './Feedback';
 
 interface ModalProps {
   open: boolean;
@@ -8,9 +9,11 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  error?: string | null;
+  onDismissError?: () => void;
 }
 
-export function Modal({ open, title, onClose, children, wide }: ModalProps) {
+export function Modal({ open, title, onClose, children, wide, error, onDismissError }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -49,7 +52,10 @@ export function Modal({ open, title, onClose, children, wide }: ModalProps) {
             <h5 className="modal-title">{title}</h5>
             <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Cerrar" />
           </div>
-          <div className="modal-body">{children}</div>
+          <div className="modal-body">
+            {error && <ErrorBanner message={error} onDismiss={onDismissError} />}
+            {children}
+          </div>
         </div>
       </div>
     </div>

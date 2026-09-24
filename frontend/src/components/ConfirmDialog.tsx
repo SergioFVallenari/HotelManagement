@@ -1,14 +1,16 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { Modal as BsModal } from 'bootstrap';
+import { ErrorBanner } from './Feedback';
 
-export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar', danger, onCancel, onConfirm, busy }: {
+export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar', danger, onCancel, onConfirm, busy, error }: {
   open: boolean;
   title: string;
   message: ReactNode;
   confirmLabel?: string;
   danger?: boolean;
   busy?: boolean;
+  error?: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -50,6 +52,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar'
           </div>
           <div className="modal-body">
             <div className="confirm-message">{message}</div>
+            {error && <ErrorBanner message={error} />}
             <div className="modal-actions">
               <button type="button" className="btn btn-outline-secondary" data-bs-dismiss="modal" disabled={busy}>
                 Cancelar

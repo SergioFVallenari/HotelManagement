@@ -56,13 +56,16 @@ export async function getGuest(req: Request, res: Response): Promise<void> {
 
 export async function createGuest(req: Request, res: Response): Promise<void> {
   const input = createGuestSchema.parse(req.body) as CreateGuestInput;
+  const companyId = req.user!.companyId;
 
-  const existing = await prisma.guest.findUnique({ where: { email: input.email } });
+  const existing = await prisma.guest.findUnique({
+    where: { companyId_email: { companyId, email: input.email } },
+  });
   if (existing) {
     throw conflict('GUEST_EXISTS', `Ya existe un huésped con el email ${input.email}`, existing);
   }
 
-  const guest = await prisma.guest.create({ data: input });
+  const guest = await prisma.guest.create({ data: { ...input, companyId } });
   res.status(201).json({ data: guest });
 }
 

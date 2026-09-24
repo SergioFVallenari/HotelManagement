@@ -1,22 +1,33 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
-import type { PaymentMethod, Reservation } from '../api/types';
+import type { Payment, PaymentMethod, Reservation } from '../api/types';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { dateTimeShort, money, PAYMENT_METHODS } from '../lib/format';
+import { DataTable } from './DataTable';
+import type { Column } from './DataTable';
+import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES } from '../lib/format';
+import { RefundBadge } from './Badge';
+
+const PAYMENTS_COLUMNS: Column<Payment>[] = [
+  { header: 'Fecha', render: (p) => dateTimeShort(p.paidAt) },
+  { header: 'Método', render: (p) => PAYMENT_METHODS[p.method] ?? p.method },
+  { header: 'Monto', align: 'end', render: (p) => money(p.amount) },
+];
 
 interface Props {
   reservation: Reservation | null;
   onClose: () => void;
   onChanged: (reservation: Reservation) => void;
   onError: (err: unknown) => void;
+  error?: string | null;
+  onDismissError?: () => void;
 }
 
-export function ReservationDetail({ reservation, onClose, onChanged, onError }: Props) {
+export function ReservationDetail({ reservation, onClose, onChanged, onError, error, onDismissError }: Props) {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'CASH' as PaymentMethod, reference: '' });
-  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'payment'>(null);
-  const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel'>(null);
+  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment'>(null);
+  const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund'>(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
 
   if (!reservation) return null;
@@ -25,7 +36,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
   const isActive = reservation.status === 'RESERVED' || reservation.status === 'CHECKED_IN';
   const status = reservation.status;
 
-  async function runAction(action: 'checkin' | 'checkout' | 'cancel') {
+  async function runAction(action: 'checkin' | 'checkout' | 'cancel' | 'refund') {
     setConfirmAction(null);
     setBusyAction(action);
     try {
@@ -34,7 +45,9 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
           ? `/reservations/${current.id}/check-in`
           : action === 'checkout'
             ? `/reservations/${current.id}/check-out`
-            : `/reservations/${current.id}/cancel`;
+            : action === 'cancel'
+              ? `/reservations/${current.id}/cancel`
+              : `/reservations/${current.id}/refund`;
       const result = await api<{ data: Reservation }>(path, { method: 'POST' });
       onChanged(result.data);
     } catch (err) {
@@ -69,30 +82,49 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
   const confirmationMessages = {
     checkin: 'Confirmar el check-in del huésped en esta habitación.',
     checkout: 'Confirmar el check-out y liberar la habitación.',
-    cancel: '¿Cancelar esta reserva?',
+    cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
+    refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
   };
 
   return (
     <>
-      <Modal open title={`Reserva ${reservation.code}`} onClose={onClose} wide>
+      <Modal open title={`Reserva ${reservation.code}`} onClose={onClose} error={error} onDismissError={onDismissError} wide>
         <div className="row g-4">
           <div className="col-md-6">
             <h3 className="h6">Resumen</h3>
             <dl className="detail-list">
               <dt>Estado</dt>
-              <dd><ActionStatus status={status} /></dd>
+              <dd><span className="d-inline-flex align-items-center gap-2"><ActionStatus status={status} /><RefundBadge reservation={reservation} /></span></dd>
               <dt>Habitación</dt>
               <dd>
                 {reservation.room?.number} — {reservation.room?.name ?? reservation.room?.type?.name} · Cap. {reservation.room?.capacity}
               </dd>
+              <dt>Personas</dt>
+              <dd>{reservation.persons}</dd>
               <dt>Fecha</dt>
               <dd>
-                {reservation.checkIn} → {reservation.checkOut} ({reservation.totals.nights} noches)
+                {dateShort(reservation.checkIn)} → {dateShort(reservation.checkOut)} ({reservation.totals.nights} noches)
               </dd>
               <dt>Check-in real</dt>
               <dd>{dateTimeShort(reservation.checkedInAt)}</dd>
               <dt>Check-out real</dt>
               <dd>{dateTimeShort(reservation.checkedOutAt)}</dd>
+              {status === 'CANCELLED' && (
+                <>
+                  <dt>Cancelada el</dt>
+                  <dd>{dateTimeShort(reservation.cancelledAt)}</dd>
+                  <dt>Corresponde devolución</dt>
+                  <dd>{reservation.refundEligible ? 'Sí' : 'No'}</dd>
+                  {reservation.refundEligible && (
+                    <>
+                      <dt>Monto a devolver</dt>
+                      <dd>{money(reservation.refundAmount)}</dd>
+                      <dt>Devolución</dt>
+                      <dd>{reservation.refunded ? `Realizada (${dateTimeShort(reservation.refundedAt)})` : 'Pendiente'}</dd>
+                    </>
+                  )}
+                </>
+              )}
               <dt>Notas</dt>
               <dd>{reservation.notes ?? '—'}</dd>
             </dl>
@@ -156,6 +188,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
                     <tr>
                       <th>Servicio</th>
                       <th>Cant.</th>
+                      <th>Tipo</th>
                       <th className="text-end">Importe</th>
                     </tr>
                   </thead>
@@ -164,6 +197,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
                       <tr key={s.id}>
                         <td>{s.name}</td>
                         <td>{s.quantity}</td>
+                        <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}</td>
                         <td className="text-end">{money(s.lineTotal)}</td>
                       </tr>
                     ))}
@@ -178,26 +212,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
             {reservation.payments.length === 0 ? (
               <p className="text-secondary mb-2">Sin pagos registrados.</p>
             ) : (
-              <div className="table-responsive">
-                <table className="table table-sm align-middle mb-2">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Método</th>
-                      <th className="text-end">Monto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reservation.payments.map((p) => (
-                      <tr key={p.id}>
-                        <td>{dateTimeShort(p.paidAt)}</td>
-                        <td>{PAYMENT_METHODS[p.method] ?? p.method}</td>
-                        <td className="text-end">{money(p.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<Payment>
+                columns={PAYMENTS_COLUMNS}
+                rows={reservation.payments}
+                keyField="id"
+                size="sm"
+                variant="bare"
+              />
             )}
 
             {status === 'CHECKED_OUT' && (
@@ -256,15 +277,40 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError }: 
             </button>
           </div>
         )}
+
+        {status === 'CANCELLED' && reservation.refundEligible && !reservation.refunded && (
+          <div className="modal-actions">
+            <button type="button" className="btn btn-success" onClick={() => setConfirmAction('refund')} disabled={!!busyAction}>
+              {busyAction === 'refund' ? 'Registrando…' : 'Marcar devolución realizada'}
+            </button>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog
         open={!!confirmAction}
-        title={confirmAction === 'cancel' ? 'Cancelar reserva' : confirmAction === 'checkin' ? 'Check-in' : 'Check-out'}
+        title={
+          confirmAction === 'cancel'
+            ? 'Cancelar reserva'
+            : confirmAction === 'checkin'
+              ? 'Check-in'
+              : confirmAction === 'checkout'
+                ? 'Check-out'
+                : 'Devolución'
+        }
         message={confirmAction ? confirmationMessages[confirmAction] : ''}
-        confirmLabel={confirmAction === 'cancel' ? 'Cancelar reserva' : confirmAction === 'checkin' ? 'Confirmar check-in' : 'Confirmar check-out'}
+        confirmLabel={
+          confirmAction === 'cancel'
+            ? 'Cancelar reserva'
+            : confirmAction === 'checkin'
+              ? 'Confirmar check-in'
+              : confirmAction === 'checkout'
+                ? 'Confirmar check-out'
+                : 'Confirmar devolución'
+        }
         danger={confirmAction === 'cancel'}
         busy={!!busyAction}
+        error={error}
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => confirmAction && runAction(confirmAction)}
       />

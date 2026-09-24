@@ -4,9 +4,9 @@ import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { RoomType } from '../api/types';
-import { LoadState } from '../components/Feedback';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { DataTable } from '../components/DataTable';
 import { useApiError } from '../components/pagination';
 
 export function RoomTypesPage() {
@@ -18,19 +18,21 @@ export function RoomTypesPage() {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<RoomType | null>(null);
-  const { error: apiError, handleError } = useApiError();
+  const { error: apiError, handleError, clearError } = useApiError();
 
   const items = data?.data ?? [];
 
   function openCreate() {
     setEditing(null);
     setName('');
+    clearError();
     setOpen(true);
   }
 
   function openEdit(item: RoomType) {
     setEditing(item);
     setName(item.name);
+    clearError();
     setOpen(true);
   }
 
@@ -78,50 +80,43 @@ export function RoomTypesPage() {
         )}
       </div>
 
-      {apiError && <LoadState loading={false} error={apiError} />}
+      <DataTable<RoomType>
+        columns={[
+          { header: 'ID', render: (i) => i.id },
+          { header: 'Nombre', render: (i) => <strong>{i.name}</strong> },
+          { header: 'Habitaciones', render: (i) => i._count?.rooms ?? 0 },
+        ]}
+        rows={items}
+        keyField="id"
+        loading={loading}
+        error={error}
+        onRetry={reload}
+        actions={
+          isAdmin
+            ? (item) => (
+                <div className="d-inline-flex gap-1">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(item)}>
+                    Editar
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(item); }}>
+                    Eliminar
+                  </button>
+                </div>
+              )
+            : undefined
+        }
+      />
 
-      <div className="card shadow-sm">
-        <div className="card-body p-0">
-          <LoadState loading={loading} error={error} onRetry={reload} empty={items.length === 0} />
-          {items.length > 0 && (
-            <div className="table-responsive">
-              <table className="table align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Nombre</th>
-                    <th>Habitaciones</th>
-                    {isAdmin && <th className="text-end">Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.id}</td>
-                      <td><strong>{item.name}</strong></td>
-                      <td>{item._count?.rooms ?? 0}</td>
-                      {isAdmin && (
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-1">
-                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(item)}>
-                              Editar
-                            </button>
-                            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setDeleting(item)}>
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <Modal open={open} title={editing ? 'Editar tipo' : 'Nuevo tipo'} onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title={editing ? 'Editar tipo' : 'Nuevo tipo'}
+        onClose={() => {
+          setOpen(false);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+      >
         <form onSubmit={handleSave}>
           <div className="mb-3">
             <label className="form-label">Nombre *</label>
@@ -150,7 +145,11 @@ export function RoomTypesPage() {
         confirmLabel="Eliminar"
         danger
         busy={saving}
-        onCancel={() => setDeleting(null)}
+        error={apiError}
+        onCancel={() => {
+          setDeleting(null);
+          clearError();
+        }}
         onConfirm={handleDelete}
       />
     </div>

@@ -26,10 +26,13 @@ export interface Guest {
   _count?: { reservations: number };
 }
 
+export type ServiceChargeType = 'PER_PERSON' | 'PER_DAY' | 'PACK';
+
 export interface Service {
   id: number;
   name: string;
   price: number;
+  chargeType: ServiceChargeType;
   isActive: boolean;
 }
 
@@ -40,6 +43,7 @@ export interface ReservationServiceLine {
   id: number;
   serviceId: number;
   name: string | null;
+  chargeType: ServiceChargeType | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -70,9 +74,15 @@ export interface Reservation {
   guestId: number;
   checkIn: string;
   checkOut: string;
+  persons: number;
   status: ReservationStatus;
   checkedInAt: string | null;
   checkedOutAt: string | null;
+  cancelledAt: string | null;
+  refundEligible: boolean;
+  refundAmount: number | null;
+  refunded: boolean;
+  refundedAt: string | null;
   notes: string | null;
   room?: { id: number; number: string; name: string | null; capacity: number; price: number; type?: RoomType } | null;
   guest?: Guest | null;
@@ -81,11 +91,23 @@ export interface Reservation {
   totals: ReservationTotals;
 }
 
+export interface Company {
+  id: number;
+  name: string;
+}
+
+export interface LoginCompany {
+  id: number;
+  name: string;
+  role: 'ADMIN' | 'RECEPCIONISTA';
+}
+
 export interface User {
   id: number;
   username: string;
   role: 'ADMIN' | 'RECEPCIONISTA';
   name?: string | null;
+  companyId: number;
 }
 
 export interface Summary {
@@ -111,4 +133,35 @@ export interface PageMeta {
 export interface Page<T> {
   data: T[];
   meta: PageMeta;
+}
+
+export type CalendarStatus = 'AVAILABLE' | 'OCCUPIED' | 'TURNOVER';
+
+export interface CalendarReservationRef {
+  id: number;
+  code: string;
+  status: ReservationStatus;
+  checkIn: string;
+  checkOut: string;
+  guestName: string;
+}
+
+export interface CalendarCell {
+  status: CalendarStatus;
+  reservations: CalendarReservationRef[];
+}
+
+export interface CalendarRoom {
+  id: number;
+  number: string;
+  name: string | null;
+  typeName: string | null;
+  cells: CalendarCell[];
+}
+
+export interface CalendarData {
+  from: string;
+  to: string;
+  days: string[];
+  rooms: CalendarRoom[];
 }

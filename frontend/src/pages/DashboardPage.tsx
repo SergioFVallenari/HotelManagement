@@ -4,7 +4,7 @@ import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { StatusBadge } from '../components/Badge';
-import { RESERVATION_STATUS, firstDayOfMonth, money, today } from '../lib/format';
+import { RESERVATION_STATUS, dateShort, firstDayOfMonth, money, today } from '../lib/format';
 
 export function DashboardPage() {
   const [from, setFrom] = useState(firstDayOfMonth());
@@ -24,14 +24,14 @@ export function DashboardPage() {
           <p className="text-secondary mb-0">Resumen de ocupación e ingresos del período</p>
         </div>
         <div className="filter-row">
-          <label className="field-inline">
-            <span className="text-secondary small">Desde</span>
-            <input type="date" className="form-control form-control-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className="field-inline">
-            <span className="text-secondary small">Hasta</span>
-            <input type="date" className="form-control form-control-sm" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
+          <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+            <span className="input-group-text">Desde</span>
+            <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+            <span className="input-group-text">Hasta</span>
+            <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
           <button
             type="button"
             className="btn btn-primary btn-sm"
@@ -64,7 +64,7 @@ export function DashboardPage() {
                   <div className="text-secondary small text-uppercase">Ingresos por pagos</div>
                   <div className="card-value">{money(revenue)}</div>
                   <div className="text-secondary small">
-                    Período: {summary.range.from} → {summary.range.to} ({summary.range.days} días)
+                    Período: {dateShort(summary.range.from)} → {dateShort(summary.range.to)} ({summary.range.days} días)
                   </div>
                 </div>
               </div>

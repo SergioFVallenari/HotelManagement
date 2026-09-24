@@ -5,13 +5,15 @@ export function money(value: number | null | undefined): string {
 
 export function dateShort(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return iso.slice(0, 10);
+  return iso.slice(0, 10).split('-').reverse().join('-');
 }
 
 export function dateTimeShort(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const date = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+  const time = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  return `${date} ${time}`;
 }
 
 export const RESERVATION_STATUS: Record<string, { label: string; cls: string }> = {
@@ -26,6 +28,18 @@ export const PAYMENT_METHODS: Record<string, string> = {
   CARD: 'Tarjeta',
   TRANSFER: 'Transferencia',
 };
+
+export const CHARGE_TYPES: Record<string, string> = {
+  PER_PERSON: 'Por persona',
+  PER_DAY: 'Por día',
+  PACK: 'Pack / fijo',
+};
+
+export function nightsCount(checkIn: string, checkOut: string): number {
+  const a = new Date(`${checkIn}T00:00:00`);
+  const b = new Date(`${checkOut}T00:00:00`);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
 
 export function firstDayOfMonth(): string {
   const now = new Date();

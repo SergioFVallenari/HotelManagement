@@ -4,16 +4,27 @@ import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { Service } from '../api/types';
-import { LoadState } from '../components/Feedback';
 import { ActiveBadge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { DataTable } from '../components/DataTable';
+import type { Column } from '../components/DataTable';
 import { useApiError } from '../components/pagination';
-import { money } from '../lib/format';
+import { money, CHARGE_TYPES } from '../lib/format';
+import type { ServiceChargeType } from '../api/types';
+
+const SERVICES_COLUMNS: Column<Service>[] = [
+  { header: 'ID', render: (s) => s.id },
+  { header: 'Nombre', render: (s) => <strong>{s.name}</strong> },
+  { header: 'Precio', render: (s) => money(s.price) },
+  { header: 'Tipo de cobro', render: (s) => CHARGE_TYPES[s.chargeType] ?? s.chargeType },
+  { header: 'Estado', render: (s) => <ActiveBadge active={s.isActive} activeLabel="Activo" inactiveLabel="Inactivo" /> },
+];
 
 interface ServiceForm {
   name: string;
   price: number;
+  chargeType: ServiceChargeType;
   isActive: boolean;
 }
 
@@ -23,22 +34,24 @@ export function ServicesPage() {
   const { data, loading, error, reload } = useApi<{ data: Service[] }>('/services');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState<ServiceForm>({ name: '', price: 0, isActive: true });
+  const [form, setForm] = useState<ServiceForm>({ name: '', price: 0, chargeType: 'PACK', isActive: true });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Service | null>(null);
-  const { error: apiError, handleError } = useApiError();
+  const { error: apiError, handleError, clearError } = useApiError();
 
   const items = data?.data ?? [];
 
   function openCreate() {
     setEditing(null);
-    setForm({ name: '', price: 0, isActive: true });
+    setForm({ name: '', price: 0, chargeType: 'PACK', isActive: true });
+    clearError();
     setOpen(true);
   }
 
   function openEdit(item: Service) {
     setEditing(item);
-    setForm({ name: item.name, price: item.price, isActive: item.isActive });
+    setForm({ name: item.name, price: item.price, chargeType: item.chargeType, isActive: item.isActive });
+    clearError();
     setOpen(true);
   }
 
@@ -46,7 +59,7 @@ export function ServicesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name: form.name.trim(), price: Number(form.price), isActive: form.isActive };
+      const body = { name: form.name.trim(), price: Number(form.price), chargeType: form.chargeType, isActive: form.isActive };
       if (editing) await api(`/services/${editing.id}`, { method: 'PUT', body });
       else await api('/services', { method: 'POST', body });
       setOpen(false);
@@ -86,52 +99,39 @@ export function ServicesPage() {
         )}
       </div>
 
-      {apiError && <LoadState loading={false} error={apiError} />}
+      <DataTable<Service>
+        columns={SERVICES_COLUMNS}
+        rows={items}
+        keyField="id"
+        loading={loading}
+        error={error}
+        onRetry={reload}
+        actions={
+          isAdmin
+            ? (item) => (
+                <div className="d-inline-flex gap-1">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(item)}>
+                    Editar
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(item); }}>
+                    Eliminar
+                  </button>
+                </div>
+              )
+            : undefined
+        }
+      />
 
-      <div className="card shadow-sm">
-        <div className="card-body p-0">
-          <LoadState loading={loading} error={error} onRetry={reload} empty={items.length === 0} />
-          {items.length > 0 && (
-            <div className="table-responsive">
-              <table className="table align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Nombre</th>
-                    <th>Precio</th>
-                    <th>Estado</th>
-                    {isAdmin && <th className="text-end">Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.id}</td>
-                      <td><strong>{item.name}</strong></td>
-                      <td>{money(item.price)}</td>
-                      <td><ActiveBadge active={item.isActive} activeLabel="Activo" inactiveLabel="Inactivo" /></td>
-                      {isAdmin && (
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-1">
-                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(item)}>
-                              Editar
-                            </button>
-                            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setDeleting(item)}>
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <Modal open={open} title={editing ? `Editar ${editing.name}` : 'Nuevo servicio'} onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title={editing ? `Editar ${editing.name}` : 'Nuevo servicio'}
+        onClose={() => {
+          setOpen(false);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+      >
         <form onSubmit={handleSave}>
           <div className="mb-3">
             <label className="form-label">Nombre *</label>
@@ -140,6 +140,23 @@ export function ServicesPage() {
           <div className="mb-3">
             <label className="form-label">Precio *</label>
             <input type="number" min={0} step="0.01" className="form-control" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required />
+          </div>
+          <div className="mb-3">
+            <label className="form-label">Tipo de cobro *</label>
+            <select
+              className="form-select"
+              value={form.chargeType}
+              onChange={(e) => setForm({ ...form, chargeType: e.target.value as ServiceChargeType })}
+            >
+              {Object.entries(CHARGE_TYPES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <div className="form-text">
+              Por persona: se cobra personas × noches · Por día: se cobra por noche · Pack: cargo fijo.
+            </div>
           </div>
           <div className="form-check mb-3">
             <input id="service-active" className="form-check-input" type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
@@ -168,7 +185,11 @@ export function ServicesPage() {
         confirmLabel="Eliminar"
         danger
         busy={saving}
-        onCancel={() => setDeleting(null)}
+        error={apiError}
+        onCancel={() => {
+          setDeleting(null);
+          clearError();
+        }}
         onConfirm={handleDelete}
       />
     </div>

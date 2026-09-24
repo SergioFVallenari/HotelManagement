@@ -20,7 +20,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(username, password);
-      navigate('/', { replace: true });
+      navigate('/login/company', { replace: true });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -49,7 +49,8 @@ export function LoginPage() {
           {busy ? 'Ingresando…' : 'Ingresar'}
         </button>
         <p className="login-hint">
-          Usuarios de prueba: <code>admin/admin123</code> · <code>recepcion/recepcion123</code>
+          Usuarios de prueba: <code>admin/admin123</code> · <code>recepcion/recepcion123</code> (Hotel Principal) ·{' '}
+          <code>sol/admin123</code> (Hotel Sol)
         </p>
       </form>
     </div>

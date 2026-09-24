@@ -1,0 +1,7 @@
+node_modules
+.env
+.git
+src
+prisma
+*.log
+pnpm-debug.log*

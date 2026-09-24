@@ -16,3 +16,10 @@ export function StatusBadge({ status }: { status: string }) {
 export function ActiveBadge({ active, activeLabel = 'Activa', inactiveLabel = 'Inactiva' }: { active: boolean; activeLabel?: string; inactiveLabel?: string }) {
   return <Badge label={active ? activeLabel : inactiveLabel} cls={active ? 'text-bg-success' : 'text-bg-danger'} />;
 }
+
+export function RefundBadge({ reservation }: { reservation: { status: string; refundEligible: boolean; refunded: boolean } }) {
+  if (reservation.status !== 'CANCELLED' || !reservation.refundEligible) return null;
+  return reservation.refunded
+    ? <Badge label="Devuelto" cls="text-bg-success" />
+    : <Badge label="Pendiente devolución" cls="text-bg-warning" />;
+}

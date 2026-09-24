@@ -8,6 +8,7 @@ import {
   changeStatus,
   createReservation,
   getReservation,
+  markRefunded,
   serializeReservation,
   updateReservation,
 } from './reservations.service.js';
@@ -17,7 +18,7 @@ import { createReservationSchema, updateReservationSchema } from './reservations
 const listInclude = {
   room: { select: { id: true, number: true, name: true, capacity: true, price: true } },
   guest: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
-  services: { include: { service: { select: { id: true, name: true } } } },
+  services: { include: { service: { select: { id: true, name: true, chargeType: true } } } },
   payments: true,
 } as const;
 
@@ -107,5 +108,11 @@ export async function checkOut(req: Request, res: Response): Promise<void> {
 export async function cancelReservation(req: Request, res: Response): Promise<void> {
   const id = parseIdParam(req.params.id);
   const reservation = await changeStatus(id, 'CANCELLED');
+  res.json({ data: reservation });
+}
+
+export async function markRefundedHandler(req: Request, res: Response): Promise<void> {
+  const id = parseIdParam(req.params.id);
+  const reservation = await markRefunded(id);
   res.json({ data: reservation });
 }

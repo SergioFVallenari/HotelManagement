@@ -15,10 +15,13 @@ export async function listServices(_req: Request, res: Response): Promise<void> 
 
 export async function createService(req: Request, res: Response): Promise<void> {
   const input = createServiceSchema.parse(req.body) as CreateServiceInput;
-  const existing = await prisma.service.findUnique({ where: { name: input.name } });
+  const companyId = req.user!.companyId;
+  const existing = await prisma.service.findUnique({
+    where: { companyId_name: { companyId, name: input.name } },
+  });
   if (existing) throw conflict('DUPLICATE', `El servicio "${input.name}" ya existe`);
 
-  const service = await prisma.service.create({ data: input });
+  const service = await prisma.service.create({ data: { ...input, companyId } });
   res.status(201).json({ data: service });
 }
 
@@ -39,6 +42,9 @@ export async function updateService(req: Request, res: Response): Promise<void> 
 
 export async function deleteService(req: Request, res: Response): Promise<void> {
   const id = parseIdParam(req.params.id);
+  const service = await prisma.service.findUnique({ where: { id } });
+  if (!service) throw notFound('Servicio', id);
+
   const used = await prisma.reservationService.count({ where: { serviceId: id } });
   if (used > 0) {
     throw conflict('SERVICE_IN_USE', 'No se puede eliminar un servicio usado en reservas');

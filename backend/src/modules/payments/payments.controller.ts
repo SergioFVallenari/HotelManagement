@@ -32,7 +32,9 @@ export async function createPaymentHandler(req: Request, res: Response): Promise
 
 export async function deletePaymentHandler(req: Request, res: Response): Promise<void> {
   const id = parseIdParam(req.params.id);
-  const payment = await prisma.payment.findUnique({ where: { id } });
+  const payment = await prisma.payment.findFirst({
+    where: { id, reservation: { companyId: req.user!.companyId } },
+  });
   if (!payment) throw notFound('Pago', id);
   await prisma.payment.delete({ where: { id } });
   res.status(204).send();
