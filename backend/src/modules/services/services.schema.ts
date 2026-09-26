@@ -6,6 +6,7 @@ export const createServiceSchema = z.object({
   name: z.string().min(1).max(100),
   price: z.number().min(0),
   chargeType: serviceChargeTypeSchema.default('PACK'),
+  isExtraBed: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
 

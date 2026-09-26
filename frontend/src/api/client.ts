@@ -1,5 +1,15 @@
 const URL_BACKEND = import.meta.env.VITE_URL_BACKEND;
 
+// Sirve para validar que los postMessage del popup de MercadoPago vengan
+// del backend y no de cualquier pagina. Vacio en dev = no se filtra.
+export const BACKEND_ORIGIN = (() => {
+  try {
+    return new URL(URL_BACKEND).origin;
+  } catch {
+    return '';
+  }
+})();
+
 export class ApiError extends Error {
   status: number;
   code?: string;

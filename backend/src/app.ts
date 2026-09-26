@@ -11,6 +11,7 @@ import reservationRoutes from './modules/reservations/reservations.routes.js';
 import paymentRoutes from './modules/payments/payments.routes.js';
 import summaryRoutes from './modules/summary/summary.routes.js';
 import calendarRoutes from './modules/calendar/calendar.routes.js';
+import mpRoutes from './modules/mercadopago/mp.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { env } from './config/env.js';
 
@@ -37,6 +38,7 @@ export function createApp(): express.Express {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/summary', summaryRoutes);
   app.use('/api/calendar', calendarRoutes);
+  app.use('/api/mp', mpRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

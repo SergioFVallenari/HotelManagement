@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../../config/prisma.js';
 import { badRequest } from '../../lib/AppError.js';
-import { addDays, nightsBetween, parseDate, todayUtc } from '../../lib/date.js';
+import { addDays, nightsBetween, parseDate, todayHotel } from '../../lib/date.js';
 
 type CellStatus = 'AVAILABLE' | 'OCCUPIED' | 'TURNOVER';
 
@@ -19,7 +19,7 @@ const MAX_DAYS = 62;
 const dateKey = (d: Date): string => d.toISOString().slice(0, 10);
 
 export async function calendar(req: Request, res: Response): Promise<void> {
-  const now = todayUtc();
+  const now = todayHotel();
   const from =
     req.query.from !== undefined
       ? parseDate(req.query.from, 'from')

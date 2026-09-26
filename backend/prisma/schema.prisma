@@ -12,12 +12,13 @@ model Company {
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users      User[]
-  roomTypes  RoomType[]
-  rooms      Room[]
-  guests     Guest[]
-  services   Service[]
+  users       User[]
+  roomTypes   RoomType[]
+  rooms       Room[]
+  guests      Guest[]
+  services    Service[]
   reservations Reservation[]
+  mpAccount   CompanyMpAccount?
 }
 
 model User {
@@ -66,6 +67,7 @@ model Room {
   typeId       Int
   companyId    Int
   capacity     Int           @default(2)
+  maxExtraBeds Int           @default(0)
   price        Decimal       @db.Decimal(10, 2)
   amenities    String[]
   isActive     Boolean       @default(true)
@@ -107,6 +109,7 @@ model Service {
   name         String
   price        Decimal              @db.Decimal(10, 2)
   chargeType   ServiceChargeType    @default(PACK)
+  isExtraBed   Boolean              @default(false)
   isActive     Boolean              @default(true)
   companyId    Int
   createdAt    DateTime             @default(now())
@@ -118,6 +121,7 @@ model Service {
 }
 
 enum ReservationStatus {
+  PENDING
   RESERVED
   CHECKED_IN
   CHECKED_OUT
@@ -133,6 +137,7 @@ model Reservation {
   checkIn      DateTime           @db.Date
   checkOut     DateTime           @db.Date
   persons      Int                @default(1)
+  extraBeds    Int                @default(0)
   status       ReservationStatus  @default(RESERVED)
   checkedInAt  DateTime?
   checkedOutAt DateTime?
@@ -141,6 +146,8 @@ model Reservation {
   refundAmount   Decimal?         @db.Decimal(10, 2)
   refunded       Boolean          @default(false)
   refundedAt     DateTime?
+  mpOrderId      String?            @unique
+  mpCheckoutUrl  String?
   notes        String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
@@ -161,6 +168,7 @@ model ReservationService {
   reservationId Int
   serviceId     Int
   quantity      Int         @default(1)
+  personsCovered Int?
   unitPrice     Decimal     @db.Decimal(10, 2)
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   service       Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
@@ -172,6 +180,7 @@ enum PaymentMethod {
   CASH
   CARD
   TRANSFER
+  MERCADOPAGO
 }
 
 model Payment {
@@ -184,4 +193,19 @@ model Payment {
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
   @@index([reservationId])
+  @@unique([reference])
+}
+
+model CompanyMpAccount {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int      @unique
+  mpUserId              String
+  mpEmail               String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  connectedAt           DateTime @default(now())
+  lastRefreshedAt       DateTime @default(now())
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }

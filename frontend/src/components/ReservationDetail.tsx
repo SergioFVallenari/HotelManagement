@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import type { Payment, PaymentMethod, Reservation } from '../api/types';
@@ -6,7 +6,8 @@ import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DataTable } from './DataTable';
 import type { Column } from './DataTable';
-import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES } from '../lib/format';
+import { Toast } from './Feedback';
+import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, hotelToday } from '../lib/format';
 import { RefundBadge } from './Badge';
 
 const PAYMENTS_COLUMNS: Column<Payment>[] = [
@@ -26,15 +27,106 @@ interface Props {
 
 export function ReservationDetail({ reservation, onClose, onChanged, onError, error, onDismissError }: Props) {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'CASH' as PaymentMethod, reference: '' });
-  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment'>(null);
+  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund'>(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+  const onChangedRef = useRef(onChanged);
+
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  }
+
+  useEffect(() => {
+    onChangedRef.current = onChanged;
+  }, [onChanged]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!reservation || reservation.status !== 'PENDING') return;
+    const reservationId = reservation.id;
+    let alive = true;
+    let timer: number | undefined;
+    const started = Date.now();
+
+    function tick() {
+      api<{ data: Reservation }>(`/reservations/${reservationId}`)
+        .then((result) => {
+          if (!alive) return;
+          if (result.data.status === 'RESERVED') {
+            onChangedRef.current(result.data);
+            showToast('Pago recibido');
+            return;
+          }
+          scheduleNext();
+        })
+        .catch(() => {
+          if (alive) scheduleNext();
+        });
+    }
+
+    function scheduleNext() {
+      if (!alive) return;
+      const delay = Date.now() - started < 30_000 ? 5000 : 15_000;
+      timer = window.setTimeout(() => void tick(), delay);
+    }
+
+    function onVisibility() {
+      if (document.hidden) return;
+      if (timer) window.clearTimeout(timer);
+      void tick();
+    }
+
+    timer = window.setTimeout(() => void tick(), 5000);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservation?.id, reservation?.status]);
 
   if (!reservation) return null;
   const current = reservation;
 
-  const isActive = reservation.status === 'RESERVED' || reservation.status === 'CHECKED_IN';
+  const isActive = reservation.status === 'PENDING' || reservation.status === 'RESERVED' || reservation.status === 'CHECKED_IN';
   const status = reservation.status;
+  const checkInAvailable = status !== 'RESERVED' || reservation.checkIn <= hotelToday();
+  const linkVisible = [ 'PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT' ].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
+  const linkRegenerable = status === 'PENDING' || status === 'RESERVED' || status === 'CHECKED_IN';
+
+  async function generateLink(regenerate = false) {
+    setBusyAction('link');
+    try {
+      const result = await api<{ data: { reservation: Reservation; generated: boolean } }>(
+        `/reservations/${current.id}/mp/order`,
+        { method: 'POST', body: { regenerate } },
+      );
+      onChanged(result.data.reservation);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(current.mpCheckoutUrl ?? '');
+      showToast('Link copiado');
+    } catch {
+      onError(new Error('No se pudo copiar el link'));
+    }
+  }
 
   async function runAction(action: 'checkin' | 'checkout' | 'cancel' | 'refund') {
     setConfirmAction(null);
@@ -80,7 +172,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   }
 
   const confirmationMessages = {
-    checkin: 'Confirmar el check-in del huésped en esta habitación.',
+    checkin: `Confirmar el check-in del huésped en esta habitación. Fecha de reserva: ${dateShort(reservation.checkIn)}.`,
     checkout: 'Confirmar el check-out y liberar la habitación.',
     cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
     refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
@@ -100,10 +192,16 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                 {reservation.room?.number} — {reservation.room?.name ?? reservation.room?.type?.name} · Cap. {reservation.room?.capacity}
               </dd>
               <dt>Personas</dt>
-              <dd>{reservation.persons}</dd>
+              <dd>
+                {reservation.persons}
+                {reservation.extraBeds > 0 && <span className="text-secondary"> + {reservation.extraBeds} cama(s) extra(s)</span>}
+              </dd>
               <dt>Fecha</dt>
               <dd>
                 {dateShort(reservation.checkIn)} → {dateShort(reservation.checkOut)} ({reservation.totals.nights} noches)
+                <span className="d-block text-secondary small">
+                  Horario: check-in {CHECK_IN_TIME} · check-out {CHECK_OUT_TIME}
+                </span>
               </dd>
               <dt>Check-in real</dt>
               <dd>{dateTimeShort(reservation.checkedInAt)}</dd>
@@ -176,6 +274,46 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           </div>
         </div>
 
+        {linkVisible && (
+          <div className="mp-payment-section mt-3">
+            <h4 className="section-title">Pago online</h4>
+            {reservation.mpCheckoutUrl ? (
+              <>
+                <div className="d-flex gap-2">
+                  <code className="mp-link-code flex-grow-1">{reservation.mpCheckoutUrl}</code>
+                  <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" onClick={copyLink}>
+                    Copiar
+                  </button>
+                </div>
+                <div className="d-flex gap-2 mt-2 flex-wrap">
+                  <a
+                    href={reservation.mpCheckoutUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-sm btn-primary"
+                  >
+                    Abrir link de pago
+                  </a>
+                  {linkRegenerable && (
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => generateLink(true)} disabled={busyAction === 'link'}>
+                      {busyAction === 'link' ? 'Regenerando…' : 'Regenerar link'}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => generateLink(false)} disabled={busyAction === 'link'}>
+                {busyAction === 'link' ? 'Generando…' : 'Generar link de pago'}
+              </button>
+            )}
+            {status === 'PENDING' && (
+              <p className="text-secondary small mb-0 mt-2">
+                Esperando que el huésped pague. La reserva se confirma automáticamente al recibir el pago.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="row g-4">
           <div className="col-lg-6">
             <h3 className="h6">Servicios cargados</h3>
@@ -188,6 +326,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                     <tr>
                       <th>Servicio</th>
                       <th>Cant.</th>
+                      <th>Pers.</th>
                       <th>Tipo</th>
                       <th className="text-end">Importe</th>
                     </tr>
@@ -197,6 +336,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                       <tr key={s.id}>
                         <td>{s.name}</td>
                         <td>{s.quantity}</td>
+                        <td className="text-secondary">
+                          {s.chargeType === 'PER_PERSON'
+                            ? s.personsCovered != null
+                              ? `${s.personsCovered} de ${reservation.persons + reservation.extraBeds}`
+                              : 'todas'
+                            : '—'}
+                        </td>
                         <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}</td>
                         <td className="text-end">{money(s.lineTotal)}</td>
                       </tr>
@@ -263,7 +409,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
         {isActive && (
           <div className="modal-actions">
             {status === 'RESERVED' && (
-              <button type="button" className="btn btn-success" onClick={() => setConfirmAction('checkin')} disabled={!!busyAction}>
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={() => setConfirmAction('checkin')}
+                disabled={!!busyAction || !checkInAvailable}
+                title={checkInAvailable ? undefined : `Check-in disponible desde el ${dateShort(reservation.checkIn)} (${CHECK_IN_TIME})`}
+              >
                 Check-in
               </button>
             )}
@@ -286,6 +438,8 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           </div>
         )}
       </Modal>
+
+      <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />
 
       <ConfirmDialog
         open={!!confirmAction}
@@ -320,12 +474,14 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
 
 function ActionStatus({ status }: { status: string }) {
   const map: Record<string, string> = {
+    PENDING: 'text-bg-warning',
     RESERVED: 'text-bg-primary',
     CHECKED_IN: 'text-bg-success',
     CHECKED_OUT: 'text-bg-secondary',
     CANCELLED: 'text-bg-danger',
   };
   const labels: Record<string, string> = {
+    PENDING: 'Pago pendiente',
     RESERVED: 'Reservada',
     CHECKED_IN: 'Check-in',
     CHECKED_OUT: 'Check-out',

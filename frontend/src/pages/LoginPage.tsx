@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { IconBuildingSkyscraper } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/Feedback';
 
@@ -32,7 +33,7 @@ export function LoginPage() {
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-brand">
-          <span className="brand-icon">🏨</span>
+          <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
           <h1>Hotel Manager</h1>
           <p>Ingresá para administrar el alojamiento</p>
         </div>

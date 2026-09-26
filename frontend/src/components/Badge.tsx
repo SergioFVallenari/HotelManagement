@@ -4,6 +4,7 @@ export function Badge({ label, cls }: { label: string; cls: string }) {
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
+    PENDING: { label: 'Pago pendiente', cls: 'text-bg-warning' },
     RESERVED: { label: 'Reservada', cls: 'text-bg-primary' },
     CHECKED_IN: { label: 'Check-in', cls: 'text-bg-success' },
     CHECKED_OUT: { label: 'Check-out', cls: 'text-bg-secondary' },

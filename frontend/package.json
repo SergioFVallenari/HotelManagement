@@ -7,15 +7,24 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:mobile": "tsc -b && vite build && cap sync android",
+    "android:open": "cap open android",
+    "apk": "cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.2",
+    "@tabler/icons-react": "^3.48.0",
     "bootstrap": "^5.3.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2",
     "@types/bootstrap": "^5.2.11",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

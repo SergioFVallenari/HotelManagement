@@ -12,6 +12,7 @@ export const guestInputSchema = z.object({
 export const serviceInputSchema = z.object({
   serviceId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(100).default(1),
+  personsCovered: z.number().int().min(1).max(100).optional().nullable(),
 });
 
 export const createReservationSchema = z
@@ -22,8 +23,10 @@ export const createReservationSchema = z
     checkIn: dateStringSchema,
     checkOut: dateStringSchema,
     persons: z.number().int().min(1).default(1),
+    extraBeds: z.number().int().min(0).default(0),
     services: z.array(serviceInputSchema).default([]),
     notes: z.string().max(500).optional().nullable(),
+    generatePaymentLink: z.boolean().optional(),
   })
   .refine((data) => data.guestId !== undefined || data.guest !== undefined, {
     message: 'Debe indicar guestId o datos del huésped',
@@ -42,6 +45,7 @@ export const updateReservationSchema = z
     checkIn: dateStringSchema.optional(),
     checkOut: dateStringSchema.optional(),
     persons: z.number().int().min(1).optional(),
+    extraBeds: z.number().int().min(0).optional(),
     services: z.array(serviceInputSchema).optional(),
     notes: z.string().max(500).optional().nullable(),
   })

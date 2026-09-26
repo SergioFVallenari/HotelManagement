@@ -18,6 +18,11 @@ const SERVICES_COLUMNS: Column<Service>[] = [
   { header: 'Nombre', render: (s) => <strong>{s.name}</strong> },
   { header: 'Precio', render: (s) => money(s.price) },
   { header: 'Tipo de cobro', render: (s) => CHARGE_TYPES[s.chargeType] ?? s.chargeType },
+  {
+    header: 'Cama extra',
+    render: (s) =>
+      s.isExtraBed ? <span className="badge text-bg-warning rounded-pill px-2 py-1">Cama extra</span> : '—',
+  },
   { header: 'Estado', render: (s) => <ActiveBadge active={s.isActive} activeLabel="Activo" inactiveLabel="Inactivo" /> },
 ];
 
@@ -25,6 +30,7 @@ interface ServiceForm {
   name: string;
   price: number;
   chargeType: ServiceChargeType;
+  isExtraBed: boolean;
   isActive: boolean;
 }
 
@@ -34,7 +40,7 @@ export function ServicesPage() {
   const { data, loading, error, reload } = useApi<{ data: Service[] }>('/services');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState<ServiceForm>({ name: '', price: 0, chargeType: 'PACK', isActive: true });
+  const [form, setForm] = useState<ServiceForm>({ name: '', price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Service | null>(null);
   const { error: apiError, handleError, clearError } = useApiError();
@@ -43,14 +49,14 @@ export function ServicesPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ name: '', price: 0, chargeType: 'PACK', isActive: true });
+    setForm({ name: '', price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
     clearError();
     setOpen(true);
   }
 
   function openEdit(item: Service) {
     setEditing(item);
-    setForm({ name: item.name, price: item.price, chargeType: item.chargeType, isActive: item.isActive });
+    setForm({ name: item.name, price: item.price, chargeType: item.chargeType, isExtraBed: item.isExtraBed, isActive: item.isActive });
     clearError();
     setOpen(true);
   }
@@ -59,7 +65,7 @@ export function ServicesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name: form.name.trim(), price: Number(form.price), chargeType: form.chargeType, isActive: form.isActive };
+      const body = { name: form.name.trim(), price: Number(form.price), chargeType: form.chargeType, isExtraBed: form.isExtraBed, isActive: form.isActive };
       if (editing) await api(`/services/${editing.id}`, { method: 'PUT', body });
       else await api('/services', { method: 'POST', body });
       setOpen(false);
@@ -155,8 +161,20 @@ export function ServicesPage() {
               ))}
             </select>
             <div className="form-text">
-              Por persona: se cobra personas × noches · Por día: se cobra por noche · Pack: cargo fijo.
+              Por persona: (personas + camas extras) × noches · Por día: se cobra por noche · Pack: cargo fijo. Marcá "Cama extra" en un servicio Por día para que se cobre por cama extra × noches.
             </div>
+          </div>
+          <div className="form-check mb-3">
+            <input
+              id="service-extra-bed"
+              className="form-check-input"
+              type="checkbox"
+              checked={form.isExtraBed}
+              onChange={(e) => setForm({ ...form, isExtraBed: e.target.checked, chargeType: e.target.checked ? 'PER_DAY' : form.chargeType })}
+            />
+            <label className="form-check-label" htmlFor="service-extra-bed">
+              Es una cama extra (se cobra por día)
+            </label>
           </div>
           <div className="form-check mb-3">
             <input id="service-active" className="form-check-input" type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />

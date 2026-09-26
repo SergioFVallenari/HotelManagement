@@ -18,7 +18,7 @@ import { createReservationSchema, updateReservationSchema } from './reservations
 const listInclude = {
   room: { select: { id: true, number: true, name: true, capacity: true, price: true } },
   guest: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
-  services: { include: { service: { select: { id: true, name: true, chargeType: true } } } },
+  services: { include: { service: { select: { id: true, name: true, chargeType: true, isExtraBed: true } } } },
   payments: true,
 } as const;
 
@@ -35,7 +35,7 @@ export async function listReservations(req: Request, res: Response): Promise<voi
 
   const where: Prisma.ReservationWhereInput = {
     ...(status === 'active'
-      ? { status: { in: ['RESERVED', 'CHECKED_IN'] } }
+      ? { status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] } }
       : status !== undefined
         ? { status: status as ReservationStatus }
         : {}),

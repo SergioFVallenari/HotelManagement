@@ -50,7 +50,9 @@ body {
 }
 
 .brand-icon {
-  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
 }
 
@@ -83,8 +85,12 @@ body {
 }
 
 .nav-icon {
-  width: 20px;
-  text-align: center;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .main {
@@ -568,4 +574,40 @@ body {
 
 .cal-swatch.cal-turnover {
   background-color: #f9a825;
+}
+
+/* ---------- Pagos online (MercadoPago) ---------- */
+.mp-payment-section {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff8e1;
+}
+
+.mp-link-code {
+  white-space: normal;
+  word-break: break-all;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 6px;
+}
+
+.payment-result {
+  max-width: 420px;
+  text-align: center;
+}
+
+.payment-result-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.payment-result-id {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  word-break: break-all;
+  margin: 12px 0 0;
 }

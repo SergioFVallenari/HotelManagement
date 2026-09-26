@@ -1,5 +1,19 @@
 import { useState } from 'react';
+import type { ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import {
+  IconBed,
+  IconBuildingSkyscraper,
+  IconCalendarCheck,
+  IconCalendarMonth,
+  IconDoor,
+  IconLayoutDashboard,
+  IconLogout,
+  IconMenu2,
+  IconSparkles,
+  IconUsers,
+  IconWallet,
+} from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 
 const COLLAPSED_KEY = 'layout.sidebar-collapsed';
@@ -12,14 +26,15 @@ function readCollapsed(): boolean {
   }
 }
 
-const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: '▤' },
-  { to: '/calendar', label: 'Calendario', icon: '◫' },
-  { to: '/rooms', label: 'Habitaciones', icon: '⌂' },
-  { to: '/reservations', label: 'Reservas', icon: '🗓' },
-  { to: '/guests', label: 'Huéspedes', icon: '👤' },
-  { to: '/room-types', label: 'Tipos de habitación', icon: '☰' },
-  { to: '/services', label: 'Servicios', icon: '✦' },
+const NAV_ITEMS: { to: string; label: string; icon: ComponentType<{ size?: number }>; adminOnly?: boolean }[] = [
+  { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
+  { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
+  { to: '/rooms', label: 'Habitaciones', icon: IconBed },
+  { to: '/reservations', label: 'Reservas', icon: IconCalendarCheck },
+  { to: '/guests', label: 'Huéspedes', icon: IconUsers },
+  { to: '/room-types', label: 'Tipos de habitación', icon: IconDoor },
+  { to: '/services', label: 'Servicios', icon: IconSparkles },
+  { to: '/settings', label: 'Pagos', icon: IconWallet, adminOnly: true },
 ];
 
 export function Layout() {
@@ -47,14 +62,14 @@ export function Layout() {
       <div className="sidebar-backdrop" onClick={() => setDrawerOpen(false)} />
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-icon">🏨</span>
+          <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
           <div>
             <strong>Hotel Manager</strong>
             <small>Panel de administración</small>
           </div>
         </div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === 'ADMIN').map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -62,7 +77,7 @@ export function Layout() {
               end={item.to === '/'}
               onClick={() => setDrawerOpen(false)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon"><item.icon size={20} /></span>
               <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
@@ -78,7 +93,7 @@ export function Layout() {
               aria-label={drawerOpen || collapsed ? 'Mostrar menú' : 'Ocultar menú'}
               aria-expanded={drawerOpen || !collapsed}
             >
-              ☰
+              <IconMenu2 size={18} />
             </button>
             <div className="topbar-title">Gestión de Alojamiento</div>
           </div>
@@ -88,6 +103,7 @@ export function Layout() {
               <small className="user-role">{user?.role === 'ADMIN' ? 'Administrador' : 'Recepción'}</small>
             </span>
             <button type="button" className="btn btn-outline-primary btn-sm" onClick={logout}>
+              <IconLogout size={16} className="me-1" />
               Salir
             </button>
           </div>

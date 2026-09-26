@@ -10,6 +10,7 @@ export interface Room {
   name: string | null;
   typeId: number;
   capacity: number;
+  maxExtraBeds: number;
   price: number;
   amenities: string[];
   isActive: boolean;
@@ -33,17 +34,20 @@ export interface Service {
   name: string;
   price: number;
   chargeType: ServiceChargeType;
+  isExtraBed: boolean;
   isActive: boolean;
 }
 
-export type ReservationStatus = 'RESERVED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
-export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER';
+export type ReservationStatus = 'PENDING' | 'RESERVED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
+export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'MERCADOPAGO';
 
 export interface ReservationServiceLine {
   id: number;
   serviceId: number;
   name: string | null;
   chargeType: ServiceChargeType | null;
+  isExtraBed: boolean;
+  personsCovered: number | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -75,6 +79,7 @@ export interface Reservation {
   checkIn: string;
   checkOut: string;
   persons: number;
+  extraBeds: number;
   status: ReservationStatus;
   checkedInAt: string | null;
   checkedOutAt: string | null;
@@ -83,6 +88,7 @@ export interface Reservation {
   refundAmount: number | null;
   refunded: boolean;
   refundedAt: string | null;
+  mpCheckoutUrl?: string | null;
   notes: string | null;
   room?: { id: number; number: string; name: string | null; capacity: number; price: number; type?: RoomType } | null;
   guest?: Guest | null;
@@ -94,6 +100,14 @@ export interface Reservation {
 export interface Company {
   id: number;
   name: string;
+}
+
+export interface MpConnection {
+  connected: boolean;
+  mpUserId?: string;
+  mpEmail?: string | null;
+  connectedAt?: string;
+  lastRefreshedAt?: string;
 }
 
 export interface LoginCompany {
@@ -110,6 +124,16 @@ export interface User {
   companyId: number;
 }
 
+export interface SummaryDailyPoint {
+  date: string;
+  revenue: number;
+  created: number;
+  checkIns: number;
+  checkOuts: number;
+  occupiedRoomNights: number;
+  occupancyPct: number;
+}
+
 export interface Summary {
   range: { from: string; to: string; days: number };
   occupancy: {
@@ -121,6 +145,7 @@ export interface Summary {
   revenue: { total: number; byMethod: Record<string, number> };
   reservationsPage: { created: number; checkIns: number; checkOuts: number };
   statusDistribution: { status: ReservationStatus; count: number }[];
+  daily: SummaryDailyPoint[];
 }
 
 export interface PageMeta {

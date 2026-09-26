@@ -2,6 +2,8 @@ import { badRequest } from './AppError.js';
 
 const DAY_MS = 86_400_000;
 
+export const HOTEL_TZ = 'America/Argentina/Buenos_Aires';
+
 export function parseDate(value: unknown, fieldName: string): Date {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw badRequest(`Fecha inválida para "${fieldName}" (se espera YYYY-MM-DD)`);
@@ -35,7 +37,14 @@ export function addDays(date: Date, days: number): Date {
   return d;
 }
 
-export function todayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+export function todayHotel(): Date {
+  const timeZone = process.env.HOTEL_TZ ?? HOTEL_TZ;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00.000Z`);
 }

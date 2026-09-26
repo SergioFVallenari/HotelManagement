@@ -8,6 +8,21 @@ export function dateShort(iso: string | null | undefined): string {
   return iso.slice(0, 10).split('-').reverse().join('-');
 }
 
+export const CHECK_IN_TIME = '11:00';
+export const CHECK_OUT_TIME = '10:00';
+export const HOTEL_TZ = 'America/Argentina/Buenos_Aires';
+
+export function hotelToday(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: HOTEL_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 export function dateTimeShort(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -17,6 +32,7 @@ export function dateTimeShort(iso: string | null | undefined): string {
 }
 
 export const RESERVATION_STATUS: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: 'Pago pendiente', cls: 'text-bg-warning' },
   RESERVED: { label: 'Reservada', cls: 'text-bg-primary' },
   CHECKED_IN: { label: 'Check-in', cls: 'text-bg-success' },
   CHECKED_OUT: { label: 'Check-out', cls: 'text-bg-secondary' },
@@ -27,6 +43,7 @@ export const PAYMENT_METHODS: Record<string, string> = {
   CASH: 'Efectivo',
   CARD: 'Tarjeta',
   TRANSFER: 'Transferencia',
+  MERCADOPAGO: 'MercadoPago',
 };
 
 export const CHARGE_TYPES: Record<string, string> = {

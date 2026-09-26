@@ -11,3 +11,14 @@ export function decToNum(value: unknown): number {
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+export type AmountFormat = 'decimal' | 'cents' | 'unknown';
+
+export function resolveAmount(
+  raw: number,
+  expected: number,
+): { amount: number; format: AmountFormat } {
+  if (round2(raw) === round2(expected)) return { amount: round2(expected), format: 'decimal' };
+  if (round2(raw / 100) === round2(expected)) return { amount: round2(expected), format: 'cents' };
+  return { amount: round2(raw), format: 'unknown' };
+}

@@ -11,6 +11,14 @@ function unknownToError(err: unknown): { statusCode: number; code: string; messa
   if (err && typeof err === 'object' && 'status' in err && typeof (err as { status?: unknown }).status === 'number') {
     const httpError = err as { status: number; type?: string; message?: string };
     if (httpError.status >= 400 && httpError.status < 500) {
+      const isBodyParseError = httpError.type === 'entity.parse.failed' || httpError.type === 'entity.too.large';
+      if (!isBodyParseError) {
+        console.error('[http] error 4xx no controlados', {
+          status: httpError.status,
+          type: httpError.type,
+          message: httpError.message,
+        });
+      }
       return {
         statusCode: httpError.status,
         code: httpError.type === 'entity.parse.failed' ? 'INVALID_JSON' : 'BAD_REQUEST',

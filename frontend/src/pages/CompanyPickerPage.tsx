@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { IconBuildingSkyscraper } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/Feedback';
 
@@ -29,7 +30,7 @@ export function CompanyPickerPage() {
     <div className="login-screen">
       <div className="login-card">
         <div className="login-brand">
-          <span className="brand-icon">🏨</span>
+          <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
           <h1>Elegí tu empresa</h1>
           <p>Ingresás a una de las empresas asociadas a tu usuario</p>
         </div>

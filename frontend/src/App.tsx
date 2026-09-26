@@ -11,12 +11,15 @@ import { ReservationsPage } from './pages/ReservationsPage';
 import { GuestsPage } from './pages/GuestsPage';
 import { RoomTypesPage } from './pages/RoomTypesPage';
 import { ServicesPage } from './pages/ServicesPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { PaymentResultPage } from './pages/PaymentResultPage';
 
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/login/company" element={<CompanyPickerPage />} />
+      <Route path="/pago" element={<PaymentResultPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -31,6 +34,7 @@ function AppRoutes() {
         <Route path="guests" element={<GuestsPage />} />
         <Route path="room-types" element={<RoomTypesPage />} />
         <Route path="services" element={<ServicesPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

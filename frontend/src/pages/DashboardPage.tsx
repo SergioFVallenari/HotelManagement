@@ -4,7 +4,21 @@ import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { StatusBadge } from '../components/Badge';
-import { RESERVATION_STATUS, dateShort, firstDayOfMonth, money, today } from '../lib/format';
+import { RESERVATION_STATUS, dateShort, firstDayOfMonth, money, PAYMENT_METHODS, today } from '../lib/format';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 export function DashboardPage() {
   const [from, setFrom] = useState(firstDayOfMonth());
@@ -120,7 +134,7 @@ export function DashboardPage() {
                     </div>
                   )}
                   <div className="mt-3">
-                    {['RESERVED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'].map((s) => (
+                    {['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'].map((s) => (
                       <p key={s} className="legend-row mb-1">
                         <StatusBadge status={s} /> {RESERVATION_STATUS[s]?.label}
                       </p>
@@ -140,7 +154,7 @@ export function DashboardPage() {
                       <tbody>
                         {Object.entries(summary.revenue.byMethod).map(([method, amount]) => (
                           <tr key={method}>
-                            <td>{method === 'CASH' ? 'Efectivo' : method === 'CARD' ? 'Tarjeta' : 'Transferencia'}</td>
+                            <td>{PAYMENT_METHODS[method] ?? method}</td>
                             <td className="text-end">{money(amount)}</td>
                           </tr>
                         ))}
@@ -150,6 +164,84 @@ export function DashboardPage() {
                         </tr>
                       </tbody>
                     </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3 mt-3">
+            <div className="col-lg-4">
+              <div className="card shadow-sm h-100">
+                <div className="card-header bg-white fw-semibold">Ocupación diaria</div>
+                <div className="card-body">
+                  {summary.daily.length === 0 ? (
+                    <p className="text-secondary mb-0">Sin datos en el período.</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <AreaChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="occGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#0d6efd" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#0d6efd" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 11 }} minTickGap={24} />
+                        <YAxis domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} width={36} />
+                        <Tooltip
+                          labelFormatter={(d) => dateShort(String(d))}
+                          formatter={(value) => [`${Number(value ?? 0)}%`, 'Ocupación']}
+                        />
+                        <Area type="monotone" dataKey="occupancyPct" name="Ocupación" stroke="#0d6efd" fill="url(#occGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="col-lg-4">
+              <div className="card shadow-sm h-100">
+                <div className="card-header bg-white fw-semibold">Ingresos por día</div>
+                <div className="card-body">
+                  {summary.daily.length === 0 ? (
+                    <p className="text-secondary mb-0">Sin datos en el período.</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 11 }} minTickGap={24} />
+                        <YAxis tickFormatter={(v: number) => `${v >= 1000 ? `${Math.round(v / 1000)}k` : v}`} tick={{ fontSize: 11 }} width={42} />
+                        <Tooltip
+                          labelFormatter={(d) => dateShort(String(d))}
+                          formatter={(value) => [money(Number(value ?? 0)), 'Ingresos']}
+                        />
+                        <Bar dataKey="revenue" name="Ingresos" fill="#20c997" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="col-lg-4">
+              <div className="card shadow-sm h-100">
+                <div className="card-header bg-white fw-semibold">Actividad diaria</div>
+                <div className="card-body">
+                  {summary.daily.length === 0 ? (
+                    <p className="text-secondary mb-0">Sin datos en el período.</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <LineChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 11 }} minTickGap={24} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={30} />
+                        <Tooltip labelFormatter={(d) => dateShort(String(d))} />
+                        <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+                        <Line type="monotone" dataKey="created" name="Creadas" stroke="#0d6efd" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkIns" name="Check-ins" stroke="#198754" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkOuts" name="Check-outs" stroke="#6f42c1" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   )}
                 </div>
               </div>

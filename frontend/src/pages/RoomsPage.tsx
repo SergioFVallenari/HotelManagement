@@ -17,6 +17,7 @@ const ROOMS_COLUMNS: Column<Room>[] = [
   { header: 'Nombre', render: (r) => r.name ?? '—' },
   { header: 'Tipo', render: (r) => r.type?.name ?? r.typeId },
   { header: 'Cap.', render: (r) => r.capacity },
+  { header: 'Camas extra máx.', render: (r) => r.maxExtraBeds },
   { header: 'Precio/noche', render: (r) => money(r.price) },
   { header: 'Amenities', className: 'text-secondary', render: (r) => (r.amenities.length ? r.amenities.join(' · ') : '—') },
   { header: 'Estado', render: (r) => <ActiveBadge active={r.isActive} /> },
@@ -29,12 +30,13 @@ interface RoomForm {
   name: string;
   typeId: number;
   capacity: number;
+  maxExtraBeds: number;
   price: number;
   amenities: string;
   isActive: boolean;
 }
 
-const emptyForm: RoomForm = { number: '', name: '', typeId: 0, capacity: 2, price: 0, amenities: '', isActive: true };
+const emptyForm: RoomForm = { number: '', name: '', typeId: 0, capacity: 2, maxExtraBeds: 0, price: 0, amenities: '', isActive: true };
 
 export function RoomsPage() {
   const { user } = useAuth();
@@ -83,6 +85,7 @@ export function RoomsPage() {
       name: room.name ?? '',
       typeId: room.typeId,
       capacity: room.capacity,
+      maxExtraBeds: room.maxExtraBeds,
       price: room.price,
       amenities: room.amenities.join(', '),
       isActive: room.isActive,
@@ -104,6 +107,7 @@ export function RoomsPage() {
         name: form.name.trim() || null,
         typeId: Number(form.typeId),
         capacity: Number(form.capacity),
+        maxExtraBeds: Number(form.maxExtraBeds),
         price: Number(form.price),
         amenities: form.amenities.split(',').map((a) => a.trim()).filter(Boolean),
         isActive: form.isActive,
@@ -185,16 +189,16 @@ export function RoomsPage() {
           <div className="card-body">
             <h3 className="h6 mb-3">Consultar disponibilidad por rango</h3>
             <div className="filter-row">
-              <label className="field-inline">
-                <span className="text-secondary small">Check-in</span>
+              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+                <span className="input-group-text">Check-in</span>
                 <input type="date" className="form-control" value={availDates.checkIn} onChange={(e) => setAvailDates({ ...availDates, checkIn: e.target.value })} />
-              </label>
-              <label className="field-inline">
-                <span className="text-secondary small">Check-out</span>
+              </div>
+              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+                <span className="input-group-text">Check-out</span>
                 <input type="date" className="form-control" value={availDates.checkOut} onChange={(e) => setAvailDates({ ...availDates, checkOut: e.target.value })} />
-              </label>
-              <label className="field-inline">
-                <span className="text-secondary small">Tipo</span>
+              </div>
+              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+                <span className="input-group-text">Tipo</span>
                 <select className="form-select" value={availTypeId} onChange={(e) => setAvailTypeId(e.target.value)}>
                   <option value="">Todos</option>
                   {types.map((t) => (
@@ -203,7 +207,7 @@ export function RoomsPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
               <button type="button" className="btn btn-primary" onClick={checkAvailability} disabled={availLoading}>
                 {availLoading ? 'Buscando…' : 'Consultar'}
               </button>
@@ -254,15 +258,15 @@ export function RoomsPage() {
         actions={
           isAdmin
             ? (room) => (
-                <div className="d-inline-flex gap-1">
-                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(room)}>
-                    Editar
-                  </button>
-                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(room); }}>
-                    Eliminar
-                  </button>
-                </div>
-              )
+              <div className="d-inline-flex gap-1">
+                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(room)}>
+                  Editar
+                </button>
+                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(room); }}>
+                  Eliminar
+                </button>
+              </div>
+            )
             : undefined
         }
       />
@@ -301,6 +305,11 @@ export function RoomsPage() {
             <div className="col-sm-6">
               <label className="form-label">Capacidad *</label>
               <input type="number" min={1} className="form-control" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} required />
+            </div>
+            <div className="col-sm-6">
+              <label className="form-label">Máx. camas extras</label>
+              <input type="number" min={0} max={10} className="form-control" value={form.maxExtraBeds} onChange={(e) => setForm({ ...form, maxExtraBeds: Number(e.target.value) })} />
+              <div className="form-text">0 = no se ofrecen camas extra en esta habitación.</div>
             </div>
             <div className="col-sm-6">
               <label className="form-label">Precio por noche *</label>

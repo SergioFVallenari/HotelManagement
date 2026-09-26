@@ -38,3 +38,17 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
     </div>
   );
 }
+
+export function Toast({ show, message, onHide }: { show: boolean; message: string; onHide?: () => void }) {
+  if (!show) return null;
+  return (
+    <div className="toast show align-items-center text-bg-success border-0 position-fixed top-0 start-50 translate-middle-x mt-3" style={{ zIndex: 1090 }} role="alert">
+      <div className="d-flex">
+        <div className="toast-body">{message}</div>
+        {onHide && (
+          <button type="button" className="btn-close btn-close-white me-2 m-auto" onClick={onHide} aria-label="Cerrar" />
+        )}
+      </div>
+    </div>
+  );
+}

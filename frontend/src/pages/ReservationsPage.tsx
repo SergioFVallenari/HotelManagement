@@ -13,6 +13,7 @@ import { dateShort, money } from '../lib/format';
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
   { value: 'active', label: 'Activas' },
+  { value: 'PENDING', label: 'Pago pendiente' },
   { value: 'RESERVED', label: 'Reservada' },
   { value: 'CHECKED_IN', label: 'Check-in' },
   { value: 'CHECKED_OUT', label: 'Check-out' },
