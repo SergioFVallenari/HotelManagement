@@ -3,6 +3,19 @@ export function money(value: number | null | undefined): string {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(n);
 }
 
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+export function clampAmount(n: number, max: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const rounded = round2(n);
+  if (rounded <= 0) return 0;
+  const cap = round2(max);
+  if (cap <= 0) return 0;
+  return rounded > cap ? cap : rounded;
+}
+
 export function dateShort(iso: string | null | undefined): string {
   if (!iso) return '—';
   return iso.slice(0, 10).split('-').reverse().join('-');
@@ -67,7 +80,13 @@ export function today(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
-
+export function lastDayOfMonth(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+}
 export function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + days);

@@ -45,8 +45,8 @@ export function CompanyPickerPage() {
               disabled={busyId !== null}
             >
               <span className="company-picker-name">{c.name}</span>
-              <span className={`badge ${c.role === 'ADMIN' ? 'text-bg-dark' : 'text-bg-light'}`}>
-                {c.role === 'ADMIN' ? 'Administrador' : 'Recepción'}
+              <span className={`badge ${c.role === 'RECEPCIONISTA' ? 'text-bg-light' : 'text-bg-dark'}`}>
+                {c.role === 'OWNER' ? 'Propietario' : c.role === 'ADMIN' ? 'Administrador' : 'Recepción'}
               </span>
             </button>
           ))}

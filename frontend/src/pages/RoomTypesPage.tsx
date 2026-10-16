@@ -11,7 +11,7 @@ import { useApiError } from '../components/pagination';
 
 export function RoomTypesPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = (user?.role === 'ADMIN' || user?.role === 'OWNER');
   const { data, loading, error, reload } = useApi<{ data: RoomType[] }>('/room-types');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RoomType | null>(null);

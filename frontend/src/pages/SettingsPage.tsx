@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
@@ -7,6 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Toast } from '../components/Feedback';
 import { useApiError } from '../components/pagination';
 import { dateTimeShort } from '../lib/format';
+import { APP_RETURN_TO, closeAuthTab, extractOauthQuery, isNative, openAuthTab } from '../lib/mpOauth';
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -19,6 +22,9 @@ export function SettingsPage() {
   const popupRef = useRef<Window | null>(null);
   const pollRef = useRef<number | null>(null);
   const popupResultRef = useRef(false);
+  // Marca que hay un Custom Tab abierto esperando el deep link, para que el
+  // watchdog de browserFinished sepa si todavia hay que hacer algo.
+  const nativeOauthRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -47,10 +53,18 @@ export function SettingsPage() {
         return;
       }
       setConnecting(false);
-      window.history.replaceState({}, '', window.location.pathname);
     },
     [reload, handleError],
   );
+
+  // applyOauthResult depende de handleError, que useApiError recrea en cada
+  // render. Si el efecto nativo lo tuviera en las deps se desarmaria y rearma
+  // los listeners de Capacitor en cada render, y el deep link se puede perder
+  // en el hueco entre el cleanup y el registro nuevo.
+  const applyOauthResultRef = useRef(applyOauthResult);
+  useEffect(() => {
+    applyOauthResultRef.current = applyOauthResult;
+  }, [applyOauthResult]);
 
   // El callback de MercadoPago responde en el popup con un postMessage y se
   // cierra solo. Aca lo recibimos y la ventana original muestra el resultado.
@@ -91,11 +105,68 @@ export function SettingsPage() {
   );
 
   useEffect(() => {
-    if (user?.role !== 'ADMIN') return;
+    if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') return;
     if (new URLSearchParams(window.location.search).has('mp')) {
       applyOauthResult(window.location.search);
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }, [user?.role, applyOauthResult]);
+
+  // En nativo el callback no vuelve a la SPA: finishOauth redirige a
+  // gestionhotel://oauth/settings?mp=..., el intent-filter de Android abre la
+  // app y Capacitor emite appUrlOpen. Si Android destruyo la app durante el
+  // OAuth el deep link abre el proceso nuevo y solo queda disponible como
+  // launch url, asi que cubrimos appUrlOpen + getLaunchUrl.
+  useEffect(() => {
+    if (!isNative || user?.role !== 'ADMIN' && user?.role !== 'OWNER') return;
+
+    const listeners: { remove: () => Promise<void> }[] = [];
+    let disposed = false;
+
+    function handleNativeUrl(url: string) {
+      const query = extractOauthQuery(url);
+      if (!query) return;
+      nativeOauthRef.current = false;
+      void closeAuthTab().catch(() => {});
+      applyOauthResultRef.current(query);
+    }
+
+    async function register(promise: Promise<{ remove: () => Promise<void> }>): Promise<void> {
+      const handle = await promise;
+      // El listener tiene que quedar registrado aunque el componente ya se haya
+      // desmontado, si no el deep link se pierde en un cleanup rapido.
+      if (disposed) void handle.remove();
+      else listeners.push(handle);
+    }
+
+    void register(App.addListener('appUrlOpen', ({ url }) => handleNativeUrl(url)));
+    void register(
+      Browser.addListener('browserFinished', () => {
+        // Red de seguridad: si el usuario cierra el Custom Tab sin completar el
+        // OAuth, o si el callback no vuelve por deep link (por ejemplo
+        // mp=error&reason=invalid_state, que no tiene returnTo firmado),
+        // recargamos el estado real en vez de dejar el boton en
+        // "Abriendo MercadoPago…" para siempre.
+        if (!nativeOauthRef.current) return;
+        nativeOauthRef.current = false;
+        setConnecting(false);
+        reload();
+      }),
+    );
+
+    // Cold start: si Android mato la app durante el OAuth, el deep link abre el
+    // proceso nuevo y este es el unico lugar del que sale la URL.
+    void App.getLaunchUrl()
+      .then((launchUrl) => {
+        if (!disposed && launchUrl) handleNativeUrl(launchUrl.url);
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      for (const listener of listeners) void listener.remove();
+    };
+  }, [user?.role, reload]);
 
   async function connect() {
     if (!connection || connection.connected) return;
@@ -104,8 +175,13 @@ export function SettingsPage() {
     try {
       const result = await api<{ data: { url: string } }>('/mp/auth-url', {
         method: 'POST',
-        body: { returnTo: window.location.origin },
+        body: { returnTo: isNative ? APP_RETURN_TO : window.location.origin },
       });
+      if (isNative) {
+        nativeOauthRef.current = true;
+        await openAuthTab(result.data.url);
+        return;
+      }
       // Sin noopener: el popup necesita window.opener para devolvernos el
       // resultado y cerrarse solo. Solo aceptamos mensajes de nuestra ventanita.
       const popup = window.open(result.data.url, '_blank', 'width=720,height=680');
@@ -116,6 +192,7 @@ export function SettingsPage() {
       }
       watchPopup(popup);
     } catch (err) {
+      nativeOauthRef.current = false;
       setConnecting(false);
       handleError(err);
     }
@@ -133,7 +210,7 @@ export function SettingsPage() {
     }
   }
 
-  if (user?.role !== 'ADMIN') {
+  if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') {
     return (
       <div className="text-center text-secondary py-5">
         Solo un administrador puede configurar los pagos online.
@@ -180,7 +257,6 @@ export function SettingsPage() {
               <div className="modal-actions">
                 <a
                   href="https://www.mercadopago.com.ar/home"
-                  target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-outline-secondary"
                 >

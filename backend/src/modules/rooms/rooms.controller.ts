@@ -138,17 +138,17 @@ export async function updateRoom(req: Request, res: Response): Promise<void> {
 export async function deleteRoom(req: Request, res: Response): Promise<void> {
   const id = parseIdParam(req.params.id);
 
-  const active = await prisma.reservation.count({
-    where: { roomId: id, status: { in: ['RESERVED', 'CHECKED_IN'] } },
-  });
-  if (active > 0) {
-    throw conflict('ROOM_HAS_RESERVATIONS', 'No se puede eliminar una habitación con reservas activas');
+  const room = await prisma.room.findUnique({ where: { id } });
+  if (!room) throw notFound('Habitación', id);
+
+  const reservations = await prisma.reservation.count({ where: { roomId: id } });
+  if (reservations > 0) {
+    throw conflict(
+      'ROOM_HAS_RESERVATIONS',
+      `La habitación tiene ${reservations} reserva(s) registradas y no se puede eliminar: desactivala en su lugar`,
+    );
   }
 
-  try {
-    await prisma.room.delete({ where: { id } });
-    res.status(204).send();
-  } catch {
-    throw notFound('Habitación', id);
-  }
+  await prisma.room.delete({ where: { id } });
+  res.status(204).send();
 }

@@ -25,6 +25,7 @@ export interface ReservationRow {
   refunded: boolean;
   refundedAt: Date | null;
   mpCheckoutUrl: string | null;
+  mpExpectedAmount: unknown;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -96,6 +97,7 @@ export function serializeReservation(row: ReservationRow) {
     refunded: row.refunded,
     refundedAt: row.refundedAt,
     mpCheckoutUrl: row.mpCheckoutUrl,
+    mpExpectedAmount: row.mpExpectedAmount === null || row.mpExpectedAmount === undefined ? null : decToNum(row.mpExpectedAmount),
     notes: row.notes,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -224,10 +226,28 @@ export async function createReservation(input: CreateReservationInput) {
   const roomPrice = decToNum(room.price);
   const total = round2(nights * roomPrice + round2(services.reduce((acc, s) => acc + s.quantity * decToNum(s.price), 0)));
   const code = generateCode();
-  const wantPaymentLink = input.generatePaymentLink === true;
+
+  const depositPayment = input.payment;
+  const deposit = depositPayment ? round2(depositPayment.amount) : 0;
+  if (deposit > total) {
+    throw badRequest(`El anticipo no puede superar el total de la reserva (total: ${total})`);
+  }
+  const depositViaMp = depositPayment?.method === 'MERCADOPAGO';
+  const orderAmount = depositViaMp ? deposit : round2(total - deposit);
+  const overlapWhere: Prisma.ReservationWhereInput = {
+    companyId,
+    roomId: input.roomId,
+    status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
+    AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
+  };
+  const wantPaymentLink = depositViaMp ? orderAmount > 0 : input.generatePaymentLink === true && orderAmount > 0;
 
   let order: { orderId: string; checkoutUrl: string } | undefined;
   if (wantPaymentLink) {
+    const occupied = await prisma.reservation.findFirst({ where: overlapWhere, select: { id: true, code: true } });
+    if (occupied) {
+      throw conflict('ROOM_OCCUPIED', `La habitación ya está ocupada en ese período (reserva ${occupied.code})`);
+    }
     let guestContext: OrderGuestData | undefined;
     if (input.guest) {
       guestContext = {
@@ -242,17 +262,12 @@ export async function createReservation(input: CreateReservationInput) {
       });
       if (existingGuest) guestContext = existingGuest;
     }
-    order = await createOrderForReservation({ companyId, code, amount: total, guest: guestContext, checkIn: input.checkIn });
+    order = await createOrderForReservation({ companyId, code, amount: orderAmount, guest: guestContext, checkIn: input.checkIn });
   }
 
   return prisma.$transaction(async (tx) => {
     const conflictReservation = await tx.reservation.findFirst({
-      where: {
-        companyId,
-        roomId: input.roomId,
-        status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
-        AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
-      },
+      where: overlapWhere,
       select: { id: true, code: true },
     });
     if (conflictReservation) {
@@ -286,7 +301,7 @@ export async function createReservation(input: CreateReservationInput) {
         extraBeds,
         notes: input.notes,
         status: wantPaymentLink ? 'PENDING' : 'RESERVED',
-        ...(order ? { mpOrderId: order.orderId, mpCheckoutUrl: order.checkoutUrl } : {}),
+        ...(order ? { mpOrderId: order.orderId, mpCheckoutUrl: order.checkoutUrl, mpExpectedAmount: orderAmount } : {}),
         services: {
           create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
         },
@@ -294,7 +309,19 @@ export async function createReservation(input: CreateReservationInput) {
       include: FULL_INCLUDE,
     });
 
-    return serializeReservation(reservation);
+    if (depositPayment === undefined || deposit <= 0 || depositViaMp) return serializeReservation(reservation);
+
+    await tx.payment.create({
+      data: {
+        reservationId: reservation.id,
+        amount: deposit,
+        method: depositPayment.method,
+        reference: depositPayment.reference,
+      },
+    });
+
+    const withDeposit = await tx.reservation.findUniqueOrThrow({ where: { id: reservation.id }, include: FULL_INCLUDE });
+    return serializeReservation(withDeposit);
   });
 }
 

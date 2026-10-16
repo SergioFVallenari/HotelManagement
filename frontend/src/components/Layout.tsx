@@ -11,6 +11,7 @@ import {
   IconLogout,
   IconMenu2,
   IconSparkles,
+  IconUserPlus,
   IconUsers,
   IconWallet,
 } from '@tabler/icons-react';
@@ -26,7 +27,12 @@ function readCollapsed(): boolean {
   }
 }
 
-const NAV_ITEMS: { to: string; label: string; icon: ComponentType<{ size?: number }>; adminOnly?: boolean }[] = [
+const NAV_ITEMS: {
+  to: string;
+  label: string;
+  icon: ComponentType<{ size?: number }>;
+  roles?: ('OWNER' | 'ADMIN')[];
+}[] = [
   { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
   { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
   { to: '/rooms', label: 'Habitaciones', icon: IconBed },
@@ -34,7 +40,8 @@ const NAV_ITEMS: { to: string; label: string; icon: ComponentType<{ size?: numbe
   { to: '/guests', label: 'Huéspedes', icon: IconUsers },
   { to: '/room-types', label: 'Tipos de habitación', icon: IconDoor },
   { to: '/services', label: 'Servicios', icon: IconSparkles },
-  { to: '/settings', label: 'Pagos', icon: IconWallet, adminOnly: true },
+  { to: '/users', label: 'Usuarios', icon: IconUserPlus, roles: ['OWNER', 'ADMIN'] },
+  { to: '/settings', label: 'Pagos', icon: IconWallet, roles: ['OWNER', 'ADMIN'] },
 ];
 
 export function Layout() {
@@ -69,7 +76,9 @@ export function Layout() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === 'ADMIN').map((item) => (
+          {NAV_ITEMS.filter(
+            (item) => !item.roles || (user?.role !== undefined && item.roles.includes(user.role as 'OWNER' | 'ADMIN')),
+          ).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -97,15 +106,37 @@ export function Layout() {
             </button>
             <div className="topbar-title">Gestión de Alojamiento</div>
           </div>
-          <div className="topbar-user">
-            <span className="user-name">
-              {user?.name ?? user?.username}
-              <small className="user-role">{user?.role === 'ADMIN' ? 'Administrador' : 'Recepción'}</small>
-            </span>
-            <button type="button" className="btn btn-outline-primary btn-sm" onClick={logout}>
-              <IconLogout size={16} className="me-1" />
-              Salir
-            </button>
+          <div className="topbar-user dropdown">
+            <div
+              className="d-flex flex-column align-items-end text-end dropdown-toggle"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              role="button"
+              style={{ cursor: 'pointer' }}
+            >
+              <span className="user-name mb-0">
+                {user?.name ?? user?.username}
+              </span>
+              <small className="user-role mb-0">
+                {user?.role === 'OWNER' ? 'Propietario' : user?.role === 'ADMIN' ? 'Administrador' : 'Recepción'}
+              </small>
+            </div>
+            <ul className="dropdown-menu dropdown-menu-end">
+              <li>
+                <NavLink className="dropdown-item" to="/perfil" onClick={() => setDrawerOpen(false)}>
+                  Mi perfil
+                </NavLink>
+              </li>
+              <li>
+                <hr className="dropdown-divider" />
+              </li>
+              <li>
+                <button type="button" className="dropdown-item" onClick={logout}>
+                  <IconLogout size={16} className="me-2" />
+                  Cerrar sesión
+                </button>
+              </li>
+            </ul>
           </div>
         </header>
         <main className="content">

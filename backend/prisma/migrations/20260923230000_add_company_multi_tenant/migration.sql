@@ -8,9 +8,6 @@ CREATE TABLE "Company" (
     CONSTRAINT "Company_pkey" PRIMARY KEY ("id")
 );
 
--- Insert a default company and backfill all existing rows into it.
-INSERT INTO "Company" ("id", "name", "createdAt", "updatedAt") VALUES (1, 'Hotel Principal', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-SELECT setval(pg_get_serial_sequence('"Company"', 'id'), (SELECT MAX("id") FROM "Company"));
 
 -- Add the tenant column to every scoped model (nullable first, to backfill existing data).
 ALTER TABLE "User" ADD COLUMN "companyId" INTEGER;

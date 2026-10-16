@@ -15,6 +15,12 @@ export const serviceInputSchema = z.object({
   personsCovered: z.number().int().min(1).max(100).optional().nullable(),
 });
 
+export const depositInputSchema = z.object({
+  amount: z.number().positive(),
+  method: z.enum(['CASH', 'CARD', 'TRANSFER', 'MERCADOPAGO']),
+  reference: z.string().max(100).optional().nullable(),
+});
+
 export const createReservationSchema = z
   .object({
     roomId: z.number().int().positive(),
@@ -27,6 +33,7 @@ export const createReservationSchema = z
     services: z.array(serviceInputSchema).default([]),
     notes: z.string().max(500).optional().nullable(),
     generatePaymentLink: z.boolean().optional(),
+    payment: depositInputSchema.optional(),
   })
   .refine((data) => data.guestId !== undefined || data.guest !== undefined, {
     message: 'Debe indicar guestId o datos del huésped',

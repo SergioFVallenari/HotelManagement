@@ -4,7 +4,7 @@ import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { StatusBadge } from '../components/Badge';
-import { RESERVATION_STATUS, dateShort, firstDayOfMonth, money, PAYMENT_METHODS, today } from '../lib/format';
+import { dateShort, firstDayOfMonth, lastDayOfMonth, money, PAYMENT_METHODS } from '../lib/format';
 import {
   Area,
   AreaChart,
@@ -22,8 +22,8 @@ import {
 
 export function DashboardPage() {
   const [from, setFrom] = useState(firstDayOfMonth());
-  const [to, setTo] = useState(today());
-  const [query, setQuery] = useState(buildQuery({ from: firstDayOfMonth(), to: today() }));
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [query, setQuery] = useState(buildQuery({ from: firstDayOfMonth(), to: lastDayOfMonth() }));
   const { data, loading, error, reload } = useApi<{ data: Summary }>(`/summary${query}`);
   const summary = data?.data;
 
@@ -113,12 +113,16 @@ export function DashboardPage() {
                 <div className="card-header bg-white fw-semibold">Distribución por estado</div>
                 <div className="card-body">
                   {summary.statusDistribution.length === 0 ? (
-                    <p className="text-secondary mb-0">Sin reservas activas en el período.</p>
+                    <p className="text-secondary mb-0">Sin reservas en el período.</p>
                   ) : (
                     <div className="status-bars">
                       {(() => {
-                        const maxCount = Math.max(...summary.statusDistribution.map((e) => e.count), 1);
-                        return summary.statusDistribution.map((entry) => (
+                        const order = ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'];
+                        const sorted = [...summary.statusDistribution].sort(
+                          (a, b) => order.indexOf(a.status) - order.indexOf(b.status),
+                        );
+                        const maxCount = Math.max(...sorted.map((e) => e.count), 1);
+                        return sorted.map((entry) => (
                           <div className="status-bar-row d-flex align-items-center gap-3" key={entry.status}>
                             <StatusBadge status={entry.status} />
                             <span className="bar-track">
@@ -133,13 +137,6 @@ export function DashboardPage() {
                       })()}
                     </div>
                   )}
-                  <div className="mt-3">
-                    {['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'].map((s) => (
-                      <p key={s} className="legend-row mb-1">
-                        <StatusBadge status={s} /> {RESERVATION_STATUS[s]?.label}
-                      </p>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>

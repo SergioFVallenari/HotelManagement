@@ -16,29 +16,61 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar'
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const onCancelRef = useRef(onCancel);
+  const openRef = useRef(open);
+  const shownRef = useRef(false);
+  const hideRequestedRef = useRef(false);
   useEffect(() => {
     onCancelRef.current = onCancel;
-  }, [onCancel]);
+    openRef.current = open;
+  }, [onCancel, open]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const instance = BsModal.getOrCreateInstance(el);
     if (open) {
+      hideRequestedRef.current = false;
+      shownRef.current = true;
       instance.show();
-    } else {
-      instance.hide();
+      return;
     }
+    // hide() es no-op mientras la transición de apertura sigue en curso:
+    // esperar a shown.bs.modal y ahí sí ocultar.
+    const onShown = () => {
+      if (!openRef.current) {
+        hideRequestedRef.current = true;
+        instance.hide();
+      }
+    };
+    el.addEventListener('shown.bs.modal', onShown);
+    hideRequestedRef.current = true;
+    instance.hide();
+    return () => el.removeEventListener('shown.bs.modal', onShown);
   }, [open]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const handler = () => onCancelRef.current();
+    const handler = () => {
+      shownRef.current = false;
+      // El cierre lo pidió el padre con open=false: no renotificar onCancel.
+      if (hideRequestedRef.current) {
+        hideRequestedRef.current = false;
+        return;
+      }
+      onCancelRef.current();
+    };
     el.addEventListener('hidden.bs.modal', handler);
     return () => {
       el.removeEventListener('hidden.bs.modal', handler);
+      // dispose() no libera el scroll-lock que show() puso en <body>: si el
+      // componente se desmonta con el modal abierto hay que sacarlo a mano.
       BsModal.getInstance(el)?.dispose();
+      if (shownRef.current) {
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }
     };
   }, []);
 

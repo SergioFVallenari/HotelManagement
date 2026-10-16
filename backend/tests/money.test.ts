@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { resolveAmount } from '../src/lib/money.js';
+import { clampAmount, resolveAmount } from '../src/lib/money.js';
 
 describe('resolveAmount', () => {
   it('acepta el formato decimal que manda MercadoPago en las ordenes online', () => {
@@ -37,5 +37,38 @@ describe('resolveAmount', () => {
 
   it('propaga importes negativos tal cual llegan', () => {
     assert.deepEqual(resolveAmount(-200, -200), { amount: -200, format: 'decimal' });
+  });
+});
+
+describe('clampAmount', () => {
+  it('deja pasar un importe menor al tope', () => {
+    assert.equal(clampAmount(100, 1000), 100);
+    assert.equal(clampAmount(999.99, 1000), 999.99);
+  });
+
+  it('acepta exactamente el tope', () => {
+    assert.equal(clampAmount(1000, 1000), 1000);
+  });
+
+  it('recorta un importe que supera el tope', () => {
+    assert.equal(clampAmount(1500, 1000), 1000);
+    assert.equal(clampAmount(1000.01, 1000), 1000);
+  });
+
+  it('redondea a dos decimales antes de comparar', () => {
+    assert.equal(clampAmount(333.333, 1000), 333.33);
+    assert.equal(clampAmount(1000.004, 1000), 1000);
+    assert.equal(clampAmount(1000.006, 999.99), 999.99);
+  });
+
+  it('devuelve cero ante importes negativos o no finitos', () => {
+    assert.equal(clampAmount(-50, 1000), 0);
+    assert.equal(clampAmount(Number.NaN, 1000), 0);
+    assert.equal(clampAmount(Number.POSITIVE_INFINITY, 1000), 0);
+  });
+
+  it('devuelve cero cuando el tope no permite cobrar nada', () => {
+    assert.equal(clampAmount(100, 0), 0);
+    assert.equal(clampAmount(100, -10), 0);
   });
 });

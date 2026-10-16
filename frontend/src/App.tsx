@@ -12,6 +12,8 @@ import { GuestsPage } from './pages/GuestsPage';
 import { RoomTypesPage } from './pages/RoomTypesPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { UsersPage } from './pages/UsersPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { PaymentResultPage } from './pages/PaymentResultPage';
 
 function AppRoutes() {
@@ -34,6 +36,8 @@ function AppRoutes() {
         <Route path="guests" element={<GuestsPage />} />
         <Route path="room-types" element={<RoomTypesPage />} />
         <Route path="services" element={<ServicesPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route path="perfil" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

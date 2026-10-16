@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildExternalReference, buildOrderPayload, toEventDate } from '../src/modules/mercadopago/mp.order.js';
+import {
+  buildExternalReference,
+  buildOrderPayload,
+  outstandingBalance,
+  toEventDate,
+} from '../src/modules/mercadopago/mp.order.js';
 
 const APP_URL = 'https://app.example.com';
+const NOTIFICATION_URL = 'https://api.example.com/api/mp/webhook';
 
 describe('toEventDate', () => {
   it('convierte la fecha de check-in a date-time ISO 8601', () => {
@@ -30,7 +36,13 @@ describe('buildExternalReference', () => {
 });
 
 describe('buildOrderPayload', () => {
-  const base = { companyId: 1, code: 'RSV-ABC123', amount: 1500.5, appUrl: APP_URL };
+  const base = {
+    companyId: 1,
+    code: 'RSV-ABC123',
+    amount: 1500.5,
+    appUrl: APP_URL,
+    notificationUrl: NOTIFICATION_URL,
+  };
 
   it('arma el payload que MercadoPago acepta para_orders', () => {
     const payload = buildOrderPayload({
@@ -82,6 +94,7 @@ describe('buildOrderPayload', () => {
     assert.equal(online.failure_url, `${APP_URL}/pago?reservation=RSV-ABC123`);
     assert.equal(online.pending_url, `${APP_URL}/pago?reservation=RSV-ABC123`);
     assert.equal(online.auto_return, 'approved');
+    assert.equal(online.callback_url, NOTIFICATION_URL);
   });
 
   it('tolera appUrl con barra final', () => {
@@ -94,5 +107,40 @@ describe('buildOrderPayload', () => {
   it('serializa sin claves con valor undefined', () => {
     const payload = buildOrderPayload({ ...base, guest: null, checkIn: null });
     assert.equal(JSON.stringify(payload).includes('undefined'), false);
+  });
+});
+
+describe('outstandingBalance', () => {
+  it('devuelve el total cuando no hay pagos', () => {
+    assert.equal(outstandingBalance({ total: 1500, payments: [] }), 1500);
+  });
+
+  it('descuota los pagos de cualquier medio, incluida la seña de MercadoPago', () => {
+    assert.equal(
+      outstandingBalance({
+        total: 1500,
+        payments: [
+          { method: 'CASH', amount: 225 },
+          { method: 'MERCADOPAGO', amount: 75 },
+        ],
+      }),
+      1200,
+    );
+  });
+
+  it('evita el doble cobro cuando ya se pago una seña por MercadoPago', () => {
+    assert.equal(
+      outstandingBalance({ total: 10, payments: [{ method: 'MERCADOPAGO', amount: 1.5 }] }),
+      8.5,
+    );
+  });
+
+  it('nunca devuelve un saldo negativo cuando los pagos cubren el total', () => {
+    assert.equal(outstandingBalance({ total: 1500, payments: [{ method: 'CASH', amount: 1500 }] }), 0);
+    assert.equal(outstandingBalance({ total: 1500, payments: [{ method: 'CASH', amount: 1800 }] }), 0);
+  });
+
+  it('redondea la suma de pagos antes de restar, igual que el balance que muestra la UI', () => {
+    assert.equal(outstandingBalance({ total: 10, payments: [{ method: 'CASH', amount: 1.505 }] }), 8.49);
   });
 });

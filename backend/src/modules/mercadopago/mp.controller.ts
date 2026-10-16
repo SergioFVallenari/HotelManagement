@@ -6,6 +6,7 @@ import { getTenantId } from '../../lib/tenant.js';
 import { parseIdParam } from '../../lib/pagination.js';
 import { getReservation, serializeReservation } from '../reservations/reservations.service.js';
 import { createOrderForReservation } from './mp.checkout.js';
+import { outstandingBalance } from './mp.order.js';
 import {
   buildAuthorizeUrl,
   connectAccount,
@@ -17,10 +18,8 @@ import {
   verifyOauthState,
 } from './mp.oauth.js';
 import { authUrlSchema, regenerateSchema } from './mp.schema.js';
+import { buildReturnUrl, resolveReturnTo } from './mp.return-to.js';
 import { processWebhook } from './mp.webhook.js';
-
-const SAFE_RETURN_TO = /^(https?:\/\/[^/]+|capacitor:\/\/[^/]+)$/;
-const fallbackOrigin = (): string => env.corsOrigins[0] ?? 'http://localhost:5173';
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -50,8 +49,8 @@ function httpOrigin(url: string): string | null {
 // Si no hay ninguna ventana que la haya abierto, el flujo no vino de un popup
 // (o el navegador lo bloqueo) y redirigimos al igual que antes.
 function finishOauth(res: Response, returnTo: string, query: string): void {
-  const origin = SAFE_RETURN_TO.test(returnTo) ? returnTo : fallbackOrigin();
-  const target = `${origin.replace(/\/+$/, '')}/settings?${query}`;
+  const origin = resolveReturnTo(returnTo, env.corsOrigins);
+  const target = buildReturnUrl(origin, query);
   const appOrigin = httpOrigin(target);
 
   res.status(200).type('html').send(`<!doctype html>
@@ -114,7 +113,7 @@ export async function oauthCallbackHandler(req: Request, res: Response): Promise
     finishOauth(res, '', 'mp=error&reason=invalid_state');
     return;
   }
-  const returnTo = SAFE_RETURN_TO.test(statePayload.returnTo) ? statePayload.returnTo : fallbackOrigin();
+  const returnTo = resolveReturnTo(statePayload.returnTo, env.corsOrigins);
 
   if (typeof query.error === 'string') {
     finishOauth(res, returnTo, 'mp=error&reason=denied');
@@ -163,17 +162,22 @@ export async function createReservationOrderHandler(req: Request, res: Response)
     return;
   }
 
+  const amount = outstandingBalance({ total: reservation.totals.total, payments: reservation.payments });
+  if (amount <= 0) {
+    throw conflict('INVALID_STATE', 'La reserva no tiene saldo pendiente para cobrar');
+  }
+
   const result = await createOrderForReservation({
     companyId,
     code: reservation.code,
-    amount: reservation.totals.total,
+    amount,
     guest: reservation.guest,
     checkIn: reservation.checkIn,
   });
 
   const updated = await prisma.reservation.update({
     where: { id },
-    data: { mpOrderId: result.orderId, mpCheckoutUrl: result.checkoutUrl },
+    data: { mpOrderId: result.orderId, mpCheckoutUrl: result.checkoutUrl, mpExpectedAmount: amount },
     include: {
       room: { include: { type: true } },
       guest: true,

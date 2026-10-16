@@ -26,3 +26,6 @@ export const notFound = (resource: string, id?: number | string) =>
 
 export const conflict = (code: string, message: string, details?: unknown) =>
   new AppError(409, code, message, details);
+
+export const rateLimitExceeded = (message = 'Demasiadas solicitudes. Intentá nuevamente más tarde.') =>
+  new AppError(429, 'RATE_LIMIT_EXCEEDED', message);

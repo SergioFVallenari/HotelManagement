@@ -27,7 +27,18 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Shell scripts
 *.sh
+# Excepcion: los de infraestructura/produccion. Son los unicos que no se pueden
+# regenerar solos, asi que si quedan ignorados un clone nuevo no puede desplegar
+# ni entrar a la NAT. Los helpers de dev (up-all.sh, db-up.sh, ...) siguen fuera.
+!backend/deploy.sh
+!backend/nat-setup.sh
 
 # Capacitor native projects
-android/
+# Ahora SI se versiona el proyecto Android: es donde viven los cambios nativos
+# que la app necesita (deep links, cookies de terceros) y sin esto un clone nuevo
+# no puede ni buildear el APK. Los .gitignore anidados que genera Capacitor
+# siguen mandando: build/, .gradle/, local.properties, *.apk, assets/public y
+# los capacitor.*.json generated quedan afuera.
+!frontend/android/

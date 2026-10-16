@@ -9,6 +9,7 @@ interface AuthState {
   pendingCompanies: LoginCompany[] | null;
   login: (username: string, password: string) => Promise<void>;
   selectCompany: (companyId: number) => Promise<void>;
+  switchCompany: (companyId: number) => Promise<void>;
   cancelLogin: () => void;
   logout: () => void;
 }
@@ -60,14 +61,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingCredentials(null);
   }, []);
 
+  const switchCompany = useCallback(async (companyId: number) => {
+    const result = await api<{ user: User }>('/auth/switch-company', {
+      method: 'POST',
+      body: { companyId },
+    });
+    setUser(result.user);
+  }, []);
+
   const logout = useCallback(() => {
     api('/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, pendingCompanies, login, selectCompany, cancelLogin, logout }),
-    [user, loading, pendingCompanies, login, selectCompany, cancelLogin, logout],
+    () => ({ user, loading, pendingCompanies, login, selectCompany, switchCompany, cancelLogin, logout }),
+    [user, loading, pendingCompanies, login, selectCompany, switchCompany, cancelLogin, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

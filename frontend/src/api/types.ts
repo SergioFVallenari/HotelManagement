@@ -110,18 +110,32 @@ export interface MpConnection {
   lastRefreshedAt?: string;
 }
 
+export type UserRole = 'OWNER' | 'ADMIN' | 'RECEPCIONISTA';
+
 export interface LoginCompany {
   id: number;
   name: string;
-  role: 'ADMIN' | 'RECEPCIONISTA';
+  role: UserRole;
 }
 
 export interface User {
   id: number;
   username: string;
-  role: 'ADMIN' | 'RECEPCIONISTA';
+  role: UserRole;
   name?: string | null;
+  email?: string | null;
   companyId: number;
+}
+
+export interface UserListItem {
+  id: number;
+  username: string;
+  name?: string | null;
+  email?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  role: UserRole;
+  companyName?: string;
 }
 
 export interface SummaryDailyPoint {

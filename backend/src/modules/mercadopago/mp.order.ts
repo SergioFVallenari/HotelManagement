@@ -1,4 +1,4 @@
-import { round2 } from '../../lib/money.js';
+import { decToNum, round2 } from '../../lib/money.js';
 
 export const MP_CURRENCY = 'ARS';
 
@@ -17,6 +17,12 @@ export interface OrderPayloadInput {
   guest?: OrderGuestData | null;
   checkIn?: string | null;
   appUrl: string;
+  notificationUrl: string;
+}
+
+export interface PaymentSnapshot {
+  total: number;
+  payments: { method: string; amount: number }[];
 }
 
 export function buildExternalReference(companyId: number, code: string): string {
@@ -28,14 +34,20 @@ export function toEventDate(checkIn?: string | null): string | undefined {
   return `${checkIn}T00:00:00${MP_UTC_OFFSET}`;
 }
 
-function buildOnlineConfig(code: string, appUrl: string): Record<string, unknown> {
+function buildOnlineConfig(code: string, appUrl: string, notificationUrl: string): Record<string, unknown> {
   const buyerUrl = `${appUrl.replace(/\/+$/, '')}/pago?reservation=${encodeURIComponent(code)}`;
   return {
     success_url: buyerUrl,
     failure_url: buyerUrl,
     pending_url: buyerUrl,
     auto_return: 'approved',
+    callback_url: notificationUrl,
   };
+}
+
+export function outstandingBalance(snapshot: PaymentSnapshot): number {
+  const amountPaid = snapshot.payments.reduce((acc, p) => acc + decToNum(p.amount), 0);
+  return Math.max(0, round2(snapshot.total - round2(amountPaid)));
 }
 
 export function buildOrderPayload(opts: OrderPayloadInput): Record<string, unknown> {
@@ -59,7 +71,7 @@ export function buildOrderPayload(opts: OrderPayloadInput): Record<string, unkno
     ],
     ...(opts.guest?.email ? { payer: { email: opts.guest.email } } : {}),
     config: {
-      online: buildOnlineConfig(opts.code, opts.appUrl),
+      online: buildOnlineConfig(opts.code, opts.appUrl, opts.notificationUrl),
     },
   };
 }

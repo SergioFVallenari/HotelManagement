@@ -1,27 +1,43 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { CalendarData, CalendarCell, Reservation } from '../api/types';
+import type { CalendarCell, CalendarData, CalendarRoom, Reservation } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { Modal } from '../components/Modal';
 import { ReservationDetail } from '../components/ReservationDetail';
 import { useApiError } from '../components/pagination';
 
+const WEEKDAY_HEADERS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
+
+const MAX_CHIPS = 2;
+
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function startOfMonth(year: number, month: number): string {
-  return `${year}-${pad(month + 1)}-01`;
+function isoOf(year: number, month: number, day: number): string {
+  return `${year}-${pad(month + 1)}-${pad(day)}`;
 }
 
-function endOfMonth(year: number, month: number): string {
-  const last = new Date(year, month + 1, 0).getDate();
-  return `${year}-${pad(month + 1)}-${pad(last)}`;
+function daysSinceMonday(date: Date): number {
+  return (date.getDay() + 6) % 7;
 }
 
-function weekdayLabel(year: number, month: number, day: number): string {
-  return new Date(year, month, day).toLocaleDateString('es-AR', { weekday: 'narrow' });
+function monthGrid(year: number, month: number): string[][] {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const cursor = new Date(year, month, 1 - daysSinceMonday(first));
+  const weeks: string[][] = [];
+  while (cursor <= last) {
+    const week: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      week.push(isoOf(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+  return weeks;
 }
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
@@ -40,21 +56,41 @@ function cellTooltip(cell: CalendarCell, day: string): string {
     .join('\n');
 }
 
+function roomSubtitle(room: CalendarRoom): string {
+  return [room.name, room.typeName].filter(Boolean).join(' · ');
+}
+
 export function CalendarPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
-  const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const todayIso = isoOf(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const from = startOfMonth(year, month);
-  const to = endOfMonth(year, month);
+  const weeks = monthGrid(year, month);
+  const from = weeks[0][0];
+  const to = weeks[weeks.length - 1][6];
   const { data, loading, error, reload } = useApi<{ data: CalendarData }>(`/calendar${buildQuery({ from, to })}`);
   const cal = data?.data;
+
+  const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+  const activeRoom = cal?.rooms.find((room) => room.id === activeRoomId) ?? cal?.rooms[0];
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const [detailId, setDetailId] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [selected, setSelected] = useState<Reservation | null>(null);
   const { error: apiError, handleError, clearError } = useApiError();
+
+  const cellsByDay = new Map<string, CalendarCell>();
+  if (cal && activeRoom) {
+    activeRoom.cells.forEach((cell, i) => cellsByDay.set(cal.days[i], cell));
+  }
+
+  const activeIndex = cal?.rooms.findIndex((room) => room.id === activeRoom?.id) ?? -1;
+
+  useEffect(() => {
+    tabRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeIndex]);
 
   function changeMonth(offset: number) {
     const d = new Date(year, month + offset, 1);
@@ -66,6 +102,20 @@ export function CalendarPage() {
     const n = new Date();
     setYear(n.getFullYear());
     setMonth(n.getMonth());
+  }
+
+  function onTabKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const rooms = cal?.rooms ?? [];
+    if (rooms.length === 0) return;
+    let next: number;
+    if (e.key === 'ArrowRight') next = (index + 1) % rooms.length;
+    else if (e.key === 'ArrowLeft') next = (index - 1 + rooms.length) % rooms.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = rooms.length - 1;
+    else return;
+    e.preventDefault();
+    setActiveRoomId(rooms[next].id);
+    tabRefs.current[next]?.focus();
   }
 
   async function openDetail(id: number) {
@@ -134,63 +184,94 @@ export function CalendarPage() {
 
       <LoadState loading={loading} error={error} onRetry={reload} empty={cal?.rooms.length === 0} />
 
-      {cal && cal.rooms.length > 0 && (
+      {cal && cal.rooms.length > 0 && activeRoom && (
         <div className="card shadow-sm">
-          <div className="card-body p-0">
-            <div className="calendar-scroll">
-              <table className="table table-bordered table-sm calendar-table mb-0">
+          <div className="card-header p-0 cal-tabs-wrap">
+            <ul className="nav nav-tabs cal-tabs" role="tablist" aria-label="Habitaciones">
+              {cal.rooms.map((room, index) => {
+                const active = room.id === activeRoom.id;
+                return (
+                  <li className="nav-item" key={room.id} role="presentation">
+                    <button
+                      type="button"
+                      role="tab"
+                      id={`cal-tab-${room.id}`}
+                      aria-selected={active}
+                      aria-controls={`cal-panel-${room.id}`}
+                      tabIndex={active ? 0 : -1}
+                      ref={(el) => {
+                        tabRefs.current[index] = el;
+                      }}
+                      className={`nav-link ${active ? 'active' : ''}`}
+                      onClick={() => setActiveRoomId(room.id)}
+                      onKeyDown={(e) => onTabKeyDown(e, index)}
+                    >
+                      {room.number}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div
+            className="card-body"
+            role="tabpanel"
+            id={`cal-panel-${activeRoom.id}`}
+            aria-labelledby={`cal-tab-${activeRoom.id}`}
+          >
+            <div className="d-flex align-items-baseline gap-2 mb-2">
+              <span className="fw-semibold">Habitación {activeRoom.number}</span>
+              {roomSubtitle(activeRoom) && <small className="text-secondary">{roomSubtitle(activeRoom)}</small>}
+            </div>
+
+            <div className="table-responsive">
+              <table className="table table-bordered cal-month mb-0">
                 <thead>
                   <tr>
-                    <th className="cal-corner">Habitación</th>
-                    {cal.days.map((iso) => {
-                      const [, m, d] = iso.split('-').map(Number);
-                      const isToday = iso === todayIso;
-                      const weekday = new Date(year, m - 1, d).getDay();
-                      const isWeekend = weekday === 0 || weekday === 6;
-                      return (
-                        <th
-                          key={iso}
-                          className={`cal-day-head ${isWeekend ? 'cal-weekend' : ''} ${isToday ? 'cal-today-head' : ''}`}
-                        >
-                          <span className="cal-weekday">{weekdayLabel(year, m - 1, d)}</span>
-                          <span className="cal-daynum">{d}</span>
-                        </th>
-                      );
-                    })}
+                    {WEEKDAY_HEADERS.map((label, i) => (
+                      <th key={label} scope="col" className={`cal-weekend-head ${i > 4 ? 'cal-weekend' : ''}`}>
+                        {label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {cal.rooms.map((room) => (
-                    <tr key={room.id}>
-                      <td className="cal-room-col">
-                        <strong>{room.number}</strong>
-                        <small>{room.name ?? room.typeName ?? ''}</small>
-                      </td>
-                      {room.cells.map((cell, i) => {
-                        const dayIso = cal.days[i];
+                  {weeks.map((week) => (
+                    <tr key={week[0]}>
+                      {week.map((dayIso) => {
+                        const dayNumber = Number(dayIso.slice(8, 10));
+                        const inMonth = dayIso.slice(0, 7) === isoOf(year, month, 1).slice(0, 7);
                         const isToday = dayIso === todayIso;
-                        const cls = STATUS_LABEL[cell.status]?.cls ?? 'cal-available';
-                        const clickable = cell.status === 'OCCUPIED' && cell.reservations.length > 0;
+                        const weekday = daysSinceMonday(new Date(Number(dayIso.slice(0, 4)), Number(dayIso.slice(5, 7)) - 1, dayNumber));
+                        const cell = cellsByDay.get(dayIso);
+                        const cls = cell ? (STATUS_LABEL[cell.status]?.cls ?? 'cal-available') : 'cal-available';
+                        const clickable = Boolean(cell && cell.reservations.length > 0);
+                        const chips = clickable ? cell!.reservations.slice(0, MAX_CHIPS) : [];
+                        const overflow = (cell?.reservations.length ?? 0) - chips.length;
                         return (
                           <td
                             key={dayIso}
-                            className={`cal-cell ${cls} ${isToday ? 'cal-today' : ''} ${clickable ? 'cal-clickable' : ''}`}
-                            title={cellTooltip(cell, dayIso)}
-                            role={clickable ? 'button' : undefined}
-                            tabIndex={clickable ? 0 : undefined}
-                            onClick={clickable ? () => openDetail(cell.reservations[0].id) : undefined}
-                            onKeyDown={
-                              clickable
-                                ? (e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      openDetail(cell.reservations[0].id);
-                                    }
-                                  }
-                                : undefined
-                            }
+                            className={`cal-day ${cls} ${weekday > 4 ? 'cal-weekend' : ''} ${inMonth ? '' : 'cal-outside'} ${isToday ? 'cal-today' : ''}`}
+                            title={cell ? cellTooltip(cell, dayIso) : 'Disponible'}
                           >
-                            {cell.status === 'TURNOVER' ? <span className="cal-turnover-mark" /> : null}
+                            <span className="cal-daynum">{dayNumber}</span>
+                            {chips.map((r) => (
+                              <button
+                                type="button"
+                                key={r.id}
+                                className="cal-chip"
+                                onClick={() => openDetail(r.id)}
+                                title={`${r.code} — ${r.guestName} (${r.checkIn} → ${r.checkOut})`}
+                              >
+                                {cell?.status === 'TURNOVER' && (
+                                  <span className="cal-chip-mark">{r.checkOut === dayIso ? '↓' : '↑'}</span>
+                                )}
+                                <span className="cal-chip-guest">{r.guestName}</span>
+                                <span className="cal-chip-code">{r.code}</span>
+                              </button>
+                            ))}
+                            {overflow > 0 && <span className="cal-chip-more">+{overflow}</span>}
                           </td>
                         );
                       })}
@@ -203,28 +284,24 @@ export function CalendarPage() {
         </div>
       )}
 
-      {detailId !== null && !selected && !detailLoading && apiError && (
-        <Modal
-          open
-          title="Reserva"
-          onClose={handleCloseDetail}
-          error={apiError}
-          onDismissError={clearError}
-        >
-          <p className="text-secondary mb-0">No se pudo cargar el detalle de la reserva.</p>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-outline-secondary" onClick={handleCloseDetail}>
-              Cerrar
-            </button>
-          </div>
-        </Modal>
-      )}
+      <Modal
+        open={detailId !== null && !selected && !detailLoading && !!apiError}
+        title="Reserva"
+        onClose={handleCloseDetail}
+        error={apiError}
+        onDismissError={clearError}
+      >
+        <p className="text-secondary mb-0">No se pudo cargar el detalle de la reserva.</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-outline-secondary" onClick={handleCloseDetail}>
+            Cerrar
+          </button>
+        </div>
+      </Modal>
 
-      {detailId !== null && detailLoading && (
-        <Modal open title="Reserva" onClose={handleCloseDetail}>
-          <p className="text-secondary mb-0">Cargando detalle de la reserva…</p>
-        </Modal>
-      )}
+      <Modal open={detailId !== null && detailLoading} title="Reserva" onClose={handleCloseDetail}>
+        <p className="text-secondary mb-0">Cargando detalle de la reserva…</p>
+      </Modal>
 
       <ReservationDetail
         reservation={selected}

@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
-import type { Guest, PageMeta, Reservation, Room, Service } from '../api/types';
+import type { Guest, PageMeta, PaymentMethod, Reservation, Room, Service } from '../api/types';
 import { Modal } from './Modal';
 import { PaginationBar } from './pagination';
-import { money, nightsCount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME } from '../lib/format';
+import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, PAYMENT_METHODS } from '../lib/format';
+
+const SUGGESTED_DEPOSIT_RATE = 0.15;
+const DEPOSIT_METHODS: PaymentMethod[] = ['CASH', 'CARD', 'TRANSFER', 'MERCADOPAGO'];
+type DepositMode = 'none' | 'suggested' | 'custom';
 
 interface Props {
   open: boolean;
@@ -41,6 +45,9 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   const [servicesList, setServicesList] = useState<Service[]>([]);
   const [notes, setNotes] = useState('');
   const [paymentLink, setPaymentLink] = useState(false);
+  const [depositMode, setDepositMode] = useState<DepositMode>('none');
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositMethod, setDepositMethod] = useState<PaymentMethod>('CASH');
   const [saving, setSaving] = useState(false);
 
   const [guestMeta, setGuestMeta] = useState<PageMeta | null>(null);
@@ -81,6 +88,9 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
     setNewGuest({ firstName: '', lastName: '', phone: '', email: '' });
     setNotes('');
     setPaymentLink(false);
+    setDepositMode('none');
+    setDepositAmount('');
+    setDepositMethod('CASH');
     setGuestMeta(null);
   }
 
@@ -217,6 +227,36 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
     setServices((prev) => prev.map((s) => (s.service.id === serviceId ? { ...s, quantity } : s)));
   }
 
+  function estimateTotal(): number {
+    if (!selectedRoom) return 0;
+    const servicesTotal = services.reduce((acc, s) => acc + s.quantity * s.service.price, 0);
+    return round2(nights() * selectedRoom.price + servicesTotal);
+  }
+
+  function suggestedDeposit(): number {
+    return round2(estimateTotal() * SUGGESTED_DEPOSIT_RATE);
+  }
+
+  function selectDepositMode(mode: DepositMode) {
+    setDepositMode(mode);
+    if (mode === 'custom' && !depositAmount) setDepositAmount(String(suggestedDeposit()));
+  }
+
+  function resolvedDeposit(): number {
+    if (depositMode === 'none') return 0;
+    const total = estimateTotal();
+    if (depositMode === 'suggested') return clampAmount(suggestedDeposit(), total);
+    return clampAmount(Number(depositAmount), total);
+  }
+
+  function depositBalance(): number {
+    return round2(estimateTotal() - resolvedDeposit());
+  }
+
+  function depositViaMp(): boolean {
+    return depositMode !== 'none' && depositMethod === 'MERCADOPAGO';
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!selectedRoom) {
@@ -231,6 +271,20 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
       onError(new Error('Las camas extras solo pueden cargarse cuando la habitación está llena'));
       return;
     }
+    const total = estimateTotal();
+    let deposit = 0;
+    if (depositMode !== 'none') {
+      const requested = depositMode === 'suggested' ? suggestedDeposit() : Number(depositAmount);
+      if (!Number.isFinite(requested) || requested <= 0) {
+        onError(new Error('Indicá un monto de anticipo válido'));
+        return;
+      }
+      deposit = round2(requested);
+      if (deposit > total) {
+        onError(new Error(`El anticipo no puede superar el total de la reserva (total ${money(total)})`));
+        return;
+      }
+    }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -240,7 +294,8 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         persons,
         extraBeds,
         notes: notes.trim() || null,
-        generatePaymentLink: paymentLink,
+        ...(depositViaMp() ? {} : { generatePaymentLink: paymentLink }),
+        ...(deposit > 0 ? { payment: { amount: deposit, method: depositMethod } } : {}),
         services: services.map((s) => ({
           serviceId: s.service.id,
           quantity: s.quantity,
@@ -513,21 +568,147 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
 
         <div className="form-section">
           <h3 className="section-title">4 · Cobro</h3>
-          <div className="form-check form-switch">
-            <input
-              id="mp-payment-link"
-              className="form-check-input"
-              type="checkbox"
-              checked={paymentLink}
-              onChange={(e) => setPaymentLink(e.target.checked)}
-            />
-            <label className="form-check-label" htmlFor="mp-payment-link">
-              Cobrar con MercadoPago
-            </label>
-            <div className="text-secondary small">
-              Se genera un link de pago para el huésped y la reserva queda en espera del pago confirmado.
-            </div>
-          </div>
+          {!selectedRoom ? (
+            <p className="text-secondary mb-0">Elegí una habitación para ver el total y cobrar un anticipo.</p>
+          ) : (
+            <>
+              <div className="totals-box">
+                <div>
+                  <span>Total de la reserva</span>
+                  <strong>{money(estimateTotal())}</strong>
+                </div>
+                {depositMode !== 'none' && (
+                  <>
+                    <div>
+                      <span>Anticipo</span>
+                      <strong className="text-success">{money(resolvedDeposit())}</strong>
+                    </div>
+                    <div>
+                      <span>Saldo</span>
+                      <strong className={depositBalance() > 0 ? 'text-danger' : 'text-success'}>{money(depositBalance())}</strong>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="radio-list">
+                <label className={`radio-item ${depositMode === 'none' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="deposit"
+                    className="form-check-input"
+                    checked={depositMode === 'none'}
+                    onChange={() => selectDepositMode('none')}
+                  />
+                  <span className="flex-grow-1">
+                    <strong>Sin anticipo</strong>
+                  </span>
+                </label>
+                <label className={`radio-item ${depositMode === 'suggested' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="deposit"
+                    className="form-check-input"
+                    checked={depositMode === 'suggested'}
+                    onChange={() => selectDepositMode('suggested')}
+                  />
+                  <span className="flex-grow-1">
+                    <strong>15% de seña (sugerido)</strong> <span className="text-secondary">{money(suggestedDeposit())}</span>
+                  </span>
+                </label>
+                <label className={`radio-item ${depositMode === 'custom' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="deposit"
+                    className="form-check-input"
+                    checked={depositMode === 'custom'}
+                    onChange={() => selectDepositMode('custom')}
+                  />
+                  <span className="flex-grow-1">
+                    <strong>Otro monto</strong>
+                  </span>
+                </label>
+              </div>
+
+              {depositMode !== 'none' && (
+                <div className="filter-row mt-3">
+                  {depositMode === 'custom' && (
+                    <label className="field-inline">
+                      <span className="form-label mb-0">Monto del anticipo *</span>
+                      <input
+                        type="number"
+                        min={0.01}
+                        max={estimateTotal()}
+                        step="0.01"
+                        className="form-control"
+                        style={{ width: 140 }}
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                        onBlur={() => setDepositAmount(String(clampAmount(Number(depositAmount), estimateTotal())))}
+                        required
+                      />
+                    </label>
+                  )}
+                  <label className="field-inline">
+                    <span className="form-label mb-0">Método</span>
+                    <select
+                      className="form-select"
+                      value={depositMethod}
+                      onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)}
+                    >
+                      {DEPOSIT_METHODS.map((m) => (
+                        <option key={m} value={m}>
+                          {PAYMENT_METHODS[m]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              <div className="form-check form-switch mt-3">
+                <input
+                  id="mp-payment-link"
+                  className="form-check-input"
+                  type="checkbox"
+                  checked={depositViaMp() || paymentLink}
+                  disabled={depositViaMp()}
+                  onChange={(e) => setPaymentLink(e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="mp-payment-link">
+                  Cobrar con MercadoPago
+                </label>
+                <div className="text-secondary small">
+                  {depositViaMp() ? (
+                    <>
+                      El link de pago se genera por la seña de {money(resolvedDeposit())}. El saldo de {money(depositBalance())} se
+                      cobra en el hotel al check-in.
+                    </>
+                  ) : depositMode === 'none' ? (
+                    'Se genera un link de pago por el total y la reserva queda en espera del pago confirmado.'
+                  ) : (
+                    <>
+                      El link de MercadoPago se genera solo por el saldo de {money(depositBalance())} y la reserva queda en
+                      espera de ese pago.
+                    </>
+                  )}
+                </div>
+              </div>
+              {depositViaMp() ? (
+                depositBalance() <= 0 && (
+                  <p className="text-secondary small mb-0 mt-1">
+                    La seña cubre el total, así que no queda saldo pendiente en el hotel.
+                  </p>
+                )
+              ) : (
+                paymentLink && depositBalance() <= 0 && (
+                  <p className="text-secondary small mb-0 mt-1">
+                    El anticipo cubre el total, así que no se genera link de pago: la reserva queda confirmada.
+                  </p>
+                )
+              )}
+            </>
+          )}
         </div>
 
         <div className="form-section">

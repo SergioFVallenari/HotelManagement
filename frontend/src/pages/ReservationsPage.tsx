@@ -187,32 +187,32 @@ export function ReservationsPage() {
         onDismissError={clearError}
       />
 
-      {detailId !== null && !selected && (
-        <Modal
-          open
-          title="Reserva"
-          onClose={() => {
-            setDetailId(null);
-            clearError();
-          }}
-          error={apiError}
-          onDismissError={clearError}
-        >
-          <p className="text-secondary mb-0">No se pudo cargar el detalle de la reserva.</p>
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => {
-                setDetailId(null);
-                clearError();
-              }}
-            >
-              Cerrar
-            </button>
-          </div>
-        </Modal>
-      )}
+      <Modal
+        open={detailId !== null && !selected}
+        title="Reserva"
+        onClose={() => {
+          setDetailId(null);
+          clearError();
+        }}
+        error={apiError}
+        onDismissError={clearError}
+      >
+        <p className="text-secondary mb-0">
+          {apiError ? 'No se pudo cargar el detalle de la reserva.' : 'Cargando detalle de la reserva…'}
+        </p>
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={() => {
+              setDetailId(null);
+              clearError();
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </Modal>
 
       <ReservationDetail
         reservation={selected}

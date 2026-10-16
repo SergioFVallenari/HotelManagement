@@ -37,9 +37,10 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     response = await fetch(`${URL_BACKEND}/api${path}`, {
       method: options.method ?? 'GET',
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      // El header solo va con body: mandarlo en un GET lo convierte en
+      // non-simple request y el browser le agrega un preflight OPTIONS
+      // (~300ms) antes de dejar salir la peticion real.
+      headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : {},
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });

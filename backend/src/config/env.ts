@@ -24,6 +24,7 @@ export const env = {
   nodeEnv,
   isProduction: nodeEnv === 'production',
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS, nodeEnv),
+  registerKey: process.env.REGISTER_KEY ?? '',
   mp: {
     appId: process.env.MP_APP_ID ?? '',
     clientSecret: process.env.MP_CLIENT_SECRET ?? '',
@@ -42,5 +43,14 @@ export const env = {
     notificationUrl:
       process.env.MP_NOTIFICATION_URL ??
       (nodeEnv === 'production' ? `${LAMBDA_URL}/api/mp/webhook` : 'http://localhost:3000/api/mp/webhook'),
+    testAccessToken: process.env.MP_TEST_ACCESS_TOKEN ?? '',
+  },
+  smtp: {
+    host: process.env.SMTP_HOST ?? '',
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.SMTP_FROM ?? 'Hotel Manager <no-reply@localhost>',
   },
 };

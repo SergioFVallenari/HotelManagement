@@ -10,6 +10,7 @@ datasource db {
 model Company {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  createdById Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users       User[]
@@ -26,8 +27,10 @@ model User {
   username     String
   passwordHash String
   name         String?
+  email        String?
   typeId       Int
   companyId    Int
+  createdById  Int?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -38,9 +41,22 @@ model User {
   @@index([companyId])
 }
 
+model EmailVerificationCode {
+  id         Int       @id @default(autoincrement())
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+}
+
 enum UserRole {
   ADMIN
   RECEPCIONISTA
+  OWNER
 }
 
 model UserType {
@@ -148,6 +164,7 @@ model Reservation {
   refundedAt     DateTime?
   mpOrderId      String?            @unique
   mpCheckoutUrl  String?
+  mpExpectedAmount Decimal?         @db.Decimal(10, 2)
   notes        String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt

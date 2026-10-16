@@ -36,7 +36,7 @@ interface ServiceForm {
 
 export function ServicesPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = (user?.role === 'ADMIN' || user?.role === 'OWNER');
   const { data, loading, error, reload } = useApi<{ data: Service[] }>('/services');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);

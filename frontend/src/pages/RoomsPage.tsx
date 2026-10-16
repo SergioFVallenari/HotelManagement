@@ -40,7 +40,7 @@ const emptyForm: RoomForm = { number: '', name: '', typeId: 0, capacity: 2, maxE
 
 export function RoomsPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = (user?.role === 'ADMIN' || user?.role === 'OWNER');
 
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');

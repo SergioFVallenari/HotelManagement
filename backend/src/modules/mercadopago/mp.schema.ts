@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { env } from '../../config/env.js';
+import { isAllowedReturnTo } from './mp.return-to.js';
 
 export const authUrlSchema = z.object({
-  returnTo: z.string().regex(/^(https?:\/\/[^/]+|capacitor:\/\/[^/]+)$/, 'returnTo inválido'),
+  returnTo: z.string().refine((value) => isAllowedReturnTo(value, env.corsOrigins), 'returnTo inválido'),
 });
 
 export const regenerateSchema = z.object({

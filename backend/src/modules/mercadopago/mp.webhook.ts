@@ -7,6 +7,12 @@ import { AppError } from '../../lib/AppError.js';
 import { decToNum, resolveAmount, round2 } from '../../lib/money.js';
 import { getReservation } from '../reservations/reservations.service.js';
 import { MP_CURRENCY, buildExternalReference } from './mp.order.js';
+import {
+  SIGNATURE_TOLERANCE_MS,
+  buildManifestDataId,
+  readSignatureTs,
+  toEpochMs,
+} from './mp.signature.js';
 
 interface MpOrderPayment {
   id?: string | number;
@@ -46,6 +52,19 @@ function isPaid(data: NonNullable<MpWebhookPayload['data']>): boolean {
   return payments.every((payment) => PAID_PAYMENT_STATUSES.has(payment.status ?? ''));
 }
 
+function logInvalidSignature(
+  reason: string,
+  context: { dataId: string; requestId: string | string[] | undefined; ts: string | undefined },
+): void {
+  console.warn('[mp] webhook con firma inválida', {
+    reason,
+    dataId: context.dataId,
+    manifestDataId: buildManifestDataId(context.dataId),
+    requestId: context.requestId,
+    ts: context.ts,
+  });
+}
+
 function assertSignature(req: Request, dataId: string): void {
   const secret = env.mp.webhookSecret;
   if (!secret) {
@@ -54,17 +73,32 @@ function assertSignature(req: Request, dataId: string): void {
     }
     return;
   }
+
+  const xSignature = req.headers['x-signature'];
+  const xRequestId = req.headers['x-request-id'];
+  const ts = readSignatureTs(xSignature);
+
   try {
     WebhookSignatureValidator.validate({
-      xSignature: req.headers['x-signature'],
-      xRequestId: req.headers['x-request-id'],
-      dataId: dataId.toLowerCase(),
+      xSignature,
+      xRequestId,
+      dataId: buildManifestDataId(dataId),
       secret,
-      toleranceSeconds: 300,
     });
   } catch (err) {
-    console.warn('[mp] webhook con firma inválida:', err instanceof Error ? err.message : err);
+    const reason = (err as { reason?: string }).reason ?? (err instanceof Error ? err.message : String(err));
+    logInvalidSignature(reason, { dataId, requestId: xRequestId, ts });
     throw new AppError(401, 'MP_WEBHOOK_INVALID_SIGNATURE', 'Firma de MercadoPago inválida');
+  }
+
+  const epochMs = ts === undefined ? undefined : toEpochMs(ts);
+  if (epochMs === undefined || Math.abs(Date.now() - epochMs) > SIGNATURE_TOLERANCE_MS) {
+    logInvalidSignature('TimestampOutOfTolerance', { dataId, requestId: xRequestId, ts });
+    throw new AppError(
+      401,
+      'MP_WEBHOOK_INVALID_SIGNATURE',
+      'Firma de MercadoPago fuera de la ventana de tolerancia',
+    );
   }
 }
 
@@ -73,15 +107,16 @@ export async function processWebhook(req: Request): Promise<boolean> {
   const type = body.type ?? queryValue(req, 'type');
   if (type !== 'order') return false;
 
+  const signatureDataId = queryValue(req, 'data.id') ?? body.data?.id;
   const orderId = body.data?.id ?? queryValue(req, 'data.id');
-  if (orderId === undefined) return false;
+  if (signatureDataId === undefined || orderId === undefined) return false;
   const data = body.data ?? {};
 
-  assertSignature(req, String(orderId));
+  assertSignature(req, String(signatureDataId));
 
   const reservation = await prisma.reservation.findFirst({
     where: { mpOrderId: String(orderId) },
-    select: { id: true, code: true, companyId: true, status: true },
+    select: { id: true, code: true, companyId: true, status: true, mpExpectedAmount: true },
   });
   if (!reservation) {
     console.warn('[mp] webhook sin reserva para la orden', { orderId: String(orderId) });
@@ -108,24 +143,31 @@ export async function processWebhook(req: Request): Promise<boolean> {
     });
   }
 
-  const expectedTotal = (await withTenant(reservation.companyId, () => getReservation(reservation.id))).totals
-    .total;
+  const snapshot = await withTenant(reservation.companyId, () => getReservation(reservation.id));
+  if (reservation.mpExpectedAmount === null) {
+    console.warn('[mp] la reserva no tiene mpExpectedAmount, se espera el total completo', {
+      orderId: String(orderId),
+      reservation: reservation.code,
+    });
+  }
+  const expectedAmount =
+    reservation.mpExpectedAmount === null ? snapshot.totals.total : decToNum(reservation.mpExpectedAmount);
 
   const payments = data.transactions?.payments ?? [];
   for (const payment of payments) {
     if (!payment.id) continue;
     const paymentId = String(payment.id);
     const received = decToNum(payment.paid_amount ?? payment.amount);
-    const { amount, format } = resolveAmount(received, expectedTotal);
+    const { amount, format } = resolveAmount(received, expectedAmount);
     if (format === 'unknown') {
-      console.warn('[mp] el importe del webhook no coincide con el total de la reserva', {
+      console.warn('[mp] el importe del webhook no coincide con el saldo pendiente de la reserva', {
         orderId: String(orderId),
         paymentId,
         received,
-        expected: expectedTotal,
+        expected: expectedAmount,
       });
     } else if (format === 'cents') {
-      console.warn('[mp] el webhook envió centavos; se normalizó al total de la reserva', {
+      console.warn('[mp] el webhook envió centavos; se normalizó al saldo pendiente de la reserva', {
         orderId: String(orderId),
         paymentId,
         received,

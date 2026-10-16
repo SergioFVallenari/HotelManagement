@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../../middleware/auth.js';
+import { requireAuth, requireAdmin, requireOwnerOrAdmin } from '../../middleware/auth.js';
 import {
   createRoomType,
   deleteRoomType,
@@ -14,7 +14,7 @@ router.use(requireAuth);
 
 router.get('/', listRoomTypes);
 router.get('/:id', getRoomType);
-router.post('/', requireAdmin, createRoomType);
+router.post('/', requireOwnerOrAdmin, createRoomType);
 router.put('/:id', requireAdmin, updateRoomType);
 router.delete('/:id', requireAdmin, deleteRoomType);
 

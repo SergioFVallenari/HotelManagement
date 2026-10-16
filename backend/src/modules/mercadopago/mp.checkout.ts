@@ -42,6 +42,12 @@ export interface OrderResult {
   checkoutUrl: string;
 }
 
+function mpTestToken(): string | null {
+  if (env.isProduction) return null;
+  const token = env.mp.testAccessToken.trim();
+  return token ? token : null;
+}
+
 function mapOrder(result: { id?: string; checkout_url?: string }): OrderResult {
   const orderId = result.id;
   const checkoutUrl = result.checkout_url;
@@ -66,18 +72,23 @@ export async function createOrderForReservation(opts: {
     guest: opts.guest,
     checkIn: opts.checkIn,
     appUrl: env.mp.appUrl,
+    notificationUrl: env.mp.notificationUrl,
   });
 
-  const create = (accessToken: string) => {
-    const client = new MercadoPagoConfig({ accessToken });
+  const testToken = mpTestToken();
+  if (testToken) console.log('[mp] usando el access token de prueba (desarrollo)');
+  const accessToken = testToken ?? (await loadAccessToken(opts.companyId));
+
+  const create = (token: string) => {
+    const client = new MercadoPagoConfig({ accessToken: token });
     return new OrderClient(client).create({ body: payload });
   };
 
   try {
-    return mapOrder(await create(await loadAccessToken(opts.companyId)));
+    return mapOrder(await create(accessToken));
   } catch (err) {
     if (err instanceof AppError) throw err;
-    if (err instanceof MPAuthenticationError) {
+    if (err instanceof MPAuthenticationError && !testToken) {
       try {
         return mapOrder(await create(await loadAccessToken(opts.companyId, { forceRefresh: true })));
       } catch (retryErr) {
@@ -90,7 +101,7 @@ export async function createOrderForReservation(opts: {
 }
 
 export async function getMpPayment(companyId: number, paymentId: string) {
-  const accessToken = await loadAccessToken(companyId);
+  const accessToken = mpTestToken() ?? (await loadAccessToken(companyId));
   const client = new MercadoPagoConfig({ accessToken });
   return new PaymentClient(client).get({ id: paymentId });
 }

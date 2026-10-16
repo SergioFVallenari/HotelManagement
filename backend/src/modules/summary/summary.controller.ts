@@ -68,7 +68,6 @@ export async function summary(req: Request, res: Response): Promise<void> {
       prisma.reservation.groupBy({
         by: ['status'],
         where: {
-          status: { not: 'CANCELLED' },
           AND: [{ checkIn: { lt: toExclusive } }, { checkOut: { gt: from } }],
         },
         _count: { _all: true },

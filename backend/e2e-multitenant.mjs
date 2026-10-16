@@ -37,27 +37,25 @@ function check(name, condition, detail = '') {
 const principal = makeClient();
 const sol = makeClient();
 
-const { json: companiesRes } = await principal('/companies');
-const companies = companiesRes.data;
-const principalCompany = companies.find((c) => c.name === 'Hotel Principal');
-const solCompany = companies.find((c) => c.name === 'Hotel Sol');
-check('companies list exposes both tenants', companies.length === 2 && !!principalCompany && !!solCompany);
-
-// 1. Databases: credentials first, then select company (both tenants)
+// 1. Databases: credentials first (la respuesta trae las empresas), then select company (both tenants)
 let r = await principal('/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
+const principalCompany = Array.isArray(r.json?.companies)
+  ? r.json.companies.find((c) => c.name === 'Hotel Principal')
+  : null;
 check(
   'principal credentials -> companies',
-  r.status === 200 &&
-    Array.isArray(r.json.companies) &&
-    r.json.companies.some((c) => c.id === principalCompany.id && c.role === 'ADMIN'),
+  r.status === 200 && !!principalCompany && principalCompany.role === 'ADMIN',
   `status=${r.status} ${JSON.stringify(r.json)}`,
 );
-r = await principal('/auth/login/company', { method: 'POST', body: { companyId: principalCompany.id, username: 'admin', password: 'admin123' } });
-check('principal selects company', r.status === 200 && r.json.user.companyId === principalCompany.id, `status=${r.status} ${JSON.stringify(r.json)}`);
+r = await principal('/auth/login/company', { method: 'POST', body: { companyId: principalCompany?.id, username: 'admin', password: 'admin123' } });
+check('principal selects company', r.status === 200 && r.json.user.companyId === principalCompany?.id, `status=${r.status} ${JSON.stringify(r.json)}`);
 r = await sol('/auth/login', { method: 'POST', body: { username: 'sol', password: 'admin123' } });
-check('sol credentials -> companies', r.status === 200 && Array.isArray(r.json.companies) && r.json.companies.some((c) => c.id === solCompany.id), `status=${r.status}`);
-r = await sol('/auth/login/company', { method: 'POST', body: { companyId: solCompany.id, username: 'sol', password: 'admin123' } });
-check('sol selects company', r.status === 200 && r.json.user.companyId === solCompany.id, `status=${r.status}`);
+const solCompany = Array.isArray(r.json?.companies)
+  ? r.json.companies.find((c) => c.name === 'Hotel Sol')
+  : null;
+check('sol credentials -> companies', r.status === 200 && !!solCompany, `status=${r.status}`);
+r = await sol('/auth/login/company', { method: 'POST', body: { companyId: solCompany?.id, username: 'sol', password: 'admin123' } });
+check('sol selects company', r.status === 200 && r.json.user.companyId === solCompany?.id, `status=${r.status}`);
 
 // credentials with a wrong password must not reveal companies
 r = await principal('/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } });
@@ -99,8 +97,9 @@ r = await sol(`/room-types/${type.id}`, { method: 'DELETE' });
 check('sol DELETE principal type -> 404', r.status === 404, `status=${r.status}`);
 
 // 5. Sol cannot create a reservation using principal's room
-const inDays = new Date(Date.now() + 86400000 * 15).toISOString().slice(0, 10);
-const outDays = new Date(Date.now() + 86400000 * 17).toISOString().slice(0, 10);
+// check-in exige checkIn <= hoy (CHECKIN_TOO_EARLY), por eso la reserva arranca ayer
+const inDays = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const outDays = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 r = await sol('/reservations', {
   method: 'POST',
   body: { roomId: principalRoom.id, guest: { firstName: 'X', lastName: 'Y', phone: '123', email: 'x@y.com' }, checkIn: inDays, checkOut: outDays, persons: 1 },

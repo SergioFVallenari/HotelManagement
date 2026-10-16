@@ -24,6 +24,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
       username: payload.username,
       role: payload.role,
       name: payload.name,
+      email: payload.email,
       companyId: payload.companyId,
     };
     withTenant(payload.companyId, next);
@@ -35,6 +36,20 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
   if (req.user?.role !== 'ADMIN') {
     throw forbidden('Se requiere rol de administrador');
+  }
+  next();
+}
+
+export function requireOwner(req: Request, _res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'OWNER') {
+    throw forbidden('Se requiere rol de propietario');
+  }
+  next();
+}
+
+export function requireOwnerOrAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'OWNER' && req.user?.role !== 'ADMIN') {
+    throw forbidden('Se requiere rol de administrador o propietario');
   }
   next();
 }
