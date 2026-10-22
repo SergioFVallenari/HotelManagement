@@ -24,6 +24,12 @@ export function nightsBetween(checkIn: Date, checkOut: Date): number {
   return nights;
 }
 
+export function assertValidRange(checkIn: Date, checkOut: Date): void {
+  if (nightsBetween(checkIn, checkOut) <= 0) {
+    throw badRequest('checkOut debe ser posterior a checkIn');
+  }
+}
+
 export function overlapNights(checkIn: Date, checkOut: Date, from: Date, to: Date): number {
   const start = checkIn > from ? checkIn : from;
   const end = checkOut < to ? checkOut : to;

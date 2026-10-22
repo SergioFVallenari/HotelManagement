@@ -9,6 +9,8 @@ import { CalendarPage } from './pages/CalendarPage';
 import { MessagesPage } from './pages/MessagesPage';
 import { RoomsPage } from './pages/RoomsPage';
 import { ReservationsPage } from './pages/ReservationsPage';
+import { BookingLinksPage } from './pages/BookingLinksPage';
+import { PublicBookingPage } from './pages/PublicBookingPage';
 import { GuestsPage } from './pages/GuestsPage';
 import { RoomTypesPage } from './pages/RoomTypesPage';
 import { ServicesPage } from './pages/ServicesPage';
@@ -35,6 +37,8 @@ function AppRoutes() {
       <Route path="/login/company" element={<CompanyPickerPage />} />
       <Route path="/pago" element={<PaymentResultPage />} />
       <Route path="/confirm-email" element={<ConfirmEmail />} />
+      {/* Link publico que se comparte por WhatsApp: sin sesion ni layout. */}
+      <Route path="/reserva/:token" element={<PublicBookingPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -46,6 +50,7 @@ function AppRoutes() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="rooms" element={<RoomsPage />} />
         <Route path="reservations" element={<ReservationsPage />} />
+        <Route path="booking-links" element={<BookingLinksPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="guests" element={<GuestsPage />} />
         <Route path="room-types" element={<RoomTypesPage />} />

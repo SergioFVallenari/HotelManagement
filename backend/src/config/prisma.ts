@@ -31,6 +31,8 @@ const SCOPEABLE_MODELS = new Set([
   'ChannelConversation',
   'ChannelMessage',
   'CompanyAiSetting',
+  'BookingLink',
+  'ReservationReceipt',
 ]);
 
 type RawArgs = Record<string, any>;

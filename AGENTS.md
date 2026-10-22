@@ -23,8 +23,8 @@ independientes con lockfiles propios; se instalan y compilan por separado.
 ## 3. Stack
 
 - **backend**: Node 22 · TypeScript 7.0.2 (ESM, `strict`) · Express 5.2.1 · Prisma 7.10.0 (driver
-  adapter `pg` 8.23) · Zod 4.6.5 · jsonwebtoken 9 · `@supabase/supabase-js` 2.117 (Auth/GoTrue) ·
-  SDK `mercadopago` 3.6.1 · swagger-ui-express 5 (UI de `GET /api/docs`) · `node:test`.
+  adapter `pg` 8.23) · Zod 4.6.5 · jsonwebtoken 9 · `@supabase/supabase-js` 2.117 (Auth/GoTrue y
+  Storage) · SDK `mercadopago` 3.6.1 · swagger-ui-express 5 (UI de `GET /api/docs`) · `node:test`.
 - **frontend**: React 19.3 · Vite 8.3 · TypeScript 6.0 (sin `strict`) · Bootstrap 5.3 ·
   react-router-dom 7 · recharts 3 · @tabler/icons-react · Capacitor 8.5.2 · oxlint.
 
@@ -49,6 +49,11 @@ pnpm exec node --import tsx --test tests/money.test.ts
 # E2E manual de aislamiento multi-tenant (espera el server en :3100)
 node e2e-multitenant.mjs
 
+# E2E del flujo de reserva por WhatsApp (server en :3100 + Supabase Storage real).
+# Crea fixtures propias (tipo/habitación/servicio "E2E") y las purga con e2e:drop
+pnpm e2e:booking
+pnpm e2e:drop
+
 # prueba de carga (autocannon, devDependency). Espera el server en :3100
 pnpm bench                 # rampa de conexiones sobre 4 endpoints de solo lectura
 pnpm bench:drop            # purga los datos con tag BENCH (no se puede por REST)
@@ -66,15 +71,34 @@ bash backend/up-all.sh / down-all.sh / db-up.sh / db-down.sh / nat-setup.sh
 `typecheck` falla por imports rotos, no por errores de tipos.
 
 El orden que importa es el de `deploy.sh`: `prisma generate → typecheck → test → build → docker
-build/push → lambda update → sync env → migrate deploy → smoke /health → build frontend → s3 sync →
-cloudfront invalidation → smoke del bundle`. El frontend se buildea **sin `lint`** (ver gotcha 8).
+build/push → lambda update → sync env → migrate deploy → smoke /health → respuestas custom de
+CloudFront → build frontend → s3 sync → cloudfront invalidation → smoke del bundle + smoke del deep
+link`. El frontend se buildea **sin `lint`** (ver gotcha 8).
 
 ## 5. Dominio y datos
 
-16 modelos: `Company`, `User`, `UserCompany`, `UserType`, `RoomType`, `Room`, `Guest`, `Service`,
+18 modelos: `Company`, `User`, `UserCompany`, `UserType`, `RoomType`, `Room`, `Guest`, `Service`,
 `Reservation`, `ReservationService`, `Payment`, `CompanyMpAccount`, `ChannelAccount`,
-`ChannelConversation`, `ChannelMessage`, `CompanyAiSetting`. 9 enums. 28 migraciones en
-`backend/prisma/migrations/`.
+`ChannelConversation`, `ChannelMessage`, `CompanyAiSetting`, `BookingLink`, `ReservationReceipt`.
+11 enums. 29 migraciones en `backend/prisma/migrations/`.
+
+- **Reserva por link de WhatsApp**: `BookingLink` es la oferta que arma la recepción
+  (`roomId`, `checkIn`/`checkOut`, `persons`, `extraBeds`, `services Json` con las líneas
+  congeladas, `total`/`deposit`/`roomTotal`/`servicesTotal` **congelados**, `token` único,
+  `status` `OPEN`/`COMPLETED`/`CANCELLED`, `expiresAt`, `reservationId` único al completarse).
+  `ReservationReceipt` es 1:1 con `Reservation` (`storagePath`, `fileName`, `mimeType`, `size`,
+  `externalRef`, y `url`/`mimeType`/`size` los verifica el backend contra Storage). El enum
+  `ReservationSource` (`STAFF`/`PUBLIC_LINK`) vive en `Reservation.source`. La migración es
+  `20261022120000_booking_links`.
+- **El token del link es de un solo uso** (`crypto.randomBytes(24).toString('base64url')`): se
+  reclama atómicamente dentro de la transacción de la reserva, así que dos submits simultáneos no
+  crean dos reservas. `expiresAt` vencido → `GET` público responde 200 con `expired: true` y el
+  submit 409 `LINK_EXPIRED`.
+- **El huésped no elige habitación**: la cotización pública muestra el **tipo** de habitación y las
+  fechas, nunca el número. Total y anticipo salen del link, no de los precios actuales.
+- `Company` ganó `bookingDepositPercent` (default 20), `whatsapp` y `phone` (los muestra el
+  formulario público y el botón de compartir). Se editan en Ajustes → Reservas
+  (`GET/PATCH /api/companies/current`).
 
 - **Mensajería de canales (omnicanal, genérico)**: `ChannelAccount` es la conexión/credenciales de un
   canal de la empresa (`@@unique([companyId, channel])`, tokens cifrados, `status`, `metadata Json`);
@@ -98,6 +122,17 @@ cloudfront invalidation → smoke del bundle`. El frontend se buildea **sin `lin
   `suggest` ante cualquier respuesta ilegible; un fallo de Gemini jamás rompe la ingesta.
 
 - `ReservationStatus`: `PENDING → RESERVED → CHECKED_IN → CHECKED_OUT` (o `CANCELLED`).
+- **Flujo público**: la reserva que envía el huésped nace `PENDING` + `source: PUBLIC_LINK` y **sin
+  pagos** (el comprobante es solo evidencia). `POST /api/reservations/:id/approve` registra el
+  anticipo como `TRANSFER` con `reference` `FORM-<token.slice(0,12)>` **en la misma transacción** que
+  pasa la reserva a `RESERVED` (dos approves seguidos → 409 `INVALID_STATE`);
+  `POST /:id/reject` la cancelada (`CANCELLED`) guardando el motivo en las notas. El pago se crea al
+  aprobar (no al enviar) justamente para que el resumen no cuente reservas rechazadas como ingreso.
+- **Regla del anticipo**: `deposit = 20% del total` (configurable por hotel en
+  `Company.bookingDepositPercent`) **redondeado al múltiplo de $10.000 más cercano** ($23.500 →
+  $20.000; $64.800 → $60.000). La recepción puede pisarlo a mano, siempre ≤ total y ≥ 0, y el monto
+  queda congelado en el link. Con 0% el link no pide comprobante. La matemática está en
+  `lib/pricing.ts` (`computeBookingDeposit`, `roundToStep`) con espejo en `frontend/src/lib/pricing.ts`.
 - `UserRole`: `ADMIN`, `RECEPCIONISTA`. `PaymentMethod`: `CASH`, `CARD`, `TRANSFER`, `MERCADOPAGO`.
 - `ServiceChargeType`: `PER_PERSON` (× personas × noches), `PER_DAY` (× noches), `PACK` (cantidad fija).
 - **Importes siempre `Decimal(10,2)` en DB — nunca `float`.** En elTS son `number`: por eso todo
@@ -140,7 +175,7 @@ cloudfront invalidation → smoke del bundle`. El frontend se buildea **sin `lin
 ## 6. Arquitectura backend
 
 Modular por dominio en `src/modules/*` → `archivo.controller.ts` / `.routes.ts` / `.schema.ts`.
-Solo `reservations`, `channels` y `ai` tienen `service.ts` (el de `channels` es la ingesta del webhook y el
+Solo `reservations`, `channels`, `ai` y `booking` tienen `service.ts` (el de `channels` es la ingesta del webhook y el
 inbox). El módulo `channels` es la capa genérica de mensajería: `adapters/` aísla lo específico de
 cada proveedor; `channels.registry.ts` mapea `ChannelType` → adapter y hoy solo Instagram está
 registrado. `channels.controller.ts` expone `createWebhookHandler(channel)` (firma HMAC + `rawBody`,
@@ -151,23 +186,40 @@ servicios+precios del hotel, parser con fallback a `suggest`), `ai.service.ts` t
 y `maybeAutoReply`. El módulo `realtime` expone `GET /api/realtime/config`
 (`lib/realtime.ts`: firma el JWT de Supabase Realtime con el claim `company_id`); el frontend se
 suscribe al canal privado de la empresa y escucha `postgres_changes` sobre las tablas de canales,
-así la bandeja funciona sin polling (el broadcast REST se eliminó).
+así la bandeja funciona sin polling (el broadcast REST se eliminó). El módulo `booking` es el link
+de reserva por WhatsApp: `booking.token.ts` (token opaco), `booking.share.ts` (mensaje + URL de
+`wa.me`, funciones puras), `booking.storage.ts` (Supabase Storage: bucket privado
+`booking-receipts`, URL firmada de subida, `info()`, URL firmada de descarga, borrado),
+`booking.lines.ts` (líneas de servicio normalizadas), `booking.service.ts` (crear/anular link,
+cotización pública, submit) y dos routers: `booking.routes.ts` (`/api/booking-links`, con sesión) y
+`publicBooking.routes.ts` (`/api/public/booking`, sin sesión).
 
+- **Subida del comprobante en dos pasos (URL firmada)**: `POST /api/public/booking/:token/receipt`
+  devuelve `{ path, signedUrl, token }`; el navegador hace `PUT` **directo a Supabase Storage** y
+  después envía `receiptPath` en el `POST /api/public/booking/:token`. El binario nunca pasa por la
+  Lambda, que tiene un tope de 6 MB en la Function URL y no lleva `multer`. `submitBooking` valida
+  que el path empiece con `company-<companyId>/<token>/` y verifica tamaño y MIME reales con
+  `info()`. Límites: 5 MB y JPG/PNG/WEBP/PDF (`booking.storage.ts`).
 - **Multi-tenancy**: `src/lib/tenant.ts` (AsyncLocalStorage) + query extension de Prisma en
   `src/config/prisma.ts` que inyecta `companyId` automáticamente. `requireAuth` llama
   `withTenant(companyId, next)`, así que todo lo que corre después ya está scopeado.
   `SCOPEABLE_MODELS` = `UserCompany`, `RoomType`, `Room`, `Guest`, `Service`, `Reservation`,
-  `ChannelAccount`, `ChannelConversation`, `ChannelMessage`, `CompanyAiSetting`. **Exentos** (se aíslan por relación o no tienen `companyId`): `Company`,
+  `ChannelAccount`, `ChannelConversation`, `ChannelMessage`, `CompanyAiSetting`, `BookingLink`,
+  `ReservationReceipt`. **Exentos** (se aíslan por relación o no tienen `companyId`): `Company`,
   `UserType`, `Payment`, `ReservationService`, `CompanyMpAccount`. `User` es global: no se scopea.
   El scope también cubre `create`/`upsert` (inyecta `companyId` si falta) y agrega un **segundo
   `AND`** a los `where` de las listas — un `OR` del caller no se rompe.
 - **Envelope**: éxito `{ data, meta? }` · error `{ error: { code, message, details? } }`.
-- **60 endpoints** bajo `/api` + `/health`. Públicos: `/health`, `login`, `login/company`,
+- **80 operaciones** documentadas bajo `/api` + `/health` (el número sale de `GET /api/docs.json` y
+  lo valida `tests/openapi.test.ts`). Públicos: `/health`, `login`, `login/company`,
   `logout`, `GET /api/mp/oauth/callback`, `POST /api/mp/webhook`,
   `POST /api/auth/register`, `POST /api/auth/resend-confirmation` (auto-registro de hotel: crea una
   **Company nueva + usuario `OWNER`** vía el trigger de Supabase; ambas rutas llevan
   `rateLimiter(5, 15min)` y, si `REGISTER_KEY` está seteada, exigen `key` en el body — ver
-  §9). También públicos a propósito: `GET /api/docs` (Swagger UI) y `GET /api/docs.json`
+  §9) y las tres de `/api/public/booking/:token` (cotización, URL de subida del comprobante y
+  submit, con `rateLimiter` por IP). **Todo `/api/public/booking` es público por diseño**: el token
+  opaco del path es la única credencial (un solo uso, ver §5). También públicos a
+  propósito: `GET /api/docs` (Swagger UI) y `GET /api/docs.json`
   (spec OpenAPI 3.1), servidos por `src/docs/` (`openapi.ts` arma la spec en runtime desde
   los Zod de `docs/schemas.ts` y los `.schema.ts` de cada módulo vía `z.toJSONSchema`;
   no hay un archivo YAML commiteado). `GET /api/companies` exige `requireAuth`.
@@ -239,7 +291,7 @@ Lambda en VPC le hace recrear los ENIs). Claves vacías **no** borran la existen
 `MP_TEST_ACCESS_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
 `SUPABASE_JWT_SECRET`, `REGISTER_KEY`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`,
 `INSTAGRAM_REDIRECT_URI`, `INSTAGRAM_WEBHOOK_VERIFY_TOKEN`, `INSTAGRAM_FRONTEND_URL`,
-`GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_API_URL`.
+`GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_API_URL`, `FRONTEND_URL`.
 
 - `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` (`env.ig.webhookVerifyToken`) es el que valida el `hub.verify_token`
   del `GET /api/integrations/instagram/webhook`; el `POST` valida la firma HMAC con
@@ -273,6 +325,13 @@ Lambda en VPC le hace recrear los ENIs). Claves vacías **no** borran la existen
   `AI_NOT_CONFIGURED` y el auto-reply queda inactivo. `GEMINI_MODEL` (default `gemini-3.5-flash`) y
   `GEMINI_API_URL` (default `https://generativelanguage.googleapis.com/v1beta`) son opcionales. Va
   en `.env` (dev) y en `.env.production` para que la suba el sync de `deploy.sh`.
+- `FRONTEND_URL` es la URL pública del frontend (sin barra final). Arma el link de la reserva por
+  WhatsApp (`https://<frontend>/reserva/<token>`) y es el default del redirect de Instagram. Si falta,
+  en producción cae a `CLOUDFRONT_URL` (hardcodeada en `config/env.ts`) y en dev a
+  `http://localhost:5173`.
+- `SUPABASE_SERVICE_ROLE_KEY` también es la credencial de **Supabase Storage** (bucket privado
+  `booking-receipts`): el backend firma las URLs de subida/descarga con ella. Si la key es inválida,
+  el link de reserva responde 500 al pedir el comprobante, no al abrir la cotización.
 - `REGISTER_KEY` (vacía = registro abierto): cuando está seteada, `/auth/register` y
   `/auth/resend-confirmation` exigen `key` en el body (403 `REGISTER_KEY_REQUIRED`, comparación
   timing-safe en `auth.routes.ts`). Se coordina con `VITE_ALLOW_REGISTER` del frontend: **cerrado** =
@@ -307,8 +366,13 @@ habitaciones/servicios sigue comentado a propósito.
 4. El proxy `/api` de `vite.config.ts` existe pero **no se usa**: el client llama a URL absoluta.
 5. `parseIdParam` (`lib/pagination.ts`) lanza un `Error` genérico → el `errorHandler` no lo reconoce
    y un id inválido devuelve **500** en lugar de 400.
-6. `BrowserRouter` servido desde S3/CloudFront sin *error document* declarado → riesgo de 404 en
-   rutas profundas (`/reservations`, `/settings`). `frontend/public/` solo tiene los íconos.
+6. **Deep links de la SPA**: `BrowserRouter` servido desde S3/CloudFront, y S3 no tiene *error
+   document* → una ruta profunda (`/reservations`, `/settings`, `/reserva/<token>`) llegaba a S3 como
+   403/404 y CloudFront devolvía el error, no el `index.html`. Se arregla con **respuestas custom**
+   en la distribución (403 y 404 → `/index.html` con código 200), y `deploy.sh` las asegura de forma
+   idempotente antes del build del frontend (solo actualiza la distribución si falta alguna, porque
+   cada update reinicia el deployment) más un smoke test del deep link al final.
+   `frontend/public/` solo tiene los íconos.
 7. `LoginPage.tsx` muestra credenciales de prueba hardcodeadas en la UI (`login-hint`).
 8. **Sin CI.** `deploy.sh` corre `typecheck` + `test` del backend, pero el frontend se buildea sin
    `lint`. Los helpers de infra tampoco corren `lint`.
@@ -412,14 +476,28 @@ habitaciones/servicios sigue comentado a propósito.
     (Instagram Login) para suscribir la cuenta a `messages,messaging_seen`; desconectar la desuscribe.
     Ambas son **best-effort** (un fallo no rompe el flujo). La config a nivel app (URL del webhook +
     verify token) sigue siendo manual en el dashboard de Meta.
+23. **Nunca montar el link público en `/api/booking`**: `app.use` matchea por prefijo, así que
+    `/api/booking` se comería también `/api/booking-links`. Los routers van en `/api/booking-links`
+    (con `requireAuth`) y `/api/public/booking` (público), en ese orden.
+24. **El comprobante no viaja por la Lambda**: la Function URL corta en 6 MB y un multipart necesita
+    una dependencia extra, por eso la subida es en dos pasos con URL firmada (ver §6). Consecuencia:
+    el `PUT` va del navegador a `*.supabase.co` (CORS abierto por Supabase) y el `receiptPath` que
+    llega al submit **se revalida** contra Storage (`info()`) además de chequear el prefijo
+    `company-<id>/<token>/`; nunca confiar en el `mimeType`/`size` que manda el cliente.
+25. **El anticipo del link es una foto del momento**: `total`/`deposit`/`services` quedan congelados
+    en `BookingLink`, así que cambiar precios de habitación o servicios **no** reescribe una
+    solicitud ya enviada. La reserva real se crea recién en el submit, con esas líneas.
+    `BookingLink.reservationId` es único: un link completa a lo sumo una reserva.
 
 ## 11. Tests
 
-`node:test` puro, sin framework, sin DB. 12 archivos de test, 120 tests:
+`node:test` puro, sin framework, sin DB. 15 archivos de test, 159 tests:
 
 | Archivo | Cubre |
 |---|---|
 | `tests/money.test.ts` | `resolveAmount` (decimal/cents/desconocido), `clampAmount` |
+| `tests/pricing.test.ts` | `serviceQuantity` (PER_PERSON/PER_DAY/PACK, cama extra), `quoteStay`, `roundToStep`, `computeBookingDeposit` (20%, redondeo a $10.000, totales chicos) |
+| `tests/booking-share.test.ts` | `buildShareMessage`, `formatArs`, `formatDateShort`, `normalizeWhatsAppPhone`, `buildWhatsAppUrl` |
 | `tests/mp-order.test.ts` | `buildOrderPayload`, `outstandingBalance` |
 | `tests/mp-return-to.test.ts` | `resolveReturnTo` / `buildReturnUrl`, allowlist del `returnTo` |
 | `tests/mp-webhook-signature.test.ts` | `buildManifestDataId`, `readSignatureTs`, `toEpochMs`, tolerancia |
@@ -431,16 +509,24 @@ habitaciones/servicios sigue comentado a propósito.
 | `tests/realtime.test.ts` | `realtimeTopic`, `signRealtimeToken` (claims `company_id`/`aud`/`exp`), `realtimeEnabled` |
 | `tests/ai-prompt.test.ts` | `buildSystemPrompt` (hotel, servicios+precios, charge types, instrucciones), `buildUserTurns` (orden, límite 20, adjuntos) |
 | `tests/ai-reply.test.ts` | `parseAiReply` (JSON válido, fences, JSON embebido, acción inválida, fallback `suggest`, truncado) |
+| `tests/ai-availability.test.ts` | disponibilidad de habitaciones para el prompt de IA |
 | `tests/openapi.test.ts` | spec OpenAPI 3.1 de `src/docs/openapi.ts`: cobertura método+path contra los routers de `app.ts` (regex), `security` pública/sesionada, status HTTP válidos, `$ref` que resuelven |
 
 > Si agregás un endpoint a un router y no lo documentás en `src/docs/openapi.ts`, el test de
 > cobertura de `tests/openapi.test.ts` falla (y viceversa: una operación documentada debe existir).
 
 Solo se testean funciones puras extraídas a módulos sin dependencias de Prisma. Si agregás lógica de
-negocio, extraela a `mp.order.ts` / `money.ts` / `date.ts` y testéala ahí en vez de montar la app.
+negocio, extraela a `mp.order.ts` / `money.ts` / `pricing.ts` / `date.ts` y testéala ahí en vez de
+montar la app.
 
 `bench.mjs` **no** es un test: no corre en `pnpm test` ni en `deploy.sh`, porque es lento y golpea la
 DB. Corre solo a pedido y mide throughput/latencia, no correctitud.
+
+`e2e-booking.mjs` tampoco: es el E2E manual del flujo de reserva por WhatsApp (server en :3100 +
+Supabase Storage real, sin mocks). Crea fixtures propias con tag `E2E` y las purga `pnpm e2e:drop`
+(va por Prisma porque no hay endpoints de borrado). Cubre link → cotización pública → URL firmada →
+`PUT` → submit `PENDING`/`PUBLIC_LINK` → single-use 409 → approve `RESERVED` + pago `TRANSFER` →
+double-approve 409 → solapamiento 409.
 
 ## 12. Prueba de carga
 
@@ -485,6 +571,17 @@ comparación entre escenarios, no los números absolutos.
   consultas simples + borrador para revisión), config por empresa (`CompanyAiSetting`, Ajustes) +
   borrador bajo demanda (botón ✨ en el composer) + auto-reply en fire-and-forget desde el webhook.
   API key global `GEMINI_API_KEY` (sin ella todo responde 503 controlado). Ver §5, §6 y §9.
+- **Reserva por link de WhatsApp**: implementada — la recepción arma la oferta (habitación, fechas,
+  personas, camas extras, servicios) en `/booking-links`, comparte un link público
+  `/reserva/<token>` por WhatsApp, el huésped completa sus datos y sube el comprobante del anticipo,
+  la reserva nace `PENDING` (badge "Verificar pago" en Reservas, refresco cada 30 s) y la recepción
+  aprueba (`POST /:id/approve` → `RESERVED` + pago `TRANSFER`) o rechaza (`POST /:id/reject` →
+  `CANCELLED`). Anticipo 20% configurable redondeado a $10.000, congelado en el link. Ver §5, §6,
+  §10.23-25 y §11.
+- **`plan-filtrado-comprobantes.txt`**: **pendiente** (decisión del 2026-10-22: sin filtro por
+  ahora). Fase 0 sin IA: magic bytes (el `mimeType` de Storage es el que **declara el cliente**, no
+  los bytes) + forzar descarga en el link del comprobante. Fase 1: Gemini en el submit, síncrono y
+  fail-open (`thinkingLevel: "minimal"`, ~US$ 1/año). Descartado nsfwjs dentro de la Lambda.
 - **`security-plan.txt`**: **pendiente**. F1 (costo $0): helmet, rate limit en login, CORS allowlist,
   JWT 2h con `issuer`/`audience`, delay anti-enumeración, morgan, `pnpm audit`. F2 (manual): mover
   `DATABASE_URL` y `JWT_SECRET` a Secrets Manager, cerrar el 5432 a la IP personal, IAM de solo-deploy.

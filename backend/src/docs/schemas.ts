@@ -35,6 +35,14 @@ export const companySchema = z.object({
   name: z.string(),
 });
 
+export const companySettingsSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  whatsapp: z.string().nullable(),
+  phone: z.string().nullable(),
+  bookingDepositPercent: z.number().int(),
+});
+
 export const authUserSchema = z.object({
   id: z.number().int(),
   username: z.string(),
@@ -190,6 +198,20 @@ export const reservationTotalsSchema = z.object({
   balance: money(),
 });
 
+export const reservationSourceSchema = z.enum(['STAFF', 'PUBLIC_LINK']);
+export const bookingLinkStatusSchema = z.enum(['OPEN', 'COMPLETED', 'CANCELLED']);
+
+export const reservationReceiptSchema = z
+  .object({
+    id: z.number().int(),
+    fileName: z.string(),
+    mimeType: z.string(),
+    size: z.number().int(),
+    externalRef: z.string().nullable(),
+    createdAt: dateTime(),
+  })
+  .nullable();
+
 export const reservationSchema = z.object({
   id: z.number().int(),
   code: z.string(),
@@ -200,6 +222,7 @@ export const reservationSchema = z.object({
   persons: z.number().int(),
   extraBeds: z.number().int(),
   status: reservationStatusSchema,
+  source: reservationSourceSchema,
   checkedInAt: dateTime().nullable(),
   checkedOutAt: dateTime().nullable(),
   cancelledAt: dateTime().nullable(),
@@ -216,7 +239,115 @@ export const reservationSchema = z.object({
   guest: reservationGuestSchema,
   services: reservationServicesSchema,
   payments: z.array(paymentSchema),
+  receipt: reservationReceiptSchema,
+  bookingLink: z
+    .object({
+      id: z.number().int(),
+      token: z.string(),
+      status: bookingLinkStatusSchema,
+      deposit: money(),
+      expiresAt: dateTime().nullable(),
+    })
+    .nullable(),
   totals: reservationTotalsSchema,
+});
+
+export const bookingLinkLineSchema = z.object({
+  serviceId: z.number().int(),
+  name: z.string(),
+  chargeType: serviceChargeTypeSchema,
+  quantity: z.number().int(),
+  personsCovered: z.number().int().nullable(),
+  unitPrice: money(),
+  lineTotal: money(),
+});
+
+export const bookingLinkSchema = z.object({
+  id: z.number().int(),
+  token: z.string().describe('Token opaco del link publico (/reserva/<token>)'),
+  url: z.string().describe('URL publica completa para compartir por WhatsApp'),
+  status: bookingLinkStatusSchema,
+  checkIn: dateOnly(),
+  checkOut: dateOnly(),
+  nights: z.number().int(),
+  persons: z.number().int(),
+  extraBeds: z.number().int(),
+  room: z
+    .object({
+      id: z.number().int(),
+      number: z.string(),
+      typeName: z.string().nullable(),
+      capacity: z.number().int(),
+      price: money(),
+      label: z.string(),
+    })
+    .nullable(),
+  services: z.array(bookingLinkLineSchema),
+  totals: z.object({
+    roomTotal: money(),
+    servicesTotal: money(),
+    total: money(),
+    deposit: money(),
+    balance: money(),
+  }),
+  expiresAt: dateTime().nullable(),
+  createdAt: dateTime(),
+  completedAt: dateTime().nullable(),
+  reservation: z
+    .object({ id: z.number().int(), code: z.string(), status: reservationStatusSchema })
+    .nullable(),
+  share: z
+    .object({ message: z.string(), whatsappUrl: z.string() })
+    .nullable(),
+});
+
+export const publicBookingQuoteSchema = z.object({
+  hotel: z.object({
+    name: z.string(),
+    whatsapp: z.string().nullable(),
+    phone: z.string().nullable(),
+  }),
+  stay: z.object({
+    checkIn: dateOnly(),
+    checkOut: dateOnly(),
+    nights: z.number().int(),
+    persons: z.number().int(),
+    extraBeds: z.number().int(),
+    roomType: z.string(),
+    roomCapacity: z.number().int().nullable(),
+  }),
+  services: z.array(
+    z.object({
+      name: z.string(),
+      quantity: z.number().int(),
+      unitPrice: money(),
+      lineTotal: money(),
+    }),
+  ),
+  totals: z.object({
+    roomTotal: money(),
+    servicesTotal: money(),
+    total: money(),
+    deposit: money(),
+    balance: money(),
+  }),
+  expiresAt: dateTime().nullable(),
+  expired: z.boolean(),
+});
+
+export const receiptUploadUrlSchema = z.object({
+  path: z.string().describe('Path del objeto en Supabase Storage (se manda de vuelta al confirmar)'),
+  signedUrl: z.string().describe('URL firmada a la que el navegador hace PUT del archivo'),
+  token: z.string(),
+});
+
+export const reservationReceiptDetailSchema = z.object({
+  url: z.string().describe('URL firmada de corta duración (2 min) para ver el comprobante'),
+  fileName: z.string(),
+  mimeType: z.string(),
+  size: z.number().int(),
+  externalRef: z.string().nullable(),
+  createdAt: dateTime(),
 });
 
 export const userRowSchema = z.object({

@@ -5,26 +5,32 @@ import { badRequest } from '../../lib/AppError.js';
 import { paginationMeta, parseIdParam, parsePagination } from '../../lib/pagination.js';
 import { parseDate } from '../../lib/date.js';
 import {
+  approveReservation,
   changeStatus,
   createReservation,
   getReservation,
   markRefunded,
+  rejectReservation,
   serializeReservation,
   updateReservation,
 } from './reservations.service.js';
 import type { CreateReservationInput, UpdateReservationInput } from './reservations.schema.js';
 import { createReservationSchema, updateReservationSchema } from './reservations.schema.js';
+import { getReservationReceipt } from '../booking/booking.service.js';
+import { rejectReservationSchema } from '../booking/booking.schema.js';
 
 const listInclude = {
   room: { select: { id: true, number: true, name: true, capacity: true, price: true } },
   guest: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
   services: { include: { service: { select: { id: true, name: true, chargeType: true, isExtraBed: true } } } },
   payments: true,
+  receipt: { select: { id: true, fileName: true, mimeType: true, size: true, externalRef: true, createdAt: true } },
 } as const;
 
 export async function listReservations(req: Request, res: Response): Promise<void> {
   const { skip, take, page, pageSize } = parsePagination(req.query);
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const source = typeof req.query.source === 'string' ? req.query.source : undefined;
   const guestId = req.query.guestId ? Number(req.query.guestId) : undefined;
   const roomId = req.query.roomId ? Number(req.query.roomId) : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
@@ -40,6 +46,7 @@ export async function listReservations(req: Request, res: Response): Promise<voi
         ? { status: status as ReservationStatus }
         : {}),
     ...(guestId && Number.isInteger(guestId) ? { guestId } : {}),
+    ...(source === 'STAFF' || source === 'PUBLIC_LINK' ? { source } : {}),
     ...(roomId && Number.isInteger(roomId) ? { roomId } : {}),
     ...(from && to
       ? { AND: [{ checkIn: { lt: to } }, { checkOut: { gt: from } }] }
@@ -115,4 +122,24 @@ export async function markRefundedHandler(req: Request, res: Response): Promise<
   const id = parseIdParam(req.params.id);
   const reservation = await markRefunded(id);
   res.json({ data: reservation });
+}
+
+// Verificacion del comprobante de las reservas que llegan por WhatsApp.
+export async function approveReservationHandler(req: Request, res: Response): Promise<void> {
+  const id = parseIdParam(req.params.id);
+  const reservation = await approveReservation(id);
+  res.json({ data: reservation });
+}
+
+export async function rejectReservationHandler(req: Request, res: Response): Promise<void> {
+  const id = parseIdParam(req.params.id);
+  const { reason } = rejectReservationSchema.parse(req.body ?? {}) as { reason?: string | null };
+  const reservation = await rejectReservation(id, reason);
+  res.json({ data: reservation });
+}
+
+export async function getReceiptHandler(req: Request, res: Response): Promise<void> {
+  const id = parseIdParam(req.params.id);
+  const receipt = await getReservationReceipt(id);
+  res.json({ data: receipt });
 }

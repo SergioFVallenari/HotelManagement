@@ -20,16 +20,34 @@ const STATUS_OPTIONS = [
   { value: 'CANCELLED', label: 'Cancelada' },
 ];
 
+const SOURCE_OPTIONS = [
+  { value: '', label: 'Todos los orígenes' },
+  { value: 'STAFF', label: 'Cargadas en recepción' },
+  { value: 'PUBLIC_LINK', label: 'Link de WhatsApp' },
+];
+
+// La bandeja de reservas se refresca sola para que las que llegan por el link
+// de WhatsApp aparezcan sin recargar la pagina.
+const POLL_MS = 30_000;
+
 export function ReservationsPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [source, setSource] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [appliedParams, setAppliedParams] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
 
-  const query = buildQuery({ search: appliedParams.search, status: appliedParams.status, from: appliedParams.from, to: appliedParams.to, page });
-  const { data, loading, error, reload } = useApi<Page<Reservation>>(`/reservations${query}`);
+  const query = buildQuery({
+    search: appliedParams.search,
+    status: appliedParams.status,
+    source: appliedParams.source,
+    from: appliedParams.from,
+    to: appliedParams.to,
+    page,
+  });
+  const { data, loading, error, reload } = useApi<Page<Reservation>>(`/reservations${query}`, { pollMs: POLL_MS });
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Reservation | null>(null);
@@ -43,6 +61,7 @@ export function ReservationsPage() {
     setAppliedParams({
       search: search.trim() || undefined,
       status: status || undefined,
+      source: source || undefined,
       from: from || undefined,
       to: to || undefined,
     } as Record<string, string>);
@@ -102,6 +121,13 @@ export function ReservationsPage() {
                 </option>
               ))}
             </select>
+            <select className="form-select" style={{ width: 190 }} value={source} onChange={(e) => setSource(e.target.value)}>
+              {SOURCE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
             <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
                 <span className="input-group-text">Desde</span>
                 <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -155,6 +181,14 @@ export function ReservationsPage() {
                           <span className="d-inline-flex align-items-center gap-2">
                             <StatusBadge status={r.status} />
                             <RefundBadge reservation={r} />
+                            {r.source === 'PUBLIC_LINK' && (
+                              <span
+                                className={`badge rounded-pill ${r.status === 'PENDING' ? 'text-bg-info' : 'text-bg-light border'}`}
+                                title={r.status === 'PENDING' ? 'El huésped envió el comprobante: hay que verificarlo' : 'Reserva enviada por el link de WhatsApp'}
+                              >
+                                {r.status === 'PENDING' ? 'Verificar pago' : 'WhatsApp'}
+                              </span>
+                            )}
                           </span>
                         </td>
                         <td className="text-end">

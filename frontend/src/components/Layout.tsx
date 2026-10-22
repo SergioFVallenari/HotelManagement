@@ -3,6 +3,7 @@ import type { ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   IconBed,
+  IconBrandWhatsapp,
   IconBuildingSkyscraper,
   IconCalendarCheck,
   IconCalendarMonth,
@@ -44,6 +45,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
       { to: '/rooms', label: 'Habitaciones', icon: IconBed },
       { to: '/reservations', label: 'Reservas', icon: IconCalendarCheck },
+      { to: '/booking-links', label: 'Reservas por WhatsApp', icon: IconBrandWhatsapp },
       { to: '/messages', label: 'Mensajes', icon: IconMessages },
       { to: '/guests', label: 'Huéspedes', icon: IconUsers },
     ],

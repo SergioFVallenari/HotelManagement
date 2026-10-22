@@ -16,6 +16,11 @@ function parseOrigins(value: string | undefined, nodeEnv: string): string[] {
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 
+// URL publica del frontend (CloudFront en produccion). Se usa para armar el
+// link de la reserva por WhatsApp y tambien es el default del redirect de IG.
+const frontendUrl =
+  process.env.FRONTEND_URL ?? (nodeEnv === 'production' ? CLOUDFRONT_URL : 'http://localhost:5173');
+
 export const env = {
   databaseUrl: required('DATABASE_URL'),
   // Session pooler (Supabase 5432). Solo lo usa la CLI de Prisma via
@@ -39,6 +44,7 @@ export const env = {
   nodeEnv,
   isProduction: nodeEnv === 'production',
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS, nodeEnv),
+  frontendUrl,
   registerKey: process.env.REGISTER_KEY ?? '',
   mp: {
     appId: process.env.MP_APP_ID ?? '',
@@ -77,8 +83,6 @@ export const env = {
     graphHost: process.env.INSTAGRAM_GRAPH_HOST ?? 'https://graph.instagram.com',
     graphApiUrl: process.env.INSTAGRAM_GRAPH_API_URL ?? 'https://graph.instagram.com/v26.0',
     webhookVerifyToken: process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN ?? '',
-    frontendUrl:
-      process.env.INSTAGRAM_FRONTEND_URL ??
-      (nodeEnv === 'production' ? CLOUDFRONT_URL : 'http://localhost:5173'),
+    frontendUrl: process.env.INSTAGRAM_FRONTEND_URL ?? frontendUrl,
   },
 };

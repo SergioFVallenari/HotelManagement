@@ -1,8 +1,9 @@
-import { Prisma, type ServiceChargeType } from '../../generated/prisma/client.js';
+import { Prisma, type ReservationSource, type ReservationStatus, type ServiceChargeType } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
-import { nightsBetween, parseDate, todayHotel } from '../../lib/date.js';
+import { nightsBetween, parseDate, todayHotel, assertValidRange } from '../../lib/date.js';
+import { quoteStay, serviceQuantity } from '../../lib/pricing.js';
 import { getTenantId } from '../../lib/tenant.js';
 import type { CreateReservationInput, ServiceInput, UpdateReservationInput } from './reservations.schema.js';
 import { createOrderForReservation, type OrderGuestData } from '../mercadopago/mp.checkout.js';
@@ -17,6 +18,7 @@ export interface ReservationRow {
   persons: number;
   extraBeds: number;
   status: string;
+  source?: string;
   checkedInAt: Date | null;
   checkedOutAt: Date | null;
   cancelledAt: Date | null;
@@ -59,6 +61,21 @@ export interface ReservationRow {
     paidAt: Date;
     reference: string | null;
   }[];
+  receipt?: {
+    id: number;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    externalRef: string | null;
+    createdAt: Date;
+  } | null;
+  bookingLink?: {
+    id: number;
+    token: string;
+    status: string;
+    deposit: unknown;
+    expiresAt: Date | null;
+  } | null;
 }
 
 export const FULL_INCLUDE = {
@@ -66,16 +83,18 @@ export const FULL_INCLUDE = {
   guest: true,
   services: { include: { service: true } },
   payments: { orderBy: { paidAt: 'desc' } },
+  receipt: true,
+  bookingLink: true,
 } as const;
 
 export function serializeReservation(row: ReservationRow) {
   const nights = nightsBetween(row.checkIn, row.checkOut);
   const roomPrice = decToNum(row.room?.price);
-  const roomTotal = round2(nights * roomPrice);
-  const servicesTotal = round2(
-    (row.services ?? []).reduce((acc, s) => acc + s.quantity * decToNum(s.unitPrice), 0),
+  const { roomTotal, servicesTotal, total } = quoteStay(
+    nights,
+    roomPrice,
+    (row.services ?? []).map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.unitPrice) })),
   );
-  const total = round2(roomTotal + servicesTotal);
   const amountPaid = round2((row.payments ?? []).reduce((acc, p) => acc + decToNum(p.amount), 0));
   const balance = round2(total - amountPaid);
 
@@ -89,6 +108,7 @@ export function serializeReservation(row: ReservationRow) {
     persons: row.persons,
     extraBeds: row.extraBeds,
     status: row.status,
+    source: row.source ?? 'STAFF',
     checkedInAt: row.checkedInAt,
     checkedOutAt: row.checkedOutAt,
     cancelledAt: row.cancelledAt,
@@ -130,6 +150,25 @@ export function serializeReservation(row: ReservationRow) {
       paidAt: p.paidAt,
       reference: p.reference,
     })),
+    receipt: row.receipt
+      ? {
+          id: row.receipt.id,
+          fileName: row.receipt.fileName,
+          mimeType: row.receipt.mimeType,
+          size: row.receipt.size,
+          externalRef: row.receipt.externalRef,
+          createdAt: row.receipt.createdAt,
+        }
+      : null,
+    bookingLink: row.bookingLink
+      ? {
+          id: row.bookingLink.id,
+          token: row.bookingLink.token,
+          status: row.bookingLink.status,
+          deposit: decToNum(row.bookingLink.deposit),
+          expiresAt: row.bookingLink.expiresAt,
+        }
+      : null,
     totals: {
       nights,
       roomPrice,
@@ -142,34 +181,12 @@ export function serializeReservation(row: ReservationRow) {
   };
 }
 
-function assertValidRange(checkIn: Date, checkOut: Date): void {
-  const nights = nightsBetween(checkIn, checkOut);
-  if (nights <= 0) throw badRequest('checkOut debe ser posterior a checkIn');
-}
-
 function generateCode(): string {
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0');
   return `RSV-${Date.now().toString(36).toUpperCase()}${rand}`;
 }
 
-function computeQuantity(
-  chargeType: ServiceChargeType,
-  ctx: { persons: number; extraBeds: number; nights: number },
-  requested?: number,
-  isExtraBed = false,
-): number {
-  switch (chargeType) {
-    case 'PER_PERSON':
-      return (requested ?? (ctx.persons + ctx.extraBeds)) * ctx.nights;
-    case 'PER_DAY':
-      if (isExtraBed) return ctx.extraBeds > 0 ? ctx.extraBeds * ctx.nights : ctx.nights;
-      return ctx.nights;
-    case 'PACK':
-      return requested ?? 1;
-  }
-}
-
-async function loadServices(items: ServiceInput[], ctx: { persons: number; extraBeds: number; nights: number }) {
+export async function loadServices(items: ServiceInput[], ctx: { persons: number; extraBeds: number; nights: number }) {
   const ids = [...new Set(items.map((i) => i.serviceId))];
   const services = await prisma.service.findMany({
     where: { id: { in: ids }, isActive: true },
@@ -185,9 +202,10 @@ async function loadServices(items: ServiceInput[], ctx: { persons: number; extra
     }
     return {
       id: service.id,
+      name: service.name,
       chargeType: service.chargeType,
       isExtraBed: service.isExtraBed,
-      quantity: computeQuantity(
+      quantity: serviceQuantity(
         service.chargeType,
         ctx,
         service.chargeType === 'PACK' ? item.quantity : service.chargeType === 'PER_PERSON' ? (item.personsCovered ?? undefined) : undefined,
@@ -199,7 +217,29 @@ async function loadServices(items: ServiceInput[], ctx: { persons: number; extra
   });
 }
 
-export async function createReservation(input: CreateReservationInput) {
+export interface ReservationReceiptInput {
+  storagePath: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  externalRef?: string | null;
+}
+
+export interface CreateReservationOptions {
+  // Fuerza el estado inicial (las reservas que llegan por WhatsApp nacen PENDING).
+  forceStatus?: ReservationStatus;
+  // De donde sale la reserva.
+  source?: ReservationSource;
+  // No genera link de MercadoPago aunque el cuerpo pida anticipo.
+  skipPaymentLink?: boolean;
+  // Solicitud de WhatsApp que se reclama: el link pasa a COMPLETED dentro de la
+  // misma transaccion que crea la reserva (asi un doble envio no duplica).
+  bookingLinkId?: number;
+  // Comprobante de pago que subio el huesped.
+  receipt?: ReservationReceiptInput;
+}
+
+export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
   const checkIn = parseDate(input.checkIn, 'checkIn');
   const checkOut = parseDate(input.checkOut, 'checkOut');
   assertValidRange(checkIn, checkOut);
@@ -224,7 +264,11 @@ export async function createReservation(input: CreateReservationInput) {
   const services = await loadServices(input.services ?? [], { persons, extraBeds, nights });
 
   const roomPrice = decToNum(room.price);
-  const total = round2(nights * roomPrice + round2(services.reduce((acc, s) => acc + s.quantity * decToNum(s.price), 0)));
+  const { total } = quoteStay(
+    nights,
+    roomPrice,
+    services.map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.price) })),
+  );
   const code = generateCode();
 
   const depositPayment = input.payment;
@@ -240,7 +284,9 @@ export async function createReservation(input: CreateReservationInput) {
     status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
     AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
   };
-  const wantPaymentLink = depositViaMp ? orderAmount > 0 : input.generatePaymentLink === true && orderAmount > 0;
+  const wantPaymentLink =
+    !options.skipPaymentLink &&
+    (depositViaMp ? orderAmount > 0 : input.generatePaymentLink === true && orderAmount > 0);
 
   let order: { orderId: string; checkoutUrl: string } | undefined;
   if (wantPaymentLink) {
@@ -266,6 +312,18 @@ export async function createReservation(input: CreateReservationInput) {
   }
 
   return prisma.$transaction(async (tx) => {
+    // Reclamo atomico de la solicitud de WhatsApp: el update condicional por
+    // status OPEN hace que un segundo envio del huesped no cree otra reserva.
+    if (options.bookingLinkId !== undefined) {
+      const claimed = await tx.bookingLink.updateMany({
+        where: { id: options.bookingLinkId, status: 'OPEN' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw conflict('LINK_ALREADY_USED', 'Esta solicitud de reserva ya fue enviada');
+      }
+    }
+
     const conflictReservation = await tx.reservation.findFirst({
       where: overlapWhere,
       select: { id: true, code: true },
@@ -300,14 +358,36 @@ export async function createReservation(input: CreateReservationInput) {
         persons,
         extraBeds,
         notes: input.notes,
-        status: wantPaymentLink ? 'PENDING' : 'RESERVED',
+        status: options.forceStatus ?? (wantPaymentLink ? 'PENDING' : 'RESERVED'),
+        source: options.source ?? 'STAFF',
         ...(order ? { mpOrderId: order.orderId, mpCheckoutUrl: order.checkoutUrl, mpExpectedAmount: orderAmount } : {}),
+        ...(options.receipt
+          ? {
+              receipt: {
+                create: {
+                  companyId,
+                  storagePath: options.receipt.storagePath,
+                  fileName: options.receipt.fileName,
+                  mimeType: options.receipt.mimeType,
+                  size: options.receipt.size,
+                  externalRef: options.receipt.externalRef ?? null,
+                },
+              },
+            }
+          : {}),
         services: {
           create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
         },
       },
       include: FULL_INCLUDE,
     });
+
+    if (options.bookingLinkId !== undefined) {
+      await tx.bookingLink.update({
+        where: { id: options.bookingLinkId },
+        data: { reservationId: reservation.id },
+      });
+    }
 
     if (depositPayment === undefined || deposit <= 0 || depositViaMp) return serializeReservation(reservation);
 
@@ -332,8 +412,8 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
     include: FULL_INCLUDE,
   });
   if (!existing) throw notFound('Reserva', id);
-  if (existing.status !== 'RESERVED') {
-    throw conflict('INVALID_STATE', 'Solo una reserva en estado RESERVED puede modificarse');
+  if (existing.status !== 'RESERVED' && existing.status !== 'PENDING') {
+    throw conflict('INVALID_STATE', 'Solo una reserva en estado RESERVED o PENDING puede modificarse');
   }
 
   let checkIn = existing.checkIn;
@@ -434,7 +514,7 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
                       quantity:
                         line.service.chargeType === 'PACK'
                           ? line.quantity
-                          : computeQuantity(
+                          : serviceQuantity(
                               line.service.chargeType,
                               { persons, extraBeds, nights },
                               line.service.chargeType === 'PER_PERSON'
@@ -527,6 +607,57 @@ export async function markRefunded(id: number) {
   const updated = await prisma.reservation.update({
     where: { id },
     data: { refunded: true, refundedAt: new Date() },
+    include: FULL_INCLUDE,
+  });
+  return serializeReservation(updated);
+}
+
+// Aprobacion del comprobante que subio el huesped por el formulario de
+// WhatsApp: PENDING -> RESERVED. El anticipo se registra en este momento
+// (antes de verificar el comprobante el pago no existe: si la reserva se
+// rechaza, los ingresos del hotel no se ven afectados).
+export async function approveReservation(id: number) {
+  const reservation = await prisma.reservation.findUnique({ where: { id }, include: FULL_INCLUDE });
+  if (!reservation) throw notFound('Reserva', id);
+  if (reservation.status !== 'PENDING') {
+    throw conflict('INVALID_STATE', 'Solo una reserva PENDING puede aprobarse');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const link = reservation.bookingLink;
+    if (link && (reservation.payments?.length ?? 0) === 0) {
+      await tx.payment.create({
+        data: {
+          reservationId: id,
+          amount: decToNum(link.deposit),
+          method: 'TRANSFER',
+          reference: `FORM-${link.token.slice(0, 12).toUpperCase()}`,
+        },
+      });
+    }
+
+    const updated = await tx.reservation.update({
+      where: { id },
+      data: { status: 'RESERVED' },
+      include: FULL_INCLUDE,
+    });
+    return serializeReservation(updated);
+  });
+}
+
+// Rechazo del comprobante: la reserva se cancela y queda el motivo en las notas.
+export async function rejectReservation(id: number, reason?: string | null) {
+  const reservation = await prisma.reservation.findUnique({ where: { id } });
+  if (!reservation) throw notFound('Reserva', id);
+  if (reservation.status !== 'PENDING') {
+    throw conflict('INVALID_STATE', 'Solo una reserva PENDING puede rechazarse');
+  }
+
+  const cancelled = await changeStatus(id, 'CANCELLED');
+  const motivo = reason?.trim() ? `Rechazada: ${reason.trim()}` : 'Rechazada: el comprobante no pudo verificarse';
+  const updated = await prisma.reservation.update({
+    where: { id },
+    data: { notes: [cancelled.notes, motivo].filter(Boolean).join('\n') },
     include: FULL_INCLUDE,
   });
   return serializeReservation(updated);

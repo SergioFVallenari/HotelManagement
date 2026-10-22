@@ -11,6 +11,12 @@ model Company {
   id        Int      @id @default(autoincrement())
   name      String   @unique
   createdById Int?
+  // Anticipo que se cobra de las reservas que llegan por el formulario de
+  // WhatsApp: porcentaje del total de la estadia (se redondea a multiplos de
+  // $10.000). 0 = el hotel no pide anticipo.
+  bookingDepositPercent Int @default(20)
+  whatsapp String?
+  phone    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   members     UserCompany[]
@@ -23,6 +29,8 @@ model Company {
   channelAccounts      ChannelAccount[]
   channelConversations ChannelConversation[]
   aiSetting   CompanyAiSetting?
+  bookingLinks BookingLink[]
+  bookingReceipts ReservationReceipt[]
 }
 
 model CompanyAiSetting {
@@ -104,6 +112,7 @@ model Room {
   type         RoomType      @relation(fields: [typeId], references: [id])
   company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   reservations Reservation[]
+  bookingLinks BookingLink[]
 
   @@unique([companyId, number])
   @@index([typeId])
@@ -156,6 +165,14 @@ enum ReservationStatus {
   CANCELLED
 }
 
+// De donde salio la reserva: STAFF = cargada por el personal en el panel,
+// PUBLIC_LINK = el huesped la mando por el formulario de WhatsApp (queda
+// PENDING hasta que la recepcion verifica el comprobante).
+enum ReservationSource {
+  STAFF
+  PUBLIC_LINK
+}
+
 model Reservation {
   id           Int                @id @default(autoincrement())
   code         String             @unique
@@ -167,6 +184,7 @@ model Reservation {
   persons      Int                @default(1)
   extraBeds    Int                @default(0)
   status       ReservationStatus  @default(RESERVED)
+  source       ReservationSource  @default(STAFF)
   checkedInAt  DateTime?
   checkedOutAt DateTime?
   cancelledAt  DateTime?
@@ -185,11 +203,71 @@ model Reservation {
   company      Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   payments     Payment[]
   services     ReservationService[]
+  receipt      ReservationReceipt?
+  bookingLink  BookingLink?
 
   @@index([companyId, code])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([status])
+  @@index([companyId, source])
+}
+
+// Solicitud de reserva preparada por la recepcion y compartida por WhatsApp.
+// El link es un token opaco: el huesped lo abre, ve la cotizacion congelada,
+// completa sus datos y sube el comprobante. Al enviarse, la reserva nace
+// PENDING y el link queda COMPLETED (de ahi el estado unico por link).
+enum BookingLinkStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+model BookingLink {
+  id            Int               @id @default(autoincrement())
+  token         String            @unique
+  companyId     Int
+  roomId        Int
+  checkIn       DateTime          @db.Date
+  checkOut      DateTime          @db.Date
+  persons       Int               @default(1)
+  extraBeds     Int               @default(0)
+  // Snapshot de los servicios cotizados: { serviceId, name, quantity,
+  // personsCovered, unitPrice, lineTotal }.
+  services      Json              @default("[]")
+  total         Decimal           @db.Decimal(10, 2)
+  deposit       Decimal           @db.Decimal(10, 2)
+  status        BookingLinkStatus @default(OPEN)
+  reservationId Int?              @unique
+  expiresAt     DateTime?
+  createdAt     DateTime          @default(now())
+  completedAt   DateTime?
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  room          Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  reservation   Reservation?      @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+}
+
+// Comprobante de pago que subio el huesped por el formulario de WhatsApp.
+// El archivo vive en Supabase Storage (bucket privado); aca queda solo la
+// metadata y el path para pedir una URL firmada.
+model ReservationReceipt {
+  id            Int         @id @default(autoincrement())
+  companyId     Int
+  reservationId Int         @unique
+  storagePath   String
+  fileName      String
+  mimeType      String
+  size          Int
+  // Referencia de la transferencia que escribio el huesped (opcional).
+  externalRef   String?
+  createdAt     DateTime    @default(now())
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 model ReservationService {

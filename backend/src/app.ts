@@ -8,6 +8,8 @@ import roomRoutes from './modules/rooms/rooms.routes.js';
 import guestRoutes from './modules/guests/guests.routes.js';
 import serviceRoutes from './modules/services/services.routes.js';
 import reservationRoutes from './modules/reservations/reservations.routes.js';
+import bookingRoutes from './modules/booking/booking.routes.js';
+import publicBookingRoutes from './modules/booking/publicBooking.routes.js';
 import paymentRoutes from './modules/payments/payments.routes.js';
 import summaryRoutes from './modules/summary/summary.routes.js';
 import calendarRoutes from './modules/calendar/calendar.routes.js';
@@ -58,6 +60,10 @@ export function createApp(): express.Express {
   app.use('/api/guests', guestRoutes);
   app.use('/api/services', serviceRoutes);
   app.use('/api/reservations', reservationRoutes);
+  app.use('/api/booking-links', bookingRoutes);
+  // Ojo: va en /api/public/booking y no en /api/booking porque app.use matchea
+  // por prefijo y se comeria /api/booking-links.
+  app.use('/api/public/booking', publicBookingRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/summary', summaryRoutes);
   app.use('/api/calendar', calendarRoutes);

@@ -1,11 +1,11 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
-import { IconBrandInstagram, IconCreditCard, IconSparkles } from '@tabler/icons-react';
+import { IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { AiConfig, AiSettings, MpConnection } from '../api/types';
+import type { AiConfig, AiSettings, CompanySettings, MpConnection } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Toast } from '../components/Feedback';
 import { useApiError } from '../components/pagination';
@@ -603,10 +603,125 @@ function MercadoPagoSection() {
   );
 }
 
-type SettingsTab = 'pagos' | 'redes' | 'ia';
+function BookingSettingsSection() {
+  const { data, loading, error, reload } = useApi<{ data: CompanySettings }>('/companies/current');
+  const settings = data?.data;
+  const { error: apiError, handleError, clearError } = useApiError();
+  const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const form = {
+    whatsapp: overrides.whatsapp ?? settings?.whatsapp ?? '',
+    phone: overrides.phone ?? settings?.phone ?? '',
+    bookingDepositPercent: overrides.bookingDepositPercent ?? settings?.bookingDepositPercent ?? 20,
+  };
+
+  async function save() {
+    setSaving(true);
+    clearError();
+    try {
+      const result = await api<{ data: CompanySettings }>('/companies/current', {
+        method: 'PATCH',
+        body: {
+          whatsapp: form.whatsapp.trim() || null,
+          phone: form.phone.trim() || null,
+          bookingDepositPercent: Number(form.bookingDepositPercent),
+        },
+      });
+      setOverrides({});
+      setToast('Configuración de reservas guardada.');
+      if (result.data) reload();
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card shadow-sm">
+      <div className="card-body">
+        {loading ? (
+          <p className="text-secondary mb-0">Cargando configuración…</p>
+        ) : error ? (
+          <div className="alert alert-danger mb-0">{error}</div>
+        ) : (
+          <>
+            <div className="row g-3">
+              <div className="col-md-4">
+                <label className="form-label" htmlFor="booking-deposit-percent">
+                  Anticipo (% del total)
+                </label>
+                <div className="input-group">
+                  <input
+                    id="booking-deposit-percent"
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="form-control"
+                    value={form.bookingDepositPercent}
+                    onChange={(e) => setOverrides({ ...overrides, bookingDepositPercent: Number(e.target.value) })}
+                  />
+                  <span className="input-group-text">%</span>
+                </div>
+                <div className="form-text">
+                  Se redondea al múltiplo de $10.000 más cercano. Con 0% el link se envía sin anticipo (no se pide
+                  comprobante).
+                </div>
+              </div>
+              <div className="col-md-4">
+                <label className="form-label" htmlFor="booking-whatsapp">
+                  WhatsApp del hotel
+                </label>
+                <input
+                  id="booking-whatsapp"
+                  className="form-control"
+                  value={form.whatsapp}
+                  onChange={(e) => setOverrides({ ...overrides, whatsapp: e.target.value })}
+                  placeholder="5491123456789"
+                />
+                <div className="form-text">Con código de país. El botón "Compartir por WhatsApp" abre este chat.</div>
+              </div>
+              <div className="col-md-4">
+                <label className="form-label" htmlFor="booking-phone">
+                  Teléfono de contacto
+                </label>
+                <input
+                  id="booking-phone"
+                  className="form-control"
+                  value={form.phone}
+                  onChange={(e) => setOverrides({ ...overrides, phone: e.target.value })}
+                  placeholder="Opcional"
+                />
+                <div className="form-text">Se muestra al huésped en el formulario público.</div>
+              </div>
+            </div>
+
+            {apiError && (
+              <div className="alert alert-danger mt-3 mb-0">
+                {apiError}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+                {saving ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+      <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />
+    </div>
+  );
+}
+
+type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia';
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
   { id: 'pagos', label: 'Pagos online', icon: <IconCreditCard size={16} /> },
+  { id: 'reservas', label: 'Reservas', icon: <IconBrandWhatsapp size={16} /> },
   { id: 'redes', label: 'Redes sociales', icon: <IconBrandInstagram size={16} /> },
   { id: 'ia', label: 'Asistente de IA', icon: <IconSparkles size={16} /> },
 ];
@@ -616,7 +731,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> 
 // history.replaceState que limpia el callback no la pise.
 function initialTab(): SettingsTab {
   const value = new URLSearchParams(window.location.search).get('tab');
-  return value === 'redes' || value === 'ia' ? value : 'pagos';
+  return value === 'redes' || value === 'ia' || value === 'reservas' ? value : 'pagos';
 }
 
 export function SettingsPage() {
@@ -646,7 +761,7 @@ export function SettingsPage() {
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
         <div>
           <h1 className="h4 mb-1">Configuración</h1>
-          <p className="text-secondary mb-0">Pagos online, redes sociales y asistente de IA del hotel.</p>
+          <p className="text-secondary mb-0">Pagos online, reservas por WhatsApp, redes sociales y asistente de IA del hotel.</p>
         </div>
       </div>
 
@@ -677,7 +792,7 @@ export function SettingsPage() {
         })}
       </ul>
 
-      {/* Los tres paneles quedan montados (ocultos con d-none): no se pierde lo
+      {/* Los paneles quedan montados (ocultos con d-none): no se pierde lo
           editado en el form de IA y siguen vivos los listeners del OAuth de
           MercadoPago. */}
       <div
@@ -687,6 +802,18 @@ export function SettingsPage() {
         className={tab === 'pagos' ? '' : 'd-none'}
       >
         <MercadoPagoSection />
+      </div>
+      <div
+        role="tabpanel"
+        id="settings-panel-reservas"
+        aria-labelledby="settings-tab-reservas"
+        className={tab === 'reservas' ? '' : 'd-none'}
+      >
+        <h2 className="h5 mb-1">Reservas por WhatsApp</h2>
+        <p className="text-secondary mb-3">
+          Anticipo que se le pide al huésped y datos de contacto que se muestran en el formulario público.
+        </p>
+        <BookingSettingsSection />
       </div>
       <div
         role="tabpanel"

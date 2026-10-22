@@ -1197,3 +1197,105 @@ body {
     display: inline-flex;
   }
 }
+/* --- Solicitud de reserva publica (/reserva/:token) --- */
+.booking-screen {
+  align-items: flex-start;
+  padding: 32px 16px 48px;
+}
+
+.booking-card {
+  background: var(--gh-surface);
+  border: 1px solid var(--gh-border);
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  padding: 28px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.booking-card .login-brand h1 {
+  font-size: 22px;
+}
+
+.booking-stay {
+  border: 1px solid var(--gh-border);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--gh-surface-muted);
+  margin-bottom: 8px;
+}
+
+.booking-stay-dates {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.booking-stay-dates strong {
+  display: block;
+  font-size: 15px;
+}
+
+.booking-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gh-text-muted);
+}
+
+.booking-nights {
+  font-size: 12px;
+  color: var(--gh-text-muted);
+  border: 1px solid var(--gh-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.booking-success {
+  text-align: center;
+}
+
+.booking-success-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #fff;
+  background: var(--bs-success);
+}
+
+/* --- Comprobante del anticipo en el detalle de la reserva --- */
+.receipt-section {
+  border: 1px solid var(--gh-border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+  background: var(--gh-surface-muted);
+}
+
+.receipt-section--pending {
+  background: #fff8e1;
+  border-color: #ffe08a;
+}
+
+.receipt-section .section-title {
+  font-size: 15px;
+}
+
+.receipt-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: #fff;
+}

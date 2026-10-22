@@ -7,6 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "bench": "node bench.mjs",
     "bench:drop": "tsx prisma/bench.drop.ts",
+    "e2e:booking": "node e2e-booking.mjs",
+    "e2e:drop": "tsx prisma/e2e.drop.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",

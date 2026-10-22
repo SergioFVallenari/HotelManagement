@@ -10,9 +10,15 @@ import {
   updateReservationSchema,
 } from '../modules/reservations/reservations.schema.js';
 import { recordPaymentSchema } from '../modules/payments/payments.schema.js';
-import { createCompanySchema } from '../modules/companies/companies.schema.js';
+import { createCompanySchema, updateCompanySettingsSchema } from '../modules/companies/companies.schema.js';
 import { createUserSchema } from '../modules/users/users.schema.js';
 import { authUrlSchema, regenerateSchema } from '../modules/mercadopago/mp.schema.js';
+import {
+  createBookingLinkSchema,
+  publicBookingSchema,
+  receiptUploadSchema,
+  rejectReservationSchema,
+} from '../modules/booking/booking.schema.js';
 
 type Json = Record<string, unknown>;
 
@@ -128,10 +134,14 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/auth/register', 'post'],
   ['/api/auth/resend-confirmation', 'post'],
   ['/api/auth/confirm-email', 'get'],
+  ['/api/public/booking/{token}', 'get'],
+  ['/api/public/booking/{token}', 'post'],
+  ['/api/public/booking/{token}/receipt', 'post'],
 ];
 
 const componentSchemas: Record<string, Json> = {
   Company: js(schemas.companySchema),
+  CompanySettings: js(schemas.companySettingsSchema),
   AuthUser: js(schemas.authUserSchema),
   Meta: js(schemas.metaSchema),
   ErrorEnvelope: js(schemas.errorEnvelopeSchema),
@@ -149,6 +159,10 @@ const componentSchemas: Record<string, Json> = {
   Summary: js(schemas.summarySchema),
   Calendar: js(schemas.calendarSchema),
   AvailableRoomsMeta: js(schemas.availableRoomsMetaSchema),
+  BookingLink: js(schemas.bookingLinkSchema),
+  PublicBookingQuote: js(schemas.publicBookingQuoteSchema),
+  ReceiptUploadUrl: js(schemas.receiptUploadUrlSchema),
+  ReservationReceipt: js(schemas.reservationReceiptDetailSchema),
 };
 
 const paths: Record<string, Json> = {
@@ -315,6 +329,34 @@ const paths: Record<string, Json> = {
         ...errors({
           '400': 'Datos inválidos (`VALIDATION_ERROR`)',
           '409': '`DUPLICATE`: ya existe un hotel con ese nombre',
+        }),
+      },
+    }),
+  },
+
+  '/api/companies/current': {
+    get: op({
+      tags: ['Empresas'],
+      summary: 'Configuración del hotel activo',
+      description: `${noRole} Datos del hotel de la sesión que usa el formulario de reservas por WhatsApp.`,
+      responses: {
+        '200': ok(ref('CompanySettings')),
+        ...errors(),
+      },
+    }),
+    patch: op({
+      tags: ['Empresas'],
+      summary: 'Actualizar configuración del hotel',
+      description:
+        `${ownerOrAdmin} El porcentaje de anticipo se aplica a las solicitudes nuevas ` +
+        '(20% por defecto, redondeado a múltiplos de $10.000). El WhatsApp es el número al que se ' +
+        'comparte el link desde la recepción.',
+      requestBody: jsonBody(js(updateCompanySettingsSchema, 'input'), 'Campos a actualizar'),
+      responses: {
+        '200': ok(ref('CompanySettings')),
+        ...errors({
+          '400': 'Datos inválidos (`VALIDATION_ERROR`)',
+          '403': '`FORBIDDEN`: requiere rol OWNER o ADMIN',
         }),
       },
     }),
@@ -616,6 +658,7 @@ const paths: Record<string, Json> = {
           schema: { type: 'string', enum: ['active', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'] },
         }),
         queryParam('guestId', 'Filtrar por huésped', { schema: { type: 'integer' } }),
+        queryParam('source', 'Filtrar por origen de la reserva', { schema: { type: 'string', enum: ['STAFF', 'PUBLIC_LINK'] } }),
         queryParam('roomId', 'Filtrar por habitación', { schema: { type: 'integer' } }),
         queryParam('from', 'Solo reservas con checkOut posterior a `from` (YYYY-MM-DD)', { schema: { type: 'string', format: 'date' } }),
         queryParam('to', 'Solo reservas con checkIn anterior a `to` (YYYY-MM-DD)', { schema: { type: 'string', format: 'date' } }),
@@ -1470,6 +1513,198 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/booking-links': {
+    get: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Listar solicitudes de reserva',
+      description:
+        `${noRole} Devuelve las solicitudes preparadas por la recepción (máx. 100, más nuevas primero) ` +
+        'con la cotización congelada y el link público para compartir.',
+      parameters: [
+        queryParam('status', 'Filtrar por estado del link', {
+          schema: { type: 'string', enum: ['OPEN', 'COMPLETED', 'CANCELLED'] },
+        }),
+      ],
+      responses: {
+        '200': ok({ type: 'array', items: ref('BookingLink') }),
+        ...errors(),
+      },
+    }),
+    post: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Crear solicitud de reserva y link público',
+      description:
+        `${noRole} La recepción elige habitación, fechas, personas, camas extras y servicios; el huésped no elige. ` +
+        'La cotización (total y anticipo) queda congelada en el link. El anticipo se calcula como el ' +
+        '`bookingDepositPercent` del hotel (default 20%) redondeado a múltiplos de $10.000, o se overridea con `deposit`. ' +
+        'El link se abre en el frontend como `/reserva/<token>` y es de un solo uso.',
+      requestBody: jsonBody(js(createBookingLinkSchema, 'input'), 'Estadía y servicios a cotizar'),
+      responses: {
+        '201': ok(ref('BookingLink'), 'Solicitud creada con el link para compartir'),
+        ...errors({
+          '400': '`VALIDATION_ERROR`/`BAD_REQUEST`: capacidad, camas extras o anticipo inválido',
+          '404': '`NOT_FOUND`: habitación o servicio inexistente/inactivo',
+          '409': '`ROOM_OCCUPIED`: la habitación no está libre en el rango solicitado',
+          '502': '`STORAGE_UNAVAILABLE`: no se pudo preparar el bucket de comprobantes',
+        }),
+      },
+    }),
+  },
+
+  '/api/booking-links/{id}': {
+    get: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Obtener solicitud de reserva',
+      description: `${noRole} Incluye el mensaje y la URL de WhatsApp listos para reenviar.`,
+      parameters: [pathIdParam('ID de la solicitud')],
+      responses: {
+        '200': ok(ref('BookingLink')),
+        ...errors(),
+      },
+    }),
+  },
+
+  '/api/booking-links/{id}/cancel': {
+    post: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Anular solicitud de reserva',
+      description: `${noRole} Marca el link como \`CANCELLED\`: el huésped ya no puede enviarlo.`,
+      parameters: [pathIdParam('ID de la solicitud')],
+      responses: {
+        '200': ok(ref('BookingLink')),
+        ...errors({
+          '409': '`LINK_ALREADY_USED`: el huésped ya envió el formulario',
+        }),
+      },
+    }),
+  },
+
+  '/api/reservations/{id}/receipt': {
+    get: op({
+      tags: ['Reservas', 'Reservas por WhatsApp'],
+      summary: 'Ver comprobante de pago',
+      description:
+        `${noRole} Genera una URL firmada de 2 minutos para el comprobante que subió el huésped ` +
+        '(bucket privado de Supabase Storage).',
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('ReservationReceipt')),
+        ...errors({
+          '404': '`NOT_FOUND`: la reserva no tiene comprobante',
+        }),
+      },
+    }),
+  },
+
+  '/api/reservations/{id}/approve': {
+    post: op({
+      tags: ['Reservas', 'Reservas por WhatsApp'],
+      summary: 'Aprobar comprobante (PENDING → RESERVED)',
+      description:
+        `${noRole} Verifica el comprobante y confirma la reserva. Registra el anticipo como pago ` +
+        '`TRANSFER` en la misma transacción (si la reserva no tenía pagos).',
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '409': '`INVALID_STATE`: la reserva no está PENDING',
+        }),
+      },
+    }),
+  },
+
+  '/api/reservations/{id}/reject': {
+    post: op({
+      tags: ['Reservas', 'Reservas por WhatsApp'],
+      summary: 'Rechazar comprobante (PENDING → CANCELLED)',
+      description:
+        `${noRole} Cancela la reserva y deja el motivo en las notas. No registra el anticipo, ` +
+        'así una reserva rechazada no afecta los ingresos del hotel.',
+      parameters: [pathIdParam('ID de la reserva')],
+      requestBody: jsonBody(js(rejectReservationSchema, 'input'), 'Motivo del rechazo', false),
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '409': '`INVALID_STATE`: la reserva no está PENDING',
+        }),
+      },
+    }),
+  },
+
+  '/api/public/booking/{token}': {
+    get: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Cotización pública del link',
+      description:
+        'Público. Devuelve la estadía y la cotización congelada para el huésped (sin datos internos). ' +
+        'Rate limit: 60 / 10 min por IP. Errores: `LINK_ALREADY_USED`, `LINK_CANCELLED`. ' +
+        'Si venció responde 200 con `expired: true`.',
+      security: publicSecurity,
+      parameters: [{ name: 'token', in: 'path', required: true, description: 'Token del link', schema: { type: 'string' } }],
+      responses: {
+        '200': ok(ref('PublicBookingQuote')),
+        ...errors({
+          '404': '`NOT_FOUND`: el token no existe',
+          '409': '`LINK_ALREADY_USED` o `LINK_CANCELLED`',
+        }),
+      },
+    }),
+    post: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Enviar el formulario (crea la reserva PENDING)',
+      description:
+        'Público. El huésped completa sus datos y confirma. La reserva nace `PENDING` con `source=PUBLIC_LINK` ' +
+        'y el link queda `COMPLETED` en la misma transacción (idempotente: un segundo envío devuelve 409). ' +
+        'El comprobante es obligatorio si el anticipo es mayor a 0. Rate limit: 20 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [{ name: 'token', in: 'path', required: true, description: 'Token del link', schema: { type: 'string' } }],
+      requestBody: jsonBody(js(publicBookingSchema, 'input'), 'Datos del huésped y path del comprobante'),
+      responses: {
+        '201': okPlain({
+          data: {
+            type: 'object',
+            properties: {
+              code: { type: 'string', description: 'Código de la reserva creada' },
+              total: { type: 'number' },
+              deposit: { type: 'number' },
+              hotel: {
+                type: 'object',
+                properties: { name: { type: 'string' }, whatsapp: { type: 'string', nullable: true }, phone: { type: 'string', nullable: true } },
+              },
+            },
+          },
+        }, 'Reserva creada (PENDING)'),
+        ...errors({
+          '400': '`BAD_REQUEST`: falta el comprobante o no corresponde a esta solicitud',
+          '404': '`NOT_FOUND`: el token no existe',
+          '409': '`LINK_ALREADY_USED`, `LINK_CANCELLED` o `LINK_EXPIRED`',
+        }),
+      },
+    }),
+  },
+
+  '/api/public/booking/{token}/receipt': {
+    post: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Pedir URL firmada para subir el comprobante',
+      description:
+        'Público. Valida el link y el archivo (JPG/PNG/WEBP/PDF, hasta 5 MB) y devuelve una URL firmada ' +
+        'de Supabase Storage. El navegador hace `PUT` del archivo a esa URL y después manda el `path` en ' +
+        '`POST /api/public/booking/{token}`. El binario no pasa por el backend. Rate limit: 20 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [{ name: 'token', in: 'path', required: true, description: 'Token del link', schema: { type: 'string' } }],
+      requestBody: jsonBody(js(receiptUploadSchema, 'input'), 'Nombre, tipo y tamaño del archivo'),
+      responses: {
+        '201': ok(ref('ReceiptUploadUrl'), 'URL firmada para el PUT'),
+        ...errors({
+          '400': '`BAD_REQUEST`: tipo o tamaño de archivo no permitido',
+          '409': '`LINK_ALREADY_USED`, `LINK_CANCELLED` o `LINK_EXPIRED`',
+          '502': '`STORAGE_UNAVAILABLE`: no se pudo preparar el bucket',
+        }),
+      },
+    }),
+  },
+
   '/api/users': {
     get: op({
       tags: ['Usuarios'],
@@ -1521,6 +1756,8 @@ export const info = {
     '## Códigos de error',
     '- `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_JSON` (400); `UNAUTHORIZED` (401); `FORBIDDEN`, `REGISTER_KEY_REQUIRED` (403); `NOT_FOUND`, `MP_NOT_CONNECTED` (404).',
     '- Conflicto (409): `DUPLICATE`, `TYPE_IN_USE`, `SERVICE_IN_USE`, `ROOM_HAS_RESERVATIONS`, `GUEST_EXISTS`, `INVALID_STATE`, `CHECKIN_TOO_EARLY`, `ROOM_OCCUPIED`.',
+    '- Links públicos (409): `LINK_ALREADY_USED`, `LINK_CANCELLED`, `LINK_EXPIRED`.',
+    '- Almacenamiento: `STORAGE_UNAVAILABLE` (502), `STORAGE_URL_FAILED` (500).',
     '- `RATE_LIMIT_EXCEEDED` (429): estallás el bucket por IP. Headers: `RateLimit`, `RateLimit-Policy`, `Retry-After`.',
     '- MercadoPago: `MP_WEBHOOK_INVALID_SIGNATURE` (401), `MP_WEBHOOK_SECRET_MISSING` (500), `MP_ORDER_FAILED` (502).',
     '',
@@ -1529,6 +1766,14 @@ export const info = {
     '- `POST /api/auth/login` y `/login/company`: 5 / 15 min por IP.',
     '- `POST /api/auth/register` y `/resend-confirmation`: 5 / 15 min por IP (bucket COMPARTIDO).',
     '- `GET /api/companies`: 30 / min por IP.',
+    '- Público de reservas (`/api/public/booking/...`): 60 / 10 min (GET) y 20 / 10 min (POST) por IP.',
+    '',
+    '## Reservas por WhatsApp',
+    '- La recepción arma la solicitud con `POST /api/booking-links` (habitación, fechas, servicios) y comparte el link `/reserva/<token>`.',
+    '- El total y el anticipo quedan congelados en el link: cambios posteriores de precios no afectan links ya enviados.',
+    '- Anticipo = `bookingDepositPercent` del hotel (default 20%) redondeado a múltiplos de $10.000; `deposit` lo overridea.',
+    '- El huésped sube el comprobante directo a Supabase Storage (bucket privado) con una URL firmada y envía el formulario.',
+    '- La reserva nace `PENDING` con `source=PUBLIC_LINK`; la recepción aprueba (`/approve` → `RESERVED`, registra el anticipo como pago) o rechaza (`/reject` → `CANCELLED`).',
     '',
     '## Anticipo y MercadoPago',
     '- Al crear una reserva podés registrar un anticipo (`payment`) y/o generar el link por el saldo (`generatePaymentLink`).',
@@ -1557,6 +1802,7 @@ export const openApiDocument = {
     { name: 'Huéspedes', description: 'Clientes' },
     { name: 'Servicios', description: 'Servicios y cargos' },
     { name: 'Reservas', description: 'Reservas, check-in/out y cancelación' },
+    { name: 'Reservas por WhatsApp', description: 'Solicitudes con link público, comprobante y aprobación' },
     { name: 'Pagos', description: 'Pagos manuales por reserva' },
     { name: 'Resumen', description: 'Métricas del hotel' },
     { name: 'Calendario', description: 'Ocupación por habitación/día' },

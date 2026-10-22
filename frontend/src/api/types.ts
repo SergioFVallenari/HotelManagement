@@ -71,6 +71,18 @@ export interface ReservationTotals {
   balance: number;
 }
 
+export type ReservationSource = 'STAFF' | 'PUBLIC_LINK';
+export type BookingLinkStatus = 'OPEN' | 'COMPLETED' | 'CANCELLED';
+
+export interface ReservationReceipt {
+  id: number;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  externalRef: string | null;
+  createdAt: string;
+}
+
 export interface Reservation {
   id: number;
   code: string;
@@ -81,6 +93,7 @@ export interface Reservation {
   persons: number;
   extraBeds: number;
   status: ReservationStatus;
+  source: ReservationSource;
   checkedInAt: string | null;
   checkedOutAt: string | null;
   cancelledAt: string | null;
@@ -94,7 +107,79 @@ export interface Reservation {
   guest?: Guest | null;
   services: ReservationServiceLine[];
   payments: Payment[];
+  receipt?: ReservationReceipt | null;
+  bookingLink?: { id: number; token: string; status: BookingLinkStatus; deposit: number; expiresAt: string | null } | null;
   totals: ReservationTotals;
+}
+
+export interface ReservationReceiptDetail {
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  externalRef: string | null;
+  createdAt: string;
+}
+
+export interface BookingLinkLine {
+  serviceId: number;
+  name: string;
+  chargeType: ServiceChargeType;
+  quantity: number;
+  personsCovered: number | null;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface BookingLink {
+  id: number;
+  token: string;
+  url: string;
+  status: BookingLinkStatus;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  persons: number;
+  extraBeds: number;
+  room: { id: number; number: string; typeName: string | null; capacity: number; price: number; label: string } | null;
+  services: BookingLinkLine[];
+  totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
+  expiresAt: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  reservation: { id: number; code: string; status: ReservationStatus } | null;
+  share: { message: string; whatsappUrl: string } | null;
+}
+
+export interface PublicBookingQuote {
+  hotel: { name: string; whatsapp: string | null; phone: string | null };
+  stay: {
+    checkIn: string;
+    checkOut: string;
+    nights: number;
+    persons: number;
+    extraBeds: number;
+    roomType: string;
+    roomCapacity: number | null;
+  };
+  services: { name: string; quantity: number; unitPrice: number; lineTotal: number }[];
+  totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
+  expiresAt: string | null;
+  expired: boolean;
+}
+
+export interface ReceiptUploadUrl {
+  path: string;
+  signedUrl: string;
+  token: string;
+}
+
+export interface CompanySettings {
+  id: number;
+  name: string;
+  whatsapp: string | null;
+  phone: string | null;
+  bookingDepositPercent: number;
 }
 
 export interface Company {

@@ -1,6 +1,18 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth.js';
-import { cancelReservation, checkIn, checkOut, createReservationHandler, getReservationHandler, listReservations, updateReservationHandler, markRefundedHandler } from './reservations.controller.js';
+import {
+  approveReservationHandler,
+  cancelReservation,
+  checkIn,
+  checkOut,
+  createReservationHandler,
+  getReceiptHandler,
+  getReservationHandler,
+  listReservations,
+  markRefundedHandler,
+  rejectReservationHandler,
+  updateReservationHandler,
+} from './reservations.controller.js';
 import { createPaymentHandler } from '../payments/payments.controller.js';
 import { createReservationOrderHandler } from '../mercadopago/mp.controller.js';
 
@@ -18,5 +30,8 @@ router.post('/:id/cancel', cancelReservation);
 router.post('/:id/refund', markRefundedHandler);
 router.post('/:id/payments', createPaymentHandler);
 router.post('/:id/mp/order', createReservationOrderHandler);
+router.get('/:id/receipt', getReceiptHandler);
+router.post('/:id/approve', approveReservationHandler);
+router.post('/:id/reject', rejectReservationHandler);
 
 export default router;

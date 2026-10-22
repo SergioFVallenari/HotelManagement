@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
-import type { Payment, PaymentMethod, Reservation } from '../api/types';
+import type { Payment, PaymentMethod, Reservation, ReservationReceiptDetail } from '../api/types';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DataTable } from './DataTable';
 import type { Column } from './DataTable';
-import { Toast } from './Feedback';
+import { ErrorBanner, Toast } from './Feedback';
 import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, hotelToday } from '../lib/format';
 import { RefundBadge } from './Badge';
 
@@ -27,9 +27,14 @@ interface Props {
 
 export function ReservationDetail({ reservation, onClose, onChanged, onError, error, onDismissError }: Props) {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'CASH' as PaymentMethod, reference: '' });
-  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link'>(null);
-  const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund'>(null);
+  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link' | 'approve' | 'reject'>(null);
+  const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'approve'>(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReservationReceiptDetail | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const onChangedRef = useRef(onChanged);
@@ -100,8 +105,11 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
 
   const isActive = reservation.status === 'PENDING' || reservation.status === 'RESERVED' || reservation.status === 'CHECKED_IN';
   const status = reservation.status;
+  const isPublicLink = reservation.source === 'PUBLIC_LINK';
+  const awaitingVerification = isPublicLink && status === 'PENDING';
   const checkInAvailable = status !== 'RESERVED' || reservation.checkIn <= hotelToday();
-  const linkVisible = [ 'PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT' ].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
+  const linkVisible =
+    !isPublicLink && ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
   const linkRegenerable = status === 'PENDING' || status === 'RESERVED' || status === 'CHECKED_IN';
 
   async function generateLink(regenerate = false) {
@@ -149,6 +157,51 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     }
   }
 
+  async function approveReceipt() {
+    setConfirmAction(null);
+    setBusyAction('approve');
+    try {
+      const result = await api<{ data: Reservation }>(`/reservations/${current.id}/approve`, { method: 'POST' });
+      onChanged(result.data);
+      showToast('Reserva confirmada con el anticipo registrado');
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function rejectReceipt() {
+    setBusyAction('reject');
+    try {
+      const result = await api<{ data: Reservation }>(`/reservations/${current.id}/reject`, {
+        method: 'POST',
+        body: { reason: rejectReason.trim() || null },
+      });
+      setRejectOpen(false);
+      setRejectReason('');
+      onChanged(result.data);
+      showToast('Reserva rechazada');
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openReceipt() {
+    setReceiptLoading(true);
+    setReceiptError(null);
+    try {
+      const result = await api<{ data: ReservationReceiptDetail }>(`/reservations/${current.id}/receipt`);
+      setReceiptData(result.data);
+    } catch (err) {
+      setReceiptError((err as Error).message);
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
   async function handlePayment(e: FormEvent) {
     e.preventDefault();
     setPaymentSaving(true);
@@ -176,6 +229,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     checkout: 'Confirmar el check-out y liberar la habitación.',
     cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
     refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
+    approve: `Confirmar que el anticipo de ${money(reservation.bookingLink?.deposit ?? 0)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
   };
 
   return (
@@ -186,7 +240,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             <h3 className="h6">Resumen</h3>
             <dl className="detail-list">
               <dt>Estado</dt>
-              <dd><span className="d-inline-flex align-items-center gap-2"><ActionStatus status={status} /><RefundBadge reservation={reservation} /></span></dd>
+              <dd><span className="d-inline-flex align-items-center gap-2"><ActionStatus status={status} /><RefundBadge reservation={reservation} />{isPublicLink && <span className="badge rounded-pill text-bg-light border">Link de WhatsApp</span>}</span></dd>
               <dt>Habitación</dt>
               <dd>
                 {reservation.room?.number} — {reservation.room?.name ?? reservation.room?.type?.name} · Cap. {reservation.room?.capacity}
@@ -242,6 +296,76 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             </dl>
           </div>
         </div>
+
+        {(reservation.receipt || awaitingVerification) && (
+          <div className={`receipt-section ${awaitingVerification ? 'receipt-section--pending' : ''}`}>
+            <div className="d-flex align-items-start justify-content-between flex-wrap gap-2">
+              <div>
+                <h4 className="section-title mb-1">
+                  {awaitingVerification ? 'Anticipo a verificar' : 'Comprobante del anticipo'}
+                </h4>
+                {reservation.receipt ? (
+                  <p className="text-secondary small mb-0">
+                    {reservation.receipt.fileName} · {fileSizeLabel(reservation.receipt.size)} ·{' '}
+                    {dateTimeShort(reservation.receipt.createdAt)}
+                    {reservation.receipt.externalRef && (
+                      <>
+                        {' '}
+                        · Operación <strong>{reservation.receipt.externalRef}</strong>
+                      </>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-secondary small mb-0">El huésped no adjuntó comprobante.</p>
+                )}
+              </div>
+              {reservation.receipt && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={openReceipt}
+                  disabled={receiptLoading}
+                >
+                  {receiptLoading ? 'Abriendo…' : 'Ver comprobante'}
+                </button>
+              )}
+            </div>
+            {receiptError && (
+              <div className="mt-2">
+                <ErrorBanner message={receiptError} onDismiss={() => setReceiptError(null)} />
+              </div>
+            )}
+            {awaitingVerification && (
+              <>
+                <p className="text-secondary small mb-2 mt-2">
+                  Revisá que la transferencia coincida con el anticipo de {money(reservation.bookingLink?.deposit ?? 0)}. Al
+                  aprobar, se registra el pago y la reserva pasa a <strong>Reservada</strong>.
+                </p>
+                <div className="d-flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    className="btn btn-success"
+                    onClick={() => setConfirmAction('approve')}
+                    disabled={!!busyAction}
+                  >
+                    {busyAction === 'approve' ? 'Confirmando…' : 'Aprobar pago'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-danger"
+                    onClick={() => {
+                      onDismissError?.();
+                      setRejectOpen(true);
+                    }}
+                    disabled={!!busyAction}
+                  >
+                    Rechazar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="totals-box">
           <div>
@@ -375,7 +499,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               </p>
             )}
 
-            {isActive && (
+            {isActive && !awaitingVerification && (
               <form className="border-top pt-3 mt-2" onSubmit={handlePayment}>
                 <h4 className="section-title">Registrar pago</h4>
                 <div className="filter-row">
@@ -450,7 +574,9 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               ? 'Check-in'
               : confirmAction === 'checkout'
                 ? 'Check-out'
-                : 'Devolución'
+                : confirmAction === 'approve'
+                  ? 'Aprobar el anticipo'
+                  : 'Devolución'
         }
         message={confirmAction ? confirmationMessages[confirmAction] : ''}
         confirmLabel={
@@ -460,16 +586,104 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               ? 'Confirmar check-in'
               : confirmAction === 'checkout'
                 ? 'Confirmar check-out'
-                : 'Confirmar devolución'
+                : confirmAction === 'approve'
+                  ? 'Aprobar y confirmar'
+                  : 'Confirmar devolución'
         }
         danger={confirmAction === 'cancel'}
         busy={!!busyAction}
         error={error}
         onCancel={() => setConfirmAction(null)}
-        onConfirm={() => confirmAction && runAction(confirmAction)}
+        onConfirm={() => {
+          if (confirmAction === 'approve') void approveReceipt();
+          else if (confirmAction) void runAction(confirmAction);
+        }}
       />
+
+      <Modal
+        open={!!receiptData}
+        title={receiptData?.fileName ?? 'Comprobante'}
+        onClose={() => setReceiptData(null)}
+        wide
+      >
+        {receiptData && (
+          <>
+            {receiptData.mimeType.startsWith('image/') ? (
+              <img src={receiptData.url} alt="Comprobante de pago" className="receipt-preview" />
+            ) : (
+              <p className="text-secondary">
+                El comprobante es un PDF de {fileSizeLabel(receiptData.size)}. Abrilo en una pestaña nueva para verlo.
+              </p>
+            )}
+            <dl className="detail-list mt-3">
+              <dt>Archivo</dt>
+              <dd>{receiptData.fileName}</dd>
+              <dt>Tamaño</dt>
+              <dd>{fileSizeLabel(receiptData.size)}</dd>
+              <dt>Subido</dt>
+              <dd>{dateTimeShort(receiptData.createdAt)}</dd>
+              <dt>Número de operación</dt>
+              <dd>{receiptData.externalRef ?? '—'}</dd>
+            </dl>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setReceiptData(null)}>
+                Cerrar
+              </button>
+              <a className="btn btn-primary" href={receiptData.url} target="_blank" rel="noopener noreferrer">
+                Abrir en una pestaña nueva
+              </a>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={rejectOpen}
+        title="Rechazar el comprobante"
+        onClose={() => {
+          setRejectOpen(false);
+          setRejectReason('');
+          onDismissError?.();
+        }}
+        error={error}
+        onDismissError={onDismissError}
+      >
+        <p className="text-secondary">
+          La reserva se cancela y el huésped no queda con la estadía confirmada. Escribí el motivo para tenerlo en las
+          notas.
+        </p>
+        <label className="form-label">Motivo (opcional)</label>
+        <textarea
+          className="form-control"
+          rows={3}
+          maxLength={500}
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
+          placeholder="Por ejemplo: el comprobante no coincide con el anticipo"
+        />
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={() => {
+              setRejectOpen(false);
+              setRejectReason('');
+            }}
+          >
+            Cancelar
+          </button>
+          <button type="button" className="btn btn-danger" onClick={rejectReceipt} disabled={busyAction === 'reject'}>
+            {busyAction === 'reject' ? 'Rechazando…' : 'Rechazar reserva'}
+          </button>
+        </div>
+      </Modal>
     </>
   );
+}
+
+function fileSizeLabel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 function ActionStatus({ status }: { status: string }) {
