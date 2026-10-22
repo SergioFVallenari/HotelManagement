@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAdmin, requireAuth } from '../../middleware/auth.js';
+import { requireAdmin, requireAuth, requireOwner } from '../../middleware/auth.js';
 import {
   buildAuthUrlHandler,
   disconnectHandler,
@@ -16,7 +16,7 @@ router.post('/webhook', webhookHandler);
 router.use(requireAuth);
 
 router.get('/connection', getConnectionHandler);
-router.post('/auth-url', requireAdmin, buildAuthUrlHandler);
-router.delete('/connection', requireAdmin, disconnectHandler);
+router.post('/auth-url', requireOwner, buildAuthUrlHandler);
+router.delete('/connection', requireOwner, disconnectHandler);
 
 export default router;

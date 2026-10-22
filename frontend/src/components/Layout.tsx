@@ -10,10 +10,11 @@ import {
   IconLayoutDashboard,
   IconLogout,
   IconMenu2,
+  IconMessages,
   IconSparkles,
   IconUserPlus,
   IconUsers,
-  IconWallet,
+  IconSettings
 } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 
@@ -27,30 +28,48 @@ function readCollapsed(): boolean {
   }
 }
 
-const NAV_ITEMS: {
+type NavItem = {
   to: string;
   label: string;
   icon: ComponentType<{ size?: number }>;
   roles?: ('OWNER' | 'ADMIN')[];
-}[] = [
-  { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
-  { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
-  { to: '/rooms', label: 'Habitaciones', icon: IconBed },
-  { to: '/reservations', label: 'Reservas', icon: IconCalendarCheck },
-  { to: '/guests', label: 'Huéspedes', icon: IconUsers },
-  { to: '/room-types', label: 'Tipos de habitación', icon: IconDoor },
-  { to: '/services', label: 'Servicios', icon: IconSparkles },
-  { to: '/users', label: 'Usuarios', icon: IconUserPlus, roles: ['OWNER', 'ADMIN'] },
-  { to: '/settings', label: 'Pagos', icon: IconWallet, roles: ['OWNER', 'ADMIN'] },
+  end?: boolean;
+};
+
+const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
+  {
+    title: 'Operación',
+    items: [
+      { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
+      { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
+      { to: '/rooms', label: 'Habitaciones', icon: IconBed },
+      { to: '/reservations', label: 'Reservas', icon: IconCalendarCheck },
+      { to: '/messages', label: 'Mensajes', icon: IconMessages },
+      { to: '/guests', label: 'Huéspedes', icon: IconUsers },
+    ],
+  },
+  {
+    title: 'Catálogo',
+    items: [
+      { to: '/room-types', label: 'Tipos de habitación', icon: IconDoor },
+      { to: '/services', label: 'Servicios', icon: IconSparkles },
+    ],
+  },
+  {
+    title: 'Administración',
+    items: [
+      { to: '/users', label: 'Usuarios', icon: IconUserPlus, roles: ['OWNER', 'ADMIN'] },
+      { to: '/settings', label: 'Configuración', icon: IconSettings, roles: ['OWNER', 'ADMIN'], end: true }
+    ],
+  },
 ];
 
 export function Layout() {
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
-
+  console.log(user)
   const layoutClass = `${collapsed ? 'sidebar-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''}`.trim();
-
   function toggleSidebar() {
     setCollapsed((value) => {
       const next = !value;
@@ -72,24 +91,33 @@ export function Layout() {
           <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
           <div>
             <strong>Hotel Manager</strong>
-            <small>Panel de administración</small>
+            <small>{user?.companyName}</small>
           </div>
         </div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.filter(
-            (item) => !item.roles || (user?.role !== undefined && item.roles.includes(user.role as 'OWNER' | 'ADMIN')),
-          ).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              end={item.to === '/'}
-              onClick={() => setDrawerOpen(false)}
-            >
-              <span className="nav-icon"><item.icon size={20} /></span>
-              <span className="nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter(
+              (item) => !item.roles || (user?.role !== undefined && item.roles.includes(user.role as 'OWNER' | 'ADMIN')),
+            );
+            if (items.length === 0) return null;
+            return (
+              <div key={group.title} className="nav-group">
+                <div className="nav-group-title">{group.title}</div>
+                {items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    end={item.end ?? item.to === '/'}
+                    onClick={() => setDrawerOpen(false)}
+                  >
+                    <span className="nav-icon"><item.icon size={20} /></span>
+                    <span className="nav-label">{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
       </aside>
       <div className="main">

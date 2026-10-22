@@ -44,6 +44,16 @@ export function dateTimeShort(iso: string | null | undefined): string {
   return `${date} ${time}`;
 }
 
+export function messageTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  const date = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `${date} ${time}`;
+}
+
 export const RESERVATION_STATUS: Record<string, { label: string; cls: string }> = {
   PENDING: { label: 'Pago pendiente', cls: 'text-bg-warning' },
   RESERVED: { label: 'Reservada', cls: 'text-bg-primary' },

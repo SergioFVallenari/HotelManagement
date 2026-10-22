@@ -41,20 +41,24 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
       const created = await tx.company.create({
         data: {
           name: input.name,
-          createdById: req.user!.id,
-          users: {
-            create: {
-              username: owner.username,
-              passwordHash: owner.passwordHash,
-              name: owner.name,
-              email: owner.email,
-              typeId: ownerType.id,
-              createdById: req.user!.id,
-            },
-          },
+          createdById: owner.id,
         },
         select: { id: true, name: true },
       });
+
+      // El dueño queda como miembro OWNER del hotel nuevo para poder ingresar con
+      // el switch de empresa. createdById null para que no aparezca en su propia lista.
+      await tx.userCompany.create({
+        data: {
+          userId: owner.id,
+          companyId: created.id,
+          username: req.user!.username,
+          typeId: ownerType.id,
+          isActive: true,
+          createdById: null,
+        },
+      });
+
       return created;
     });
     res.status(201).json({ data: company });

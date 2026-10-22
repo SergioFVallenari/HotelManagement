@@ -12,6 +12,10 @@ import paymentRoutes from './modules/payments/payments.routes.js';
 import summaryRoutes from './modules/summary/summary.routes.js';
 import calendarRoutes from './modules/calendar/calendar.routes.js';
 import mpRoutes from './modules/mercadopago/mp.routes.js';
+import instagramRoutes from './modules/instagram/instagram.routes.js';
+import channelsRoutes from './modules/channels/channels.routes.js';
+import aiRoutes from './modules/ai/ai.routes.js';
+import realtimeRoutes from './modules/realtime/realtime.routes.js';
 import userRoutes from './modules/users/users.routes.js';
 import docsRoutes from './docs/docs.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -31,13 +35,21 @@ export function createApp(): express.Express {
     maxAge: 600,
   }));
   app.use(cookieParser());
-  app.use(express.json());
+  // Guardamos el cuerpo crudo para verificar la firma de los webhooks (HMAC).
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      },
+    }),
+  );
   // Escrituras (POST/PUT/PATCH/DELETE) de todos los routers, una sola cuenta por IP.
   app.use(writeRateLimiter);
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
+  app.use(docsRoutes);
 
   app.use('/api/auth', authRoutes);
   app.use('/api/companies', companyRoutes);
@@ -50,9 +62,12 @@ export function createApp(): express.Express {
   app.use('/api/summary', summaryRoutes);
   app.use('/api/calendar', calendarRoutes);
   app.use('/api/mp', mpRoutes);
+  app.use('/api', instagramRoutes);
+  app.use('/api', channelsRoutes);
+  app.use('/api', aiRoutes);
+  app.use('/api/realtime', realtimeRoutes);
   app.use('/api/users', userRoutes);
 
-  app.use(docsRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

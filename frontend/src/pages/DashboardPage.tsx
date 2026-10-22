@@ -4,7 +4,7 @@ import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
 import { StatusBadge } from '../components/Badge';
-import { dateShort, firstDayOfMonth, lastDayOfMonth, money, PAYMENT_METHODS } from '../lib/format';
+import { dateShort, firstDayOfMonth, lastDayOfMonth, money, PAYMENT_METHODS, today } from '../lib/format';
 import {
   Area,
   AreaChart,
@@ -21,7 +21,7 @@ import {
 } from 'recharts';
 
 export function DashboardPage() {
-  const [from, setFrom] = useState(firstDayOfMonth());
+  const [from, setFrom] = useState(today());
   const [to, setTo] = useState(lastDayOfMonth());
   const [query, setQuery] = useState(buildQuery({ from: firstDayOfMonth(), to: lastDayOfMonth() }));
   const { data, loading, error, reload } = useApi<{ data: Summary }>(`/summary${query}`);
@@ -179,8 +179,8 @@ export function DashboardPage() {
                       <AreaChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                         <defs>
                           <linearGradient id="occGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#0d6efd" stopOpacity={0.35} />
-                            <stop offset="100%" stopColor="#0d6efd" stopOpacity={0.02} />
+                            <stop offset="0%" stopColor="#084C61" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#084C61" stopOpacity={0.02} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -190,7 +190,7 @@ export function DashboardPage() {
                           labelFormatter={(d) => dateShort(String(d))}
                           formatter={(value) => [`${Number(value ?? 0)}%`, 'Ocupación']}
                         />
-                        <Area type="monotone" dataKey="occupancyPct" name="Ocupación" stroke="#0d6efd" fill="url(#occGrad)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="occupancyPct" name="Ocupación" stroke="#084C61" fill="url(#occGrad)" strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
@@ -213,7 +213,7 @@ export function DashboardPage() {
                           labelFormatter={(d) => dateShort(String(d))}
                           formatter={(value) => [money(Number(value ?? 0)), 'Ingresos']}
                         />
-                        <Bar dataKey="revenue" name="Ingresos" fill="#20c997" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="revenue" name="Ingresos" fill="#528290" radius={[2, 2, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -234,9 +234,9 @@ export function DashboardPage() {
                         <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={30} />
                         <Tooltip labelFormatter={(d) => dateShort(String(d))} />
                         <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-                        <Line type="monotone" dataKey="created" name="Creadas" stroke="#0d6efd" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="checkIns" name="Check-ins" stroke="#198754" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="checkOuts" name="Check-outs" stroke="#6f42c1" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="created" name="Creadas" stroke="#84A6B0" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkIns" name="Check-ins" stroke="#063D4E" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkOuts" name="Check-outs" stroke="#052E3A" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}

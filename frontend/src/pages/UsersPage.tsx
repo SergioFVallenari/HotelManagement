@@ -89,10 +89,10 @@ export function UsersPage() {
         body: {
           username: form.username.trim(),
           password: form.password,
+          email: form.email.trim(),
           role: form.role,
           isActive: form.isActive,
           ...(form.name.trim() ? { name: form.name.trim() } : {}),
-          ...(form.email.trim() ? { email: form.email.trim() } : {}),
           ...(isOwner && form.companyId ? { companyId: form.companyId } : {}),
         },
       });
@@ -177,13 +177,14 @@ export function UsersPage() {
             <input id="user-name" className="form-control" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="mb-3">
-            <label className="form-label" htmlFor="user-email">Email</label>
-            <input id="user-email" className="form-control" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <label className="form-label" htmlFor="user-email">Email *</label>
+            <input id="user-email" className="form-control" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+            <div className="form-text">Es el email con el que el usuario inicia sesión.</div>
           </div>
           <div className="mb-3">
             <label className="form-label" htmlFor="user-password">Contraseña *</label>
             <input id="user-password" className="form-control" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-            <div className="form-text">Mínimo 6 caracteres.</div>
+            <div className="form-text">Mínimo 6 caracteres. Se ignora si el email ya tiene una cuenta.</div>
           </div>
           <div className="mb-3">
             {isOwner ? (

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import * as schemas from './schemas.js';
-import { credentialsSchema, loginSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
+import { credentialsSchema, loginSchema, registerSchema, resendSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
 import { createRoomSchema, updateRoomSchema } from '../modules/rooms/rooms.schema.js';
 import { createRoomTypeSchema, updateRoomTypeSchema } from '../modules/roomTypes/roomTypes.schema.js';
 import { createGuestSchema, updateGuestSchema } from '../modules/guests/guests.schema.js';
@@ -11,7 +11,7 @@ import {
 } from '../modules/reservations/reservations.schema.js';
 import { recordPaymentSchema } from '../modules/payments/payments.schema.js';
 import { createCompanySchema } from '../modules/companies/companies.schema.js';
-import { sendCodeSchema, registerSchema, createUserSchema } from '../modules/users/users.schema.js';
+import { createUserSchema } from '../modules/users/users.schema.js';
 import { authUrlSchema, regenerateSchema } from '../modules/mercadopago/mp.schema.js';
 
 type Json = Record<string, unknown>;
@@ -122,8 +122,12 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/auth/logout', 'post'],
   ['/api/mp/oauth/callback', 'get'],
   ['/api/mp/webhook', 'post'],
-  ['/api/users/send-code', 'post'],
-  ['/api/users/register', 'post'],
+  ['/api/integrations/instagram/callback', 'get'],
+  ['/api/integrations/instagram/webhook', 'get'],
+  ['/api/integrations/instagram/webhook', 'post'],
+  ['/api/auth/register', 'post'],
+  ['/api/auth/resend-confirmation', 'post'],
+  ['/api/auth/confirm-email', 'get'],
 ];
 
 const componentSchemas: Record<string, Json> = {
@@ -140,7 +144,6 @@ const componentSchemas: Record<string, Json> = {
   Payment: js(schemas.paymentSchema),
   Reservation: js(schemas.reservationSchema),
   UserRow: js(schemas.userRowSchema),
-  CreatedUser: js(schemas.createdUserSchema),
   MpConnection: js(schemas.mpConnectionSchema),
   MpAuthorizationData: js(schemas.mpAuthorizationDataSchema),
   Summary: js(schemas.summarySchema),
@@ -171,12 +174,13 @@ const paths: Record<string, Json> = {
   '/api/auth/login': {
     post: op({
       tags: ['Autenticación'],
-      summary: 'Paso 1: credenciales por empresa',
+      summary: 'Paso 1: credenciales',
       description:
-        'Público. Busca el username en todas las empresas y devuelve las que matchean la contraseña. ' +
+        'Público. Valida email y contraseña contra Supabase Auth (GoTrue) y devuelve las empresas que el usuario ' +
+        'posee (si es OWNER) o donde tiene una fila activa, junto con el access token de Supabase. ' +
         'Paso previo a `POST /api/auth/login/company`. Rate limit: 5 intentos / 15 min por IP.',
       security: publicSecurity,
-      requestBody: jsonBody(js(credentialsSchema, 'input'), 'Usuario y contraseña'),
+      requestBody: jsonBody(js(credentialsSchema, 'input'), 'Email y contraseña'),
       responses: {
         '200': okPlain(
           {
@@ -191,12 +195,14 @@ const paths: Record<string, Json> = {
                 },
               },
             },
+            token: { type: 'string', description: 'Access token de Supabase para el paso 2' },
           },
-          'Lista de empresas del usuario (sin envelope `data`)',
+          'Empresas del usuario y token (sin envelope `data`)',
         ),
         ...errors({
           '400': 'Datos inválidos (`VALIDATION_ERROR`)',
           '401': 'Credenciales inválidas (`UNAUTHORIZED`)',
+          '403': '`EMAIL_NOT_CONFIRMED` (email sin confirmar) o `FORBIDDEN` (cuenta deshabilitada)',
           '429': '`RATE_LIMIT_EXCEEDED`: 5 intentos / 15 min por IP',
         }),
       },
@@ -208,12 +214,12 @@ const paths: Record<string, Json> = {
       tags: ['Autenticación'],
       summary: 'Paso 2: iniciar sesión en una empresa',
       description:
-        'Público. Valida la contraseña contra la empresa elegida y emite la sesión en la cookie `httpOnly` `gh_token`. ' +
+        'Público. Valida el access token del paso 1 y la pertenencia del usuario a la empresa elegida (el OWNER solo puede entrar a las empresas que posee), y emite la sesión en la cookie `httpOnly` `gh_token`. ' +
         'Rate limit: 5 intentos / 15 min por IP.',
       security: publicSecurity,
       requestBody: jsonBody(
         js(loginSchema, 'input'),
-        '`companyId` del paso 1 + usuario y contraseña',
+        '`companyId` del paso 1 + `token` (access token de Supabase)',
       ),
       responses: {
         '200': {
@@ -941,42 +947,524 @@ const paths: Record<string, Json> = {
     }),
   },
 
-  '/api/users/send-code': {
-    post: op({
-      tags: ['Usuarios'],
-      summary: 'Enviar código de verificación por email',
+  '/api/integrations/instagram/auth/url': {
+    get: op({
+      tags: ['Instagram'],
+      summary: 'Obtener URL de autorización OAuth de Instagram',
       description:
-        `Público. Paso 1 del auto-registro. Si \`REGISTER_KEY\` está configurada, exige \`key\` en el body (403 \`REGISTER_KEY_REQUIRED\`). ` +
-        'Rate limits: 5 / 15 min por IP (compartido con /register) y 3 / hora por email e IP.',
-      security: publicSecurity,
-      requestBody: jsonBody(js(sendCodeSchema, 'input'), 'Email al que se envía el código'),
+        ownerOrAdmin +
+        ' El `companyId` es explícito y debe pertenecer al usuario autenticado (multi-tenant).',
+      parameters: [
+        queryParam('companyId', 'ID de la empresa (hotel) a conectar', {
+          required: true,
+          schema: { type: 'integer', format: 'int64' },
+        }),
+      ],
       responses: {
-        '200': okPlain({ data: { type: 'object', properties: { sent: { type: 'boolean', example: true } } } }, 'Código enviado'),
+        '200': okPlain(
+          { data: { type: 'object', properties: { url: { type: 'string', format: 'uri' } } } },
+          'URL de autorización de Instagram. Envelope: `{ data: { url } }`.',
+        ),
+        ...errors({ '403': '`FORBIDDEN`: el usuario no es ADMIN u OWNER de esa empresa' }),
+      },
+    }),
+  },
+
+  '/api/integrations/instagram/status': {
+    get: op({
+      tags: ['Instagram'],
+      summary: 'Estado de la conexión de Instagram',
+      description: noRole,
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                connected: { type: 'boolean' },
+                id: { type: 'string' },
+                companyId: { type: 'integer', format: 'int64' },
+                igBusinessAccountId: { type: 'string' },
+                username: { type: 'string' },
+                active: { type: 'boolean' },
+                lastSyncAt: { type: ['string', 'null'], format: 'date-time' },
+              },
+            },
+          },
+          'Envelope: `{ data }`. `connected=false` cuando no hay cuenta vinculada.',
+        ),
+        ...errors(),
+      },
+    }),
+  },
+
+  '/api/integrations/instagram/sync': {
+    post: op({
+      tags: ['Instagram'],
+      summary: 'Sincronizar conversaciones de Instagram',
+      description:
+        noRole +
+        ' Consulta la Conversations API de Meta e importa el último mensaje de cada conversación. ' +
+        'No emite eventos de Realtime; el cliente refresca la bandeja después de la respuesta. ' +
+        'Rate limit: 20/min por IP.',
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                imported: { type: 'integer', example: 3 },
+                conversations: { type: 'integer', example: 12 },
+                syncedAt: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+          'Sincronización completada. Envelope: `{ data }`.',
+        ),
         ...errors({
-          '400': '`VALIDATION_ERROR`: email inválido',
-          '403': '`REGISTER_KEY_REQUIRED`: falta la clave de registro',
-          '429': '`RATE_LIMIT_EXCEEDED` (5/15min por IP) o `RATE_LIMIT` (3/hora por email o IP)',
-          '500': '`MAIL_NOT_CONFIGURED` (prod sin SMTP) o `MAIL_ERROR`',
+          '404': '`IG_NOT_CONNECTED`: no hay una cuenta de Instagram conectada',
+          '409': '`CHANNEL_NOT_CONNECTED`: la cuenta no está activa',
+          '429': 'Demasiadas solicitudes (`RATE_LIMIT_EXCEEDED`, 20/min por IP)',
+          '501': '`CHANNEL_SYNC_UNSUPPORTED`: el canal no permite sincronizar',
+          '502': '`CHANNEL_SYNC_FAILED`: Meta rechazó la consulta',
         }),
       },
     }),
   },
 
-  '/api/users/register': {
+  '/api/integrations/instagram/connection': {
+    delete: op({
+      tags: ['Instagram'],
+      summary: 'Desconectar cuenta de Instagram (borrado definitivo)',
+      description:
+        ownerOrAdmin +
+        ' Desuscribe la cuenta de los webhooks de Meta (best-effort) y **borra definitivamente** la cuenta ' +
+        'y, en cascada, todas sus conversaciones y mensajes. No se puede deshacer.',
+      responses: {
+        '204': empty('Cuenta desconectada'),
+        ...errors({ '404': '`IG_NOT_CONNECTED`: no hay cuenta conectada' }),
+      },
+    }),
+  },
+
+  '/api/integrations/instagram/callback': {
+    get: op({
+      tags: ['Instagram'],
+      summary: 'Callback de OAuth de Instagram',
+      description:
+        'Pǧblico. Meta redirige acǭ tras autorizar. Valida el `state` firmado, intercambia el `code` por un token ' +
+        'de Instagram long-lived y guarda la conexión del hotel. Responde con un redirect 302 al frontend.',
+      security: publicSecurity,
+      parameters: [
+        { name: 'code', in: 'query', description: 'C��digo de autorizaci��n de Meta', schema: { type: 'string' } },
+        {
+          name: 'state',
+          in: 'query',
+          required: true,
+          description: 'State firmado emitido por `GET /api/integrations/instagram/auth/url`',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        '302': { description: 'Redirige al frontend con `ok=1` o `ok=0&reason=...`' },
+        '500': errResponse('Error interno (`INTERNAL_ERROR`)'),
+      },
+    }),
+  },
+
+  '/api/integrations/instagram/webhook': {
+    get: op({
+      tags: ['Instagram'],
+      summary: 'Verificación del webhook de Instagram',
+      description:
+        'Público. Handshake de Meta: compara `hub.verify_token` con `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` y, ' +
+        'si `hub.mode` es `subscribe`, devuelve `hub.challenge` con 200. Responde text/plain.',
+      security: publicSecurity,
+      parameters: [
+        {
+          name: 'hub.mode',
+          in: 'query',
+          required: true,
+          description: 'Debe ser `subscribe`',
+          schema: { type: 'string', enum: ['subscribe'] },
+        },
+        {
+          name: 'hub.verify_token',
+          in: 'query',
+          required: true,
+          description: 'Token configurado en el dashboard de Meta',
+          schema: { type: 'string' },
+        },
+        {
+          name: 'hub.challenge',
+          in: 'query',
+          description: 'Valor que Meta espera recibir de vuelta',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Verificación aceptada; el body es `hub.challenge` en texto plano',
+          content: { 'text/plain': { schema: { type: 'string' } } },
+        },
+        '403': empty('`hub.mode` o `hub.verify_token` inválidos'),
+      },
+    }),
     post: op({
-      tags: ['Usuarios'],
+      tags: ['Canales'],
+      summary: 'Webhook de eventos de Instagram',
+      description:
+        'Público. Meta notifica acá los mensajes y lecturas de la cuenta conectada. Verifica la firma ' +
+        '`X-Hub-Signature-256` (HMAC-SHA256 del cuerpo crudo con `INSTAGRAM_APP_SECRET`), normaliza los ' +
+        'eventos y los persiste como conversaciones/mensajes (idempotente por `mid`). Responde 200; 403 si ' +
+        'la firma es inválida. Exento del rate limit global de escritura.',
+      security: publicSecurity,
+      requestBody: {
+        required: true,
+        description: 'Payload crudo del evento de Meta',
+        content: { 'application/json': { schema: { type: 'object' } } },
+      },
+      responses: {
+        '200': empty('Evento confirmado'),
+        '403': empty('`X-Hub-Signature-256` ausente o inválida'),
+      },
+    }),
+  },
+
+  '/api/realtime/config': {
+    get: op({
+      tags: ['Realtime'],
+      summary: 'Configuración de Realtime para la bandeja',
+      description:
+        noRole +
+        ' Devuelve la URL y la clave pública de Supabase Realtime, el topic de la empresa (`company:<id>`) ' +
+        'y un JWT firmado por el backend con el claim `company_id` para suscribirse al canal privado de la ' +
+        'bandeja. El token expira en 1 hora. Si `SUPABASE_JWT_SECRET` no está configurado responde 503 ' +
+        '`REALTIME_DISABLED` y la bandeja funciona con el polling de respaldo.',
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                url: { type: 'string' },
+                key: { type: 'string' },
+                topic: { type: 'string', example: 'company:1' },
+                token: { type: 'string' },
+                expiresIn: { type: 'integer', example: 3600 },
+              },
+            },
+          },
+          'Datos de conexión de Realtime. Envelope: `{ data }`.',
+        ),
+        ...errors({ '503': '`REALTIME_DISABLED`: falta `SUPABASE_JWT_SECRET`' }),
+      },
+    }),
+  },
+
+  '/api/conversations': {
+    get: op({
+      tags: ['Canales'],
+      summary: 'Listar conversaciones de la bandeja',
+      description:
+        noRole +
+        ' Devuelve las conversaciones de todos los canales conectados, ordenadas por último mensaje. ' +
+        'Paginado por `page`/`pageSize`. Incluye `canReply` y `replyWindowEndsAt` (ventana de 24 h).',
+      parameters: [
+        queryParam('channel', 'Filtrar por canal', { schema: { type: 'string', enum: ['INSTAGRAM', 'FACEBOOK', 'AIRBNB'] } }),
+        queryParam('q', 'Buscar por nombre o usuario del contacto', { schema: { type: 'string' } }),
+        queryParam('unread', 'Solo conversaciones con no leídos', { schema: { type: 'boolean' } }),
+        queryParam('page', 'Página (default 1)', { schema: { type: 'integer', minimum: 1 } }),
+        queryParam('pageSize', 'Tamaño de página (default 20, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
+      ],
+      responses: {
+        '200': ok(
+          { type: 'array', items: { type: 'object', additionalProperties: true } },
+          true,
+        ),
+        ...errors(),
+      },
+    }),
+  },
+
+  '/api/conversations/{id}/messages': {
+    get: op({
+      tags: ['Canales'],
+      summary: 'Listar mensajes de una conversación',
+      description: noRole + ' Orden cronológico ascendente. Usá `before` (id de mensaje) para paginar hacia atrás.',
+      parameters: [
+        { name: 'id', in: 'path', required: true, description: 'ID de la conversación', schema: { type: 'string' } },
+        queryParam('before', 'ID de mensaje: devuelve los anteriores', { schema: { type: 'string' } }),
+        queryParam('limit', 'Cantidad (default 50, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
+      ],
+      responses: {
+        '200': {
+          description: 'Operación exitosa. Envelope: `{ data, meta: { hasMore } }`.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                  meta: { type: 'object', properties: { hasMore: { type: 'boolean' } } },
+                },
+              },
+            },
+          },
+        },
+        ...errors({ '404': '`NOT_FOUND`: la conversación no existe en esta empresa' }),
+      },
+    }),
+    post: op({
+      tags: ['Canales'],
+      summary: 'Responder en una conversación',
+      description: noRole + ' Envía el texto por el canal. Falla si la ventana de 24 h expiró.',
+      parameters: [
+        { name: 'id', in: 'path', required: true, description: 'ID de la conversación', schema: { type: 'string' } },
+      ],
+      requestBody: jsonBody(
+        {
+          type: 'object',
+          required: ['text'],
+          properties: { text: { type: 'string', maxLength: 1000 } },
+        },
+        'Texto a enviar (hasta 1000 caracteres)',
+      ),
+      responses: {
+        '201': okPlain({ data: { type: 'object', additionalProperties: true } }, 'Mensaje enviado. Envelope: `{ data }`.'),
+        ...errors({
+          '404': '`NOT_FOUND`: la conversación no existe en esta empresa',
+          '409': '`CHANNEL_WINDOW_EXPIRED`, `CHANNEL_SEND_FAILED` o `CHANNEL_NOT_CONNECTED`',
+          '502': '`CHANNEL_SEND_FAILED`: el proveedor rechazó el envío',
+        }),
+      },
+    }),
+  },
+
+  '/api/conversations/{id}/read': {
+    post: op({
+      tags: ['Canales'],
+      summary: 'Marcar conversación como leída',
+      description: noRole,
+      parameters: [
+        { name: 'id', in: 'path', required: true, description: 'ID de la conversación', schema: { type: 'string' } },
+      ],
+      responses: {
+        '204': empty('Conversación marcada como leída'),
+        ...errors({ '404': '`NOT_FOUND`: la conversación no existe en esta empresa' }),
+      },
+    }),
+  },
+
+  '/api/conversations/{id}/history': {
+    post: op({
+      tags: ['Canales'],
+      summary: 'Importar historial de una conversación',
+      description:
+        noRole +
+        ' Pide los últimos 20 mensajes al proveedor y los importa sin marcarlos como no leídos ni emitir Realtime. ' +
+        'Usalo al abrir un hilo para completar lo que el webhook no trajo. Rate limit: 20/min por IP.',
+      parameters: [
+        { name: 'id', in: 'path', required: true, description: 'ID de la conversación', schema: { type: 'string' } },
+      ],
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: { imported: { type: 'integer', example: 20 } },
+            },
+          },
+          'Historial importado. Envelope: `{ data }`.',
+        ),
+        ...errors({
+          '404': '`NOT_FOUND`: la conversación no existe en esta empresa',
+          '409': '`CHANNEL_NOT_CONNECTED`: la cuenta del canal no está activa',
+          '429': 'Demasiadas solicitudes (`RATE_LIMIT_EXCEEDED`, 20/min por IP)',
+          '501': '`CHANNEL_HISTORY_UNSUPPORTED`: el canal no permite importar historial',
+          '502': '`CHANNEL_HISTORY_FAILED`: el proveedor rechazó la consulta',
+        }),
+      },
+    }),
+  },
+
+  '/api/ai/config': {
+    get: op({
+      tags: ['Asistente de IA'],
+      summary: 'Estado del asistente de IA',
+      description:
+        noRole +
+        ' Indica si el backend tiene `GEMINI_API_KEY` configurada. Sin ella los drafts responden 503 ' +
+        '`AI_NOT_CONFIGURED` y el auto-reply no funciona.',
+      responses: {
+        '200': okPlain(
+          { data: { type: 'object', properties: { configured: { type: 'boolean' } } } },
+          'Estado del asistente. Envelope: `{ data }`.',
+        ),
+        ...errors(),
+      },
+    }),
+  },
+
+  '/api/ai/settings': {
+    get: op({
+      tags: ['Asistente de IA'],
+      summary: 'Configuración del asistente de IA de la empresa',
+      description: noRole + ' Devuelve los defaults (`enabled: false`, `autoReply: true`) si la empresa nunca configuró nada.',
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                autoReply: { type: 'boolean' },
+                instructions: { type: 'string', nullable: true },
+              },
+            },
+          },
+          'Configuración actual. Envelope: `{ data }`.',
+        ),
+        ...errors(),
+      },
+    }),
+    put: op({
+      tags: ['Asistente de IA'],
+      summary: 'Actualizar la configuración del asistente de IA',
+      description: ownerOrAdmin + ' Upsert de la configuración de la empresa.',
+      requestBody: jsonBody(
+        {
+          type: 'object',
+          required: ['enabled', 'autoReply'],
+          properties: {
+            enabled: { type: 'boolean' },
+            autoReply: { type: 'boolean' },
+            instructions: { type: 'string', maxLength: 2000, nullable: true },
+          },
+        },
+        'Nueva configuración',
+      ),
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                autoReply: { type: 'boolean' },
+                instructions: { type: 'string', nullable: true },
+              },
+            },
+          },
+          'Configuración guardada. Envelope: `{ data }`.',
+        ),
+        ...errors({ '403': '`FORBIDDEN`: requiere rol `OWNER` o `ADMIN`' }),
+      },
+    }),
+  },
+
+  '/api/conversations/{id}/ai/draft': {
+    post: op({
+      tags: ['Asistente de IA', 'Canales'],
+      summary: 'Generar un borrador de respuesta con IA',
+      description:
+        noRole +
+        ' Arma un borrador para la conversación con el historial y los servicios del hotel. ' +
+        '`action: "auto"` significa que la respuesta puede enviarse tal cual; `suggest` requiere revisión. ' +
+        'Si la ventana de 24 h está cerrada el borrador se genera igual (`canReply: false`). ' +
+        'Rate limit: 10/min por IP.',
+      parameters: [
+        { name: 'id', in: 'path', required: true, description: 'ID de la conversación', schema: { type: 'string' } },
+      ],
+      responses: {
+        '200': okPlain(
+          {
+            data: {
+              type: 'object',
+              properties: {
+                action: { type: 'string', enum: ['auto', 'suggest'] },
+                reply: { type: 'string' },
+                canReply: { type: 'boolean' },
+              },
+            },
+          },
+          'Borrador generado. Envelope: `{ data }`.',
+        ),
+        ...errors({
+          '404': '`NOT_FOUND`: la conversación no existe en esta empresa',
+          '409': '`AI_DISABLED`, `AI_NO_MESSAGES` o `CHANNEL_NOT_CONNECTED`',
+          '429': 'Demasiadas solicitudes (`RATE_LIMIT_EXCEEDED`, 10/min por IP)',
+          '502': '`AI_UPSTREAM_FAILED` o `AI_BAD_RESPONSE`: Gemini falló o devolvió algo ilegible',
+          '503': '`AI_NOT_CONFIGURED`: falta `GEMINI_API_KEY` en el backend',
+        }),
+      },
+    }),
+  },
+
+  '/api/auth/confirm-email': {
+    get: op({
+      tags: ['Autenticaci��n'],
+      summary: 'Confirmar email',
+      description:
+        'P��blico. Endpoint al que Supabase Auth redirige (con `token_hash` y `type=email`) para confirmar la cuenta. ' +
+        'Verifica el token contra GoTrue y responde JSON.',
+      security: publicSecurity,
+      parameters: [
+        { name: 'token_hash', in: 'query', required: true, description: 'Hash del token de confirmaci��n', schema: { type: 'string' } },
+        { name: 'type', in: 'query', required: true, description: 'Debe ser `email`', schema: { type: 'string', enum: ['email'] } },
+      ],
+      responses: {
+        '200': okPlain({ message: { type: 'string', example: 'Email confirmado correctamente.' } }, 'Email confirmado'),
+        '400': errResponse('Enlace invǭlido o incompleto'),
+      },
+    }),
+  },
+
+  '/api/auth/register': {
+    post: op({
+      tags: ['Autenticación'],
       summary: 'Auto-registro de hotel',
       description:
-        `Público. Paso 2: crea una \`Company\` nueva + usuario \`OWNER\`. ` +
-        `Exige el código recibido por email y, si \`REGISTER_KEY\` está configurada, \`key\` en el body.`,
+        'Público. Crea la cuenta en Supabase Auth con `raw_user_meta_data` **sin** `company_id`: el trigger ' +
+        '`sync_auth_user` crea una `Company` nueva + `UserType` OWNER + fila `User` en cuanto se confirma el email. ' +
+        `Si \`REGISTER_KEY\` está configurada, exige \`key\` en el body (403 \`REGISTER_KEY_REQUIRED\`). ` +
+        'Rate limit: 5 / 15 min por IP (compartido con `/resend-confirmation`).',
       security: publicSecurity,
-      requestBody: jsonBody(js(registerSchema, 'input'), 'Email + código + datos del usuario'),
+      requestBody: jsonBody(js(registerSchema, 'input'), 'Email, contraseña, usuario y nombre del hotel'),
       responses: {
-        '201': ok(ref('CreatedUser'), 'Hotel y propietario creados'),
+        '201': okPlain(
+          { data: { type: 'object', properties: { sent: { type: 'boolean', example: true } } } },
+          'Cuenta creada; la fila de app aparece al confirmar el email',
+        ),
         ...errors({
-          '400': '`VALIDATION_ERROR` o `INVALID_CODE`: código inválido/expirado (hasta 5 intentos)',
+          '400': '`VALIDATION_ERROR` o `WEAK_PASSWORD`',
           '403': '`REGISTER_KEY_REQUIRED`: falta la clave de registro',
           '409': '`DUPLICATE`: ya existe un hotel con ese nombre',
+          '429': '`RATE_LIMIT_EXCEEDED` (5/15min por IP)',
+        }),
+      },
+    }),
+  },
+
+  '/api/auth/resend-confirmation': {
+    post: op({
+      tags: ['Autenticación'],
+      summary: 'Reenviar email de confirmación',
+      description:
+        'Público. Reenvía el email de confirmación de Supabase Auth (no revela si el email ya existe). ' +
+        'Si `REGISTER_KEY` está configurada, exige `key` en el body (403 `REGISTER_KEY_REQUIRED`). ' +
+        'Rate limit: 5 / 15 min por IP (compartido con `/register`).',
+      security: publicSecurity,
+      requestBody: jsonBody(js(resendSchema, 'input'), 'Email a confirmar'),
+      responses: {
+        '200': okPlain(
+          { data: { type: 'object', properties: { sent: { type: 'boolean', example: true } } } },
+          'Email reenviado',
+        ),
+        ...errors({
+          '400': '`VALIDATION_ERROR`: email inválido',
+          '403': '`REGISTER_KEY_REQUIRED`: falta la clave de registro',
+          '429': '`RATE_LIMIT_EXCEEDED` (5/15min por IP)',
         }),
       },
     }),
@@ -997,7 +1485,8 @@ const paths: Record<string, Json> = {
       tags: ['Usuarios'],
       summary: 'Crear usuario',
       description:
-        `${ownerOrAdmin} El \`ADMIN\` solo puede crear \`RECEPCIONISTA\` en su hotel; el \`OWNER\` elige hotel entre los que creó.`,
+        `${ownerOrAdmin} El \`ADMIN\` solo puede crear \`RECEPCIONISTA\` en su hotel; el \`OWNER\` elige hotel entre los que creó. ` +
+        'La cuenta va a Supabase Auth: si el email ya tiene cuenta (en otra empresa) se reusa y la contraseña se ignora.',
       requestBody: jsonBody(js(createUserSchema, 'input'), 'Datos del usuario a crear'),
       responses: {
         '201': ok(ref('UserRow'), 'Usuario creado'),
@@ -1033,12 +1522,12 @@ export const info = {
     '- `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_JSON` (400); `UNAUTHORIZED` (401); `FORBIDDEN`, `REGISTER_KEY_REQUIRED` (403); `NOT_FOUND`, `MP_NOT_CONNECTED` (404).',
     '- Conflicto (409): `DUPLICATE`, `TYPE_IN_USE`, `SERVICE_IN_USE`, `ROOM_HAS_RESERVATIONS`, `GUEST_EXISTS`, `INVALID_STATE`, `CHECKIN_TOO_EARLY`, `ROOM_OCCUPIED`.',
     '- `RATE_LIMIT_EXCEEDED` (429): estallás el bucket por IP. Headers: `RateLimit`, `RateLimit-Policy`, `Retry-After`.',
-    '- MercadoPago: `MP_WEBHOOK_INVALID_SIGNATURE` (401, `MP_WEBHOOK_SECRET_MISSING`/`MAIL_NOT_CONFIGURED`/`MAIL_ERROR` (500), `MP_ORDER_FAILED` (502).',
+    '- MercadoPago: `MP_WEBHOOK_INVALID_SIGNATURE` (401), `MP_WEBHOOK_SECRET_MISSING` (500), `MP_ORDER_FAILED` (502).',
     '',
     '## Rate limits',
     '- Escrituras (POST/PUT/PATCH/DELETE): 60 / min por IP (global).',
     '- `POST /api/auth/login` y `/login/company`: 5 / 15 min por IP.',
-    '- `POST /api/users/send-code` y `/register`: 5 / 15 min por IP (bucket COMPARTIDO) + 3 / hora por email e IP.',
+    '- `POST /api/auth/register` y `/resend-confirmation`: 5 / 15 min por IP (bucket COMPARTIDO).',
     '- `GET /api/companies`: 30 / min por IP.',
     '',
     '## Anticipo y MercadoPago',
@@ -1072,6 +1561,10 @@ export const openApiDocument = {
     { name: 'Resumen', description: 'Métricas del hotel' },
     { name: 'Calendario', description: 'Ocupación por habitación/día' },
     { name: 'MercadoPago', description: 'OAuth, conexión, órdenes y webhook' },
+    { name: 'Instagram', description: 'OAuth y conexión de Instagram Business' },
+    { name: 'Canales', description: 'Bandeja unificada de mensajes (Instagram, Facebook, Airbnb)' },
+    { name: 'Asistente de IA', description: 'Borradores y auto-respuesta de la bandeja con Gemini' },
+    { name: 'Realtime', description: 'Conexión en tiempo real de la bandeja vía Supabase Realtime' },
     { name: 'Usuarios', description: 'Alta de usuarios y auto-registro' },
   ],
   components: {

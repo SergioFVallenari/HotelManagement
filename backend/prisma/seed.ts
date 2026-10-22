@@ -1,48 +1,91 @@
-import bcrypt from 'bcryptjs';
 import { prisma } from '../src/config/prisma.js';
+import { AppError } from '../src/lib/AppError.js';
+import { adminCreateUser, signInWithPassword } from '../src/lib/supabaseAuth.js';
+import { buildInternalMetadata } from '../src/modules/auth/auth.metadata.js';
+
+interface SeedUser {
+  username: string;
+  name: string;
+  email: string;
+  password: string;
+  role: 'ADMIN' | 'RECEPCIONISTA';
+}
+
+async function ensureUser(companyId: number, user: SeedUser): Promise<void> {
+  const existing = await prisma.userCompany.findUnique({
+    where: { companyId_username: { companyId, username: user.username } },
+  });
+  if (existing) return;
+
+  let authUserId: string;
+  try {
+    authUserId = await adminCreateUser({
+      email: user.email,
+      password: user.password,
+      metadata: buildInternalMetadata({
+        username: user.username,
+        name: user.name,
+        role: user.role,
+        companyId,
+        createdById: null,
+        isActive: true,
+      }),
+    });
+  } catch (err) {
+    if (!(err instanceof AppError) || err.code !== 'DUPLICATE') throw err;
+    authUserId = (await signInWithPassword(user.email, user.password)).authUserId;
+  }
+
+  const type = await prisma.userType.upsert({
+    where: { role: user.role },
+    update: {},
+    create: { role: user.role },
+  });
+
+  let appUser = await prisma.user.findUnique({ where: { authUserId } });
+  if (!appUser) {
+    appUser = await prisma.user.create({
+      data: { email: user.email, name: user.name, authUserId },
+    });
+  }
+
+  const membership = await prisma.userCompany.findUnique({
+    where: { userId_companyId: { userId: appUser.id, companyId } },
+  });
+  if (membership) return;
+
+  await prisma.userCompany.create({
+    data: {
+      userId: appUser.id,
+      companyId,
+      username: user.username,
+      typeId: type.id,
+      isActive: true,
+      createdById: null,
+    },
+  });
+}
 
 async function main(): Promise<void> {
-  const adminType = await prisma.userType.upsert({
-    where: { role: 'ADMIN' },
-    update: {},
-    create: { role: 'ADMIN' },
-  });
-  const recepcionType = await prisma.userType.upsert({
-    where: { role: 'RECEPCIONISTA' },
-    update: {},
-    create: { role: 'RECEPCIONISTA' },
-  });
-
-  const adminPassword = bcrypt.hashSync('admin123', 10);
-  const recepcionPassword = bcrypt.hashSync('recepcion123', 10);
-
   const principal = await prisma.company.upsert({
     where: { name: 'Hotel Principal' },
     update: {},
     create: { name: 'Hotel Principal' },
   });
 
-  await prisma.user.upsert({
-    where: { companyId_username: { companyId: principal.id, username: 'admin' } },
-    update: { passwordHash: adminPassword, typeId: adminType.id, isActive: true },
-    create: {
-      username: 'admin',
-      passwordHash: adminPassword,
-      name: 'Administrador',
-      typeId: adminType.id,
-      companyId: principal.id,
-    },
+  await ensureUser(principal.id, {
+    username: 'admin',
+    name: 'Administrador',
+    email: 'admin@hotelprincipal.test',
+    password: 'admin123',
+    role: 'ADMIN',
   });
-  await prisma.user.upsert({
-    where: { companyId_username: { companyId: principal.id, username: 'recepcion' } },
-    update: { passwordHash: recepcionPassword, typeId: recepcionType.id, isActive: true },
-    create: {
-      username: 'recepcion',
-      passwordHash: recepcionPassword,
-      name: 'Recepción',
-      typeId: recepcionType.id,
-      companyId: principal.id,
-    },
+  await ensureUser(principal.id, {
+    username: 'recepcion',
+    name: 'Recepción',
+    email: 'recepcion@hotelprincipal.test',
+    password: 'recepcion123',
+    role: 'RECEPCIONISTA',
   });
   console.log(`Empresa "${principal.name}" y sus usuarios listos (admin/admin123, recepcion/recepcion123)`);
 
@@ -51,16 +94,12 @@ async function main(): Promise<void> {
     update: {},
     create: { name: 'Hotel Sol' },
   });
-  await prisma.user.upsert({
-    where: { companyId_username: { companyId: sol.id, username: 'sol' } },
-    update: { passwordHash: adminPassword, typeId: adminType.id, isActive: true },
-    create: {
-      username: 'sol',
-      passwordHash: adminPassword,
-      name: 'Administrador Hotel Sol',
-      typeId: adminType.id,
-      companyId: sol.id,
-    },
+  await ensureUser(sol.id, {
+    username: 'sol',
+    name: 'Administrador Hotel Sol',
+    email: 'sol@hotelsol.test',
+    password: 'admin123',
+    role: 'ADMIN',
   });
   console.log(`Empresa "${sol.name}" lista (usuario sol/admin123)`);
 

@@ -125,6 +125,7 @@ export interface User {
   name?: string | null;
   email?: string | null;
   companyId: number;
+  companyName: string
 }
 
 export interface UserListItem {
@@ -203,4 +204,74 @@ export interface CalendarData {
   to: string;
   days: string[];
   rooms: CalendarRoom[];
+}
+
+export type ChannelType = 'INSTAGRAM' | 'FACEBOOK' | 'AIRBNB';
+export type ChannelDirection = 'IN' | 'OUT';
+export type ChannelMessageStatus = 'RECEIVED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'DELETED';
+export type ChannelContentType =
+  | 'TEXT'
+  | 'IMAGE'
+  | 'VIDEO'
+  | 'AUDIO'
+  | 'FILE'
+  | 'STORY'
+  | 'SHARE'
+  | 'REACTION'
+  | 'SYSTEM';
+
+export interface ChannelConversation {
+  id: string;
+  channel: ChannelType;
+  externalThreadId: string;
+  participantId: string;
+  participantHandle: string | null;
+  participantName: string | null;
+  participantAvatar: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastInboundAt: string | null;
+  unreadCount: number;
+  replyWindowEndsAt: string | null;
+  canReply: boolean;
+}
+
+export interface ChannelAttachment {
+  type: ChannelContentType;
+  url?: string;
+  name?: string;
+  mimeType?: string;
+}
+
+export interface ChannelMessage {
+  id: string;
+  conversationId: string;
+  externalMessageId: string;
+  direction: ChannelDirection;
+  contentType: ChannelContentType;
+  text: string | null;
+  attachments: ChannelAttachment[] | null;
+  status: ChannelMessageStatus;
+  sentAt: string;
+}
+
+export interface MessageThread {
+  data: ChannelMessage[];
+  meta: { hasMore: boolean };
+}
+
+export interface AiConfig {
+  configured: boolean;
+}
+
+export interface AiSettings {
+  enabled: boolean;
+  autoReply: boolean;
+  instructions: string | null;
+}
+
+export interface AiDraft {
+  action: 'auto' | 'suggest';
+  reply: string;
+  canReply: boolean;
 }

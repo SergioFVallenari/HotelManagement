@@ -27,5 +27,13 @@ export const notFound = (resource: string, id?: number | string) =>
 export const conflict = (code: string, message: string, details?: unknown) =>
   new AppError(409, code, message, details);
 
-export const rateLimitExceeded = (message = 'Demasiadas solicitudes. Intentá nuevamente más tarde.') =>
-  new AppError(429, 'RATE_LIMIT_EXCEEDED', message);
+export const rateLimitExceeded = (message = 'Demasiadas solicitudes. Intentá nuevamente más tarde.') => {
+  switch (message) {
+    case 'over_email_send_rate_limit':
+      return new AppError(429, 'EMAIL_RATE_LIMIT', 'Se alcanzó el límite de envío de emails de confirmación. Esperá unos minutos y volvé a intentar.');
+    case 'over_request_rate_limit':
+      return new AppError(429, 'AUTH_RATE_LIMIT', 'Demasiadas solicitudes a Supabase Auth. Intentá nuevamente más tarde.');
+    default:
+      return new AppError(429, 'RATE_LIMIT_EXCEEDED', message);
+  }
+}

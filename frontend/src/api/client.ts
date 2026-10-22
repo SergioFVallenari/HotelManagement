@@ -27,11 +27,16 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  // Timeout propio de la request en ms (default 10000, 0 = sin timeout).
+  // Endpoints lentos como el draft de IA (Gemini + reintentos) necesitan mas
+  // margen: con los 10 s fijos la request se abortaba sola.
+  timeoutMs?: number;
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? 10000;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
   let response: Response;
   try {
     response = await fetch(`${URL_BACKEND}/api${path}`, {
@@ -44,8 +49,15 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
+  } catch (err) {
+    // El abort del timeout sequece como "signal is aborted without reason":
+    // lo traducimos a un error nuestro en espanol antes de que llegue a la UI.
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new ApiError('El servidor tardó demasiado en responder. Probá de nuevo.', 408, 'TIMEOUT');
+    }
+    throw err;
   } finally {
-    clearTimeout(timeout);
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 
   const text = await response.text();

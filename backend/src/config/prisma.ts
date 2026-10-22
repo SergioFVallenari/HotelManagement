@@ -5,6 +5,13 @@ import { getTenantId } from '../lib/tenant.js';
 
 const adapter = new PrismaPg({
   connectionString: env.databaseUrl,
+  // Prisma 7 con driver adapters no hereda los timeouts de v6: el default de
+  // connectionTimeoutMillis es 0 (sin timeout), asi que una Lambda puede quedar
+  // colgada si la DB no responde. El pool chico es suficiente porque Supabase
+  // multiplexa las conexiones en el pooler.
+  max: 5,
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
   ...(isRemoteHost(env.databaseUrl) ? { ssl: { rejectUnauthorized: false } } : {}),
 });
 
@@ -13,7 +20,18 @@ function isRemoteHost(databaseUrl: string): boolean {
   return hostname !== 'localhost' && hostname !== '127.0.0.1';
 }
 
-const SCOPEABLE_MODELS = new Set(['User', 'RoomType', 'Room', 'Guest', 'Service', 'Reservation']);
+const SCOPEABLE_MODELS = new Set([
+  'UserCompany',
+  'RoomType',
+  'Room',
+  'Guest',
+  'Service',
+  'Reservation',
+  'ChannelAccount',
+  'ChannelConversation',
+  'ChannelMessage',
+  'CompanyAiSetting',
+]);
 
 type RawArgs = Record<string, any>;
 

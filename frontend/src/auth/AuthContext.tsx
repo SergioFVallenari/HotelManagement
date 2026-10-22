@@ -7,7 +7,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   pendingCompanies: LoginCompany[] | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   selectCompany: (companyId: number) => Promise<void>;
   switchCompany: (companyId: number) => Promise<void>;
   cancelLogin: () => void;
@@ -19,7 +19,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [pendingCompanies, setPendingCompanies] = useState<LoginCompany[] | null>(null);
-  const [pendingCredentials, setPendingCredentials] = useState<{ username: string; password: string } | null>(null);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,32 +33,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('auth:expired', handler);
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const result = await api<{ companies: LoginCompany[] }>('/auth/login', {
+  const login = useCallback(async (email: string, password: string) => {
+    const result = await api<{ companies: LoginCompany[]; token: string }>('/auth/login', {
       method: 'POST',
-      body: { username, password },
+      body: { email, password },
     });
-    setPendingCredentials({ username, password });
+    setPendingToken(result.token);
     setPendingCompanies(result.companies);
   }, []);
 
   const selectCompany = useCallback(
     async (companyId: number) => {
-      if (!pendingCredentials) return;
+      if (!pendingToken) return;
       const result = await api<{ user: User }>('/auth/login/company', {
         method: 'POST',
-        body: { companyId, ...pendingCredentials },
+        body: { companyId, token: pendingToken },
       });
       setUser(result.user);
       setPendingCompanies(null);
-      setPendingCredentials(null);
+      setPendingToken(null);
     },
-    [pendingCredentials],
+    [pendingToken],
   );
 
   const cancelLogin = useCallback(() => {
     setPendingCompanies(null);
-    setPendingCredentials(null);
+    setPendingToken(null);
   }, []);
 
   const switchCompany = useCallback(async (companyId: number) => {

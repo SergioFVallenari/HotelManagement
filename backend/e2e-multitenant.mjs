@@ -38,7 +38,8 @@ const principal = makeClient();
 const sol = makeClient();
 
 // 1. Databases: credentials first (la respuesta trae las empresas), then select company (both tenants)
-let r = await principal('/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
+let r = await principal('/auth/login', { method: 'POST', body: { email: 'admin@hotelprincipal.test', password: 'admin123' } });
+const principalToken = r.json?.token;
 const principalCompany = Array.isArray(r.json?.companies)
   ? r.json.companies.find((c) => c.name === 'Hotel Principal')
   : null;
@@ -47,18 +48,19 @@ check(
   r.status === 200 && !!principalCompany && principalCompany.role === 'ADMIN',
   `status=${r.status} ${JSON.stringify(r.json)}`,
 );
-r = await principal('/auth/login/company', { method: 'POST', body: { companyId: principalCompany?.id, username: 'admin', password: 'admin123' } });
+r = await principal('/auth/login/company', { method: 'POST', body: { companyId: principalCompany?.id, token: principalToken } });
 check('principal selects company', r.status === 200 && r.json.user.companyId === principalCompany?.id, `status=${r.status} ${JSON.stringify(r.json)}`);
-r = await sol('/auth/login', { method: 'POST', body: { username: 'sol', password: 'admin123' } });
+r = await sol('/auth/login', { method: 'POST', body: { email: 'sol@hotelsol.test', password: 'admin123' } });
+const solToken = r.json?.token;
 const solCompany = Array.isArray(r.json?.companies)
   ? r.json.companies.find((c) => c.name === 'Hotel Sol')
   : null;
 check('sol credentials -> companies', r.status === 200 && !!solCompany, `status=${r.status}`);
-r = await sol('/auth/login/company', { method: 'POST', body: { companyId: solCompany?.id, username: 'sol', password: 'admin123' } });
+r = await sol('/auth/login/company', { method: 'POST', body: { companyId: solCompany?.id, token: solToken } });
 check('sol selects company', r.status === 200 && r.json.user.companyId === solCompany?.id, `status=${r.status}`);
 
 // credentials with a wrong password must not reveal companies
-r = await principal('/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } });
+r = await principal('/auth/login', { method: 'POST', body: { email: 'admin@hotelprincipal.test', password: 'wrong' } });
 check('wrong password -> 401 without companies', r.status === 401, `status=${r.status}`);
 
 // 2. Principal creates roomType + room + service

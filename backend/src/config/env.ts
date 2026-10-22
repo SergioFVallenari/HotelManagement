@@ -18,8 +18,23 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
 
 export const env = {
   databaseUrl: required('DATABASE_URL'),
+  // Session pooler (Supabase 5432). Solo lo usa la CLI de Prisma via
+  // prisma.config.ts, no el runtime, asi que no es obligatoria aca.
+  directUrl: process.env.DIRECT_URL ?? '',
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
+  // Supabase Auth (GoTrue) es el store de credenciales. Solo se usa la service
+  // role key, server-side: la anon key nunca se distribuye, asi nadie puede
+  // llamar a /auth/v1/signup por afuera del backend.
+  supabase: {
+    url: required('SUPABASE_URL'),
+    serviceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
+    anonKey: required('SUPABASE_ANON_KEY'),
+    // Secreto HS256 del proyecto Supabase (Project Settings > API > JWT Settings).
+    // Solo se usa para firmar el token de Realtime de la bandeja; si falta, la
+    // bandeja cae al polling de respaldo y /api/realtime/config responde 503.
+    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? '',
+  },
   port: Number(process.env.PORT ?? 3000),
   nodeEnv,
   isProduction: nodeEnv === 'production',
@@ -45,12 +60,25 @@ export const env = {
       (nodeEnv === 'production' ? `${LAMBDA_URL}/api/mp/webhook` : 'http://localhost:3000/api/mp/webhook'),
     testAccessToken: process.env.MP_TEST_ACCESS_TOKEN ?? '',
   },
-  smtp: {
-    host: process.env.SMTP_HOST ?? '',
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === 'true',
-    user: process.env.SMTP_USER ?? '',
-    pass: process.env.SMTP_PASS ?? '',
-    from: process.env.SMTP_FROM ?? 'Hotel Manager <no-reply@localhost>',
+  // Asistente de IA de la bandeja (Gemini). Sin API key el backend arranca
+  // igual: /api/ai/config responde configured=false y los drafts devuelven 503.
+  ai: {
+    geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+    geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash',
+    geminiApiUrl:
+      process.env.GEMINI_API_URL ?? 'https://generativelanguage.googleapis.com/v1beta',
+  },
+  ig: {
+    appId: required('INSTAGRAM_APP_ID'),
+    appSecret: required('INSTAGRAM_APP_SECRET'),
+    redirectUri: required('INSTAGRAM_REDIRECT_URI'),
+    authorizeUrl: process.env.INSTAGRAM_AUTHORIZE_URL ?? 'https://www.instagram.com/oauth/authorize',
+    tokenUrl: process.env.INSTAGRAM_TOKEN_URL ?? 'https://api.instagram.com/oauth/access_token',
+    graphHost: process.env.INSTAGRAM_GRAPH_HOST ?? 'https://graph.instagram.com',
+    graphApiUrl: process.env.INSTAGRAM_GRAPH_API_URL ?? 'https://graph.instagram.com/v26.0',
+    webhookVerifyToken: process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN ?? '',
+    frontendUrl:
+      process.env.INSTAGRAM_FRONTEND_URL ??
+      (nodeEnv === 'production' ? CLOUDFRONT_URL : 'http://localhost:5173'),
   },
 };

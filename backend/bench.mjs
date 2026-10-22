@@ -1,9 +1,9 @@
 import autocannon from 'autocannon';
 
 const BASE = (process.env.BENCH_BASE ?? 'http://localhost:3000').replace(/\/+$/, '');
-const USER = process.env.BENCH_USER ?? 'ElNomada';
-const PASS = process.env.BENCH_PASS ?? 'Vehemente676!';
-const COMPANY = process.env.BENCH_COMPANY ?? 'ElNomada';
+const EMAIL = process.env.BENCH_EMAIL ?? process.env.BENCH_USER ?? 'admin@hotelprincipal.test';
+const PASS = process.env.BENCH_PASS ?? 'admin123';
+const COMPANY = process.env.BENCH_COMPANY ?? 'Hotel Principal';
 const N_ROOMS = int('BENCH_ROOMS', 40);
 const N_RESERVATIONS = int('BENCH_RESERVATIONS', 60);
 const DURATION = int('BENCH_DURATION', 10);
@@ -81,16 +81,16 @@ async function preflight() {
 }
 
 async function login() {
-  const step1 = await api('/api/auth/login', { method: 'POST', body: { username: USER, password: PASS } });
+  const step1 = await api('/api/auth/login', { method: 'POST', body: { email: EMAIL, password: PASS } });
   const companies = step1.companies ?? [];
   const target = companies.find((c) => c.name === COMPANY) ?? companies[0];
-  if (!target) throw new Error(`El usuario ${USER} no tiene ninguna empresa.`);
+  if (!target) throw new Error(`El usuario ${EMAIL} no tiene ninguna empresa.`);
   await api('/api/auth/login/company', {
     method: 'POST',
-    body: { companyId: target.id, username: USER, password: PASS },
+    body: { companyId: target.id, token: step1.token },
   });
   if (!cookie) throw new Error('El login no devolvio la cookie gh_token.');
-  console.log(`Sesion de "${target.name}" como ${USER}`);
+  console.log(`Sesion de "${target.name}" como ${EMAIL}`);
 }
 
 // Reutiliza un dataset estable en vez de crear uno nuevo por corrida: el bench

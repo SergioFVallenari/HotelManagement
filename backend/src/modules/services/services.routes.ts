@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../../middleware/auth.js';
+import { requireAuth, requireOwnerOrAdmin } from '../../middleware/auth.js';
 import {
   createService,
   deleteService,
@@ -12,8 +12,8 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', listServices);
-router.post('/', requireAdmin, createService);
-router.put('/:id', requireAdmin, updateService);
-router.delete('/:id', requireAdmin, deleteService);
+router.post('/', requireOwnerOrAdmin, createService);
+router.put('/:id', requireOwnerOrAdmin, updateService);
+router.delete('/:id', requireOwnerOrAdmin, deleteService);
 
 export default router;

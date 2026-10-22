@@ -18,7 +18,12 @@ export const writeRateLimiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  skip: (req) => req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS",
+  skip: (req) =>
+    req.method === "GET" ||
+    req.method === "HEAD" ||
+    req.method === "OPTIONS" ||
+    // Los webhooks llegan en ráfaga y MP/Meta reintentan si reciben 429.
+    req.path.endsWith("/webhook"),
   handler: () => {
     throw rateLimitExceeded();
   },

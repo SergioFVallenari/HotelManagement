@@ -44,7 +44,7 @@ export function PaymentResultPage() {
       <div className="login-card payment-result">
         <div className="login-brand">
           <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
-          <h1>Hotel Manager</h1>
+          <h1>Hospia</h1>
         </div>
         <div className={`payment-result-icon ${variant}`}>
           <Icon size={44} />

@@ -13,44 +13,56 @@ model Company {
   createdById Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users       User[]
+  members     UserCompany[]
   roomTypes   RoomType[]
   rooms       Room[]
   guests      Guest[]
   services    Service[]
   reservations Reservation[]
   mpAccount   CompanyMpAccount?
+  channelAccounts      ChannelAccount[]
+  channelConversations ChannelConversation[]
+  aiSetting   CompanyAiSetting?
+}
+
+model CompanyAiSetting {
+  companyId    Int      @id
+  enabled      Boolean  @default(false)
+  autoReply    Boolean  @default(true)
+  instructions String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String
-  passwordHash String
-  name         String?
-  email        String?
-  typeId       Int
-  companyId    Int
-  createdById  Int?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  type         UserType @relation(fields: [typeId], references: [id])
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-
-  @@unique([companyId, username])
-  @@index([companyId])
+  id         Int           @id @default(autoincrement())
+  authUserId String?       @unique
+  email      String        @unique
+  name       String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  companies  UserCompany[]
 }
 
-model EmailVerificationCode {
-  id         Int       @id @default(autoincrement())
-  email      String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
+model UserCompany {
+  userId      Int
+  companyId   Int
+  username    String
+  typeId      Int
+  isActive    Boolean  @default(true)
+  createdById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  type        UserType @relation(fields: [typeId], references: [id])
 
-  @@index([email])
+  @@id([userId, companyId])
+  @@unique([companyId, username])
+  @@index([companyId])
+  @@index([userId])
+  @@index([typeId])
 }
 
 enum UserRole {
@@ -60,9 +72,9 @@ enum UserRole {
 }
 
 model UserType {
-  id    Int      @id @default(autoincrement())
-  role  UserRole @unique @default(RECEPCIONISTA)
-  users User[]
+  id    Int           @id @default(autoincrement())
+  role  UserRole      @unique @default(RECEPCIONISTA)
+  users UserCompany[]
 }
 
 model RoomType {
@@ -225,4 +237,116 @@ model CompanyMpAccount {
   company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
+}
+
+enum ChannelType {
+  INSTAGRAM
+  FACEBOOK
+  AIRBNB
+}
+
+enum ChannelAccountStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+  ERROR
+}
+
+model ChannelAccount {
+  id                String               @id @default(cuid())
+  companyId         Int
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  channel           ChannelType
+  externalAccountId String
+  handle            String?
+  displayName       String?
+  accessTokenEnc    String?              @db.Text
+  accessTokenIv     String?
+  refreshTokenEnc   String?              @db.Text
+  refreshTokenIv    String?
+  tokenExpiresAt    DateTime?
+  scopes            String?
+  status            ChannelAccountStatus @default(ACTIVE)
+  metadata          Json?
+  connectedAt       DateTime             @default(now())
+  lastRefreshedAt   DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  conversations     ChannelConversation[]
+
+  @@unique([companyId, channel])
+  @@unique([channel, externalAccountId])
+  @@index([companyId])
+}
+
+enum ChannelDirection {
+  IN
+  OUT
+}
+
+enum ChannelMessageStatus {
+  RECEIVED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  DELETED
+}
+
+enum ChannelContentType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+  STORY
+  SHARE
+  REACTION
+  SYSTEM
+}
+
+model ChannelConversation {
+  id                 String           @id @default(cuid())
+  companyId          Int
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  channel            ChannelType
+  accountId          String
+  account            ChannelAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  externalThreadId   String
+  participantId      String
+  participantHandle  String?
+  participantName    String?
+  participantAvatar  String?
+  lastMessageAt      DateTime?
+  lastMessagePreview String?
+  lastInboundAt      DateTime?
+  unreadCount        Int                @default(0)
+  metadata           Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  messages           ChannelMessage[]
+
+  @@unique([accountId, externalThreadId])
+  @@index([companyId, lastMessageAt])
+  @@index([companyId, channel, lastMessageAt])
+}
+
+model ChannelMessage {
+  id                String                  @id @default(cuid())
+  companyId         Int
+  conversationId    String
+  conversation      ChannelConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  externalMessageId String                  @unique
+  direction         ChannelDirection
+  contentType       ChannelContentType      @default(TEXT)
+  text              String?                 @db.Text
+  attachments       Json?
+  replyToExternalId String?
+  status            ChannelMessageStatus    @default(RECEIVED)
+  error             String?
+  sentAt            DateTime
+  createdAt         DateTime                @default(now())
+
+  @@index([conversationId, sentAt])
+  @@index([companyId, sentAt])
 }

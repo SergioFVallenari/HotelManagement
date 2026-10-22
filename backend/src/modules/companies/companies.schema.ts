@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isEmail } from '../users/users.code.js';
+import { isEmail } from '../../lib/validate.js';
 
 export const createCompanySchema = z.object({
   name: z.string().trim().min(1).max(100),

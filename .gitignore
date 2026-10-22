@@ -35,6 +35,9 @@ Thumbs.db
 !backend/deploy.sh
 !backend/nat-setup.sh
 
+# Scripts de depuracion de una sola vez
+backend/ig-check.ts
+
 # Capacitor native projects
 # Ahora SI se versiona el proyecto Android: es donde viven los cambios nativos
 # que la app necesita (deep links, cookies de terceros) y sin esto un clone nuevo

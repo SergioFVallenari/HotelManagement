@@ -9,22 +9,21 @@ import { ErrorBanner } from '../components/Feedback';
 export function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
   const [newName, setNewName] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newCode, setNewCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPassword2, setNewPassword2] = useState('');
   const [newHotel, setNewHotel] = useState('Hotel Principal');
   const [createError, setCreateError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
-  const [sendingCode, setSendingCode] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const emailOk = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
   const allowRegister = import.meta.env.VITE_ALLOW_REGISTER === 'true';
@@ -45,7 +44,7 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(username, password);
+      await login(email, password);
       navigate('/login/company', { replace: true });
     } catch (err) {
       setError((err as Error).message);
@@ -54,46 +53,20 @@ export function LoginPage() {
     }
   }
 
-  async function handleSendCode(e?: FormEvent) {
-    e?.preventDefault();
+  async function handleCreateUser(e: FormEvent) {
+    e.preventDefault();
     setCreateError(null);
     const invalid = validateDatos();
     if (invalid) {
       setCreateError(invalid);
       return;
     }
-    setSendingCode(true);
-    try {
-      await api('/users/send-code', { method: 'POST', body: { email: newEmail.trim() } });
-      setNewCode('');
-      setStep(2);
-    } catch (err) {
-      setCreateError((err as Error).message);
-    } finally {
-      setSendingCode(false);
-    }
-  }
-
-  function handleBack() {
-    setCreateError(null);
-    setNewCode('');
-    setStep(1);
-  }
-
-  async function handleCreateUser(e: FormEvent) {
-    e.preventDefault();
-    setCreateError(null);
-    if (!/^\d{6}$/.test(newCode)) {
-      setCreateError('El código debe tener 6 dígitos.');
-      return;
-    }
     setRegistering(true);
     try {
-      await api('/users/register', {
+      await api('/auth/register', {
         method: 'POST',
         body: {
           email: newEmail.trim(),
-          code: newCode,
           username: newUsername.trim(),
           password: newPassword,
           hotelName: newHotel.trim(),
@@ -101,19 +74,31 @@ export function LoginPage() {
         },
       });
       setCreated(true);
-      setUsername(newUsername.trim());
+      setResent(false);
+      setEmail(newEmail.trim());
       setNewName('');
       setNewUsername('');
-      setNewEmail('');
-      setNewCode('');
       setNewPassword('');
       setNewPassword2('');
       setNewHotel('Hotel Principal');
-      setStep(1);
     } catch (err) {
       setCreateError((err as Error).message);
     } finally {
       setRegistering(false);
+    }
+  }
+
+  async function handleResend() {
+    setCreateError(null);
+    setResent(false);
+    setResending(true);
+    try {
+      await api('/auth/resend-confirmation', { method: 'POST', body: { email: newEmail.trim() } });
+      setResent(true);
+    } catch (err) {
+      setCreateError((err as Error).message);
+    } finally {
+      setResending(false);
     }
   }
 
@@ -122,13 +107,13 @@ export function LoginPage() {
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-brand">
           <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
-          <h1>Hotel Manager</h1>
+          <h1>Hospia</h1>
           <p>Ingresá para administrar el alojamiento</p>
         </div>
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
         <div className="mb-3">
-          <label className="form-label" htmlFor="login-username">Usuario</label>
-          <input id="login-username" className="form-control" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
+          <label className="form-label" htmlFor="login-email">Email</label>
+          <input id="login-email" className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus required />
         </div>
         <div className="mb-3">
           <label className="form-label" htmlFor="login-password">Contraseña</label>
@@ -146,16 +131,24 @@ export function LoginPage() {
             aria-controls="createUser"
             onClick={() => {
               setCreated(false);
+              setResent(false);
               setCreateError(null);
+              setNewEmail('');
             }}
           >
             Crear usuario
           </a>
         )}
         {/* <p className="login-hint">
-          Usuarios de prueba: <code>admin/admin123</code> · <code>recepcion/recepcion123</code> (Hotel Principal) ·{' '}
-          <code>sol/admin123</code> (Hotel Sol)
+          Usuarios de prueba: <code>admin@hotelprincipal.test/admin123</code> ·{' '}
+          <code>recepcion@hotelprincipal.test/recepcion123</code> (Hotel Principal) ·{' '}
+          <code>sol@hotelsol.test/admin123</code> (Hotel Sol)
         </p> */}
+        <p className="text-center small mt-3 mb-0">
+          <a className="link-secondary" href="/privacidad.html">Privacidad</a>
+          <span className="text-secondary"> · </span>
+          <a className="link-secondary" href="/eliminacion-de-datos.html">Eliminación de datos</a>
+        </p>
       </form>
       {allowRegister && (
       <div className="offcanvas offcanvas-fullscreen" id="createUser" aria-labelledby="createUserLabel">
@@ -165,25 +158,26 @@ export function LoginPage() {
         </div>
         <div className="offcanvas-body">
           <div className="register-panel">
-            {!created && (
-              <div className="register-steps">
-                <span className={`step ${step === 1 ? 'active' : 'done'}`}>1. Tus datos</span>
-                <span className={`step ${step === 2 ? 'active' : ''}`}>2. Verificación</span>
-              </div>
-            )}
             {createError && <ErrorBanner message={createError} onDismiss={() => setCreateError(null)} />}
             {created && (
               <div className="text-center">
                 <div className="alert alert-success" role="alert">
-                  Usuario creado. Ya podés ingresar con tu usuario y contraseña.
+                  Cuenta creada. Te enviamos un email a <strong>{newEmail}</strong> para confirmarla. Revisá tu correo
+                  (y la carpeta de spam) y después ingresá.
                 </div>
-                <button type="button" className="btn btn-primary" data-bs-dismiss="offcanvas">
-                  Ir a ingresar
-                </button>
+                {resent && <div className="alert alert-info" role="alert">Email reenviado.</div>}
+                <div className="d-flex gap-2">
+                  <button type="button" className="btn btn-outline-primary flex-fill" onClick={handleResend} disabled={resending || !newEmail.trim()}>
+                    {resending ? 'Reenviando…' : 'Reenviar email'}
+                  </button>
+                  <button type="button" className="btn btn-primary flex-fill" data-bs-dismiss="offcanvas">
+                    Ir a ingresar
+                  </button>
+                </div>
               </div>
             )}
-            {!created && step === 1 && (
-              <form onSubmit={handleSendCode}>
+            {!created && (
+              <form onSubmit={handleCreateUser}>
                 <div className="mb-3">
                   <label className="form-label" htmlFor="create-email">Email *</label>
                   <input
@@ -195,7 +189,7 @@ export function LoginPage() {
                     autoFocus
                     required
                   />
-                  <div className="form-text">Te enviamos un código de verificación a este email.</div>
+                  <div className="form-text">Te enviamos un email de confirmación a esta dirección.</div>
                 </div>
                 <div className="mb-3">
                   <label className="form-label" htmlFor="create-hotel">Nombre del hotel *</label>
@@ -218,40 +212,9 @@ export function LoginPage() {
                   <label className="form-label" htmlFor="create-password2">Repetir contraseña *</label>
                   <input id="create-password2" className="form-control" type="password" value={newPassword2} onChange={(e) => setNewPassword2(e.target.value)} required />
                 </div>
-                <button type="submit" className="btn btn-success w-100" disabled={sendingCode}>
-                  {sendingCode ? 'Enviando código…' : 'Enviar código y continuar'}
-                </button>
-              </form>
-            )}
-            {!created && step === 2 && (
-              <form onSubmit={handleCreateUser}>
-                <p className="text-secondary mb-3">
-                  Enviamos un código de 6 dígitos a <strong>{newEmail}</strong>. Válido por 10 minutos.
-                </p>
-                <div className="mb-3">
-                  <label className="form-label" htmlFor="create-code">Código de verificación *</label>
-                  <input
-                    id="create-code"
-                    className="form-control register-code"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value.replace(/\D/g, ''))}
-                    autoFocus
-                    required
-                  />
-                </div>
                 <button type="submit" className="btn btn-success w-100" disabled={registering}>
-                  {registering ? 'Creando…' : 'Crear usuario'}
+                  {registering ? 'Creando…' : 'Crear cuenta'}
                 </button>
-                <div className="d-flex gap-2 mt-3">
-                  <button type="button" className="btn btn-outline-secondary flex-fill" onClick={handleBack} disabled={registering}>
-                    ← Volver
-                  </button>
-                  <button type="button" className="btn btn-outline-primary flex-fill" onClick={() => handleSendCode()} disabled={sendingCode || registering}>
-                    {sendingCode ? 'Reenviando…' : 'Reenviar código'}
-                  </button>
-                </div>
               </form>
             )}
           </div>

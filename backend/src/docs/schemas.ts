@@ -223,19 +223,11 @@ export const userRowSchema = z.object({
   id: z.number().int(),
   username: z.string(),
   name: z.string().nullable(),
-  email: z.string().nullable(),
+  email: z.string(),
   isActive: z.boolean(),
   createdAt: dateTime().optional(),
   role: roleSchema,
   companyName: z.string(),
-});
-
-export const createdUserSchema = z.object({
-  id: z.number().int(),
-  username: z.string(),
-  name: z.string().nullable(),
-  email: z.string().nullable(),
-  isActive: z.boolean(),
 });
 
 export const mpConnectionSchema = z.union([
