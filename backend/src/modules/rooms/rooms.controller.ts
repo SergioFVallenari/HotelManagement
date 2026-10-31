@@ -37,12 +37,12 @@ export async function listRooms(req: Request, res: Response): Promise<void> {
       where,
       skip,
       take,
-      include: { type: true, _count: { select: { reservations: { where: { status: { not: 'CANCELLED' } } } } } },
+      include: { type: true, _count: { select: { reservationRooms: { where: { reservation: { status: { not: 'CANCELLED' } } } } } } },
       orderBy: [{ isActive: 'desc' }, { number: 'asc' }],
     }),
   ]);
 
-  res.json({ data: rooms, meta: paginationMeta(total, { page, pageSize, skip, take } as Pagination) });
+  res.json({ data: rooms.map((room) => ({ ...room, _count: { reservations: room._count.reservationRooms } })), meta: paginationMeta(total, { page, pageSize, skip, take } as Pagination) });
 }
 
 export async function getRoom(req: Request, res: Response): Promise<void> {
@@ -51,15 +51,14 @@ export async function getRoom(req: Request, res: Response): Promise<void> {
     where: { id },
     include: {
       type: true,
-      reservations: {
-        orderBy: { checkIn: 'desc' },
-        take: 20,
-        include: reservationInclude,
-      },
     },
   });
   if (!room) throw notFound('Habitación', id);
-  res.json({ data: room });
+  const reservations = await prisma.reservation.findMany({
+    where: { OR: [{ roomId: id }, { rooms: { some: { roomId: id } } }] },
+    orderBy: { checkIn: 'desc' }, take: 20, include: reservationInclude,
+  });
+  res.json({ data: { ...room, reservations } });
 }
 
 export async function availableRooms(req: Request, res: Response): Promise<void> {
@@ -71,13 +70,12 @@ export async function availableRooms(req: Request, res: Response): Promise<void>
 
   const conflicts = await prisma.reservation.findMany({
     where: {
-      status: { in: ['RESERVED', 'CHECKED_IN'] },
+      status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
       AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
     },
-    select: { roomId: true },
-    distinct: ['roomId'],
+    select: { roomId: true, rooms: { select: { roomId: true } } },
   });
-  const takenIds = conflicts.map((c) => c.roomId);
+  const takenIds = conflicts.flatMap((c) => [c.roomId, ...c.rooms.map((line) => line.roomId)]);
 
   const rooms = await prisma.room.findMany({
     where: {
@@ -141,7 +139,7 @@ export async function deleteRoom(req: Request, res: Response): Promise<void> {
   const room = await prisma.room.findUnique({ where: { id } });
   if (!room) throw notFound('Habitación', id);
 
-  const reservations = await prisma.reservation.count({ where: { roomId: id } });
+  const reservations = await prisma.reservation.count({ where: { OR: [{ roomId: id }, { rooms: { some: { roomId: id } } }] } });
   if (reservations > 0) {
     throw conflict(
       'ROOM_HAS_RESERVATIONS',

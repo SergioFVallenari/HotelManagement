@@ -24,6 +24,12 @@ export interface StayQuote {
   total: number;
 }
 
+export type RoomPricingMode = 'PER_NIGHT' | 'PER_PERSON';
+
+export function roomStayTotal(mode: RoomPricingMode, price: number, nights: number, persons: number): number {
+  return round2(price * nights * (mode === 'PER_PERSON' ? persons : 1));
+}
+
 // Cantidad de unidades de un servicio segun su tipo de cargo.
 export function serviceQuantity(
   chargeType: ServiceChargeType,

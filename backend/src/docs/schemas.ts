@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { bookingRoomSnapshotsSchema } from '../modules/booking/booking.schema.js';
 
 const dateTime = () => z.string().describe('Fecha y hora ISO 8601 en UTC (p. ej. 2026-10-07T14:30:00.000Z)');
 const dateOnly = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD').describe('Fecha YYYY-MM-DD');
@@ -36,11 +37,25 @@ export const companySchema = z.object({
 });
 
 export const companySettingsSchema = z.object({
+  hotelCapacity: z.number().int().nonnegative(),
+  maxAvailabilityPersons: z.number().int().nonnegative(),
   id: z.number().int(),
   name: z.string(),
   whatsapp: z.string().nullable(),
   phone: z.string().nullable(),
   bookingDepositPercent: z.number().int(),
+  bookingSlug: z.string().nullable(),
+  configPage: z.object({
+    maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
+    bookingTheme: z.object({
+      primary: z.string(),
+      secondary: z.string(),
+      accent: z.string(),
+      text: z.string(),
+      background: z.string(),
+      surface: z.string().optional(),
+    }).optional(),
+  }),
 });
 
 export const authUserSchema = z.object({
@@ -216,6 +231,7 @@ export const reservationSchema = z.object({
   id: z.number().int(),
   code: z.string(),
   roomId: z.number().int(),
+  rooms: z.array(z.object({ roomId: z.number().int(), persons: z.number().int(), extraBeds: z.number().int(), roomPrice: money(), roomPricingMode: z.enum(['PER_NIGHT', 'PER_PERSON']), total: money(), room: reservationRoomSchema })),
   guestId: z.number().int(),
   checkIn: dateOnly(),
   checkOut: dateOnly(),
@@ -263,6 +279,7 @@ export const bookingLinkLineSchema = z.object({
 });
 
 export const bookingLinkSchema = z.object({
+  rooms: bookingRoomSnapshotsSchema,
   id: z.number().int(),
   token: z.string().describe('Token opaco del link publico (/reserva/<token>)'),
   url: z.string().describe('URL publica completa para compartir por WhatsApp'),
@@ -306,6 +323,14 @@ export const publicBookingQuoteSchema = z.object({
     name: z.string(),
     whatsapp: z.string().nullable(),
     phone: z.string().nullable(),
+    bookingTheme: z.object({
+      primary: z.string(),
+      secondary: z.string(),
+      accent: z.string(),
+      text: z.string(),
+      background: z.string(),
+      surface: z.string().optional(),
+    }).nullable(),
   }),
   stay: z.object({
     checkIn: dateOnly(),
@@ -315,6 +340,7 @@ export const publicBookingQuoteSchema = z.object({
     extraBeds: z.number().int(),
     roomType: z.string(),
     roomCapacity: z.number().int().nullable(),
+    rooms: z.array(z.object({ roomType: z.string(), capacity: z.number().int(), persons: z.number().int(), extraBeds: z.number().int(), total: money() })),
   }),
   services: z.array(
     z.object({
@@ -333,6 +359,24 @@ export const publicBookingQuoteSchema = z.object({
   }),
   expiresAt: dateTime().nullable(),
   expired: z.boolean(),
+});
+
+export const publicBookingPageConfigSchema = z.object({
+  hotel: z.object({
+    hotelCapacity: z.number().int().nonnegative(),
+    maxAvailabilityPersons: z.number().int().nonnegative(),
+    name: z.string(),
+    whatsapp: z.string().nullable(),
+    phone: z.string().nullable(),
+    bookingTheme: z.object({
+      primary: z.string(),
+      secondary: z.string(),
+      accent: z.string(),
+      text: z.string(),
+      background: z.string(),
+      surface: z.string().optional(),
+    }).nullable(),
+  }),
 });
 
 export const receiptUploadUrlSchema = z.object({

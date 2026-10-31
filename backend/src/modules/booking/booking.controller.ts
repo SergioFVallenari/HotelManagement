@@ -6,6 +6,9 @@ import {
   createReceiptUpload,
   getBookingLink,
   getPublicQuote,
+  getPublicReservationStatus,
+  getPublicAvailability,
+  getPublicBookingPageConfig,
   listBookingLinks,
   submitBooking,
 } from './booking.service.js';
@@ -13,6 +16,7 @@ import {
   createBookingLinkSchema,
   listBookingLinksQuerySchema,
   publicBookingSchema,
+  publicAvailabilityQuerySchema,
   receiptUploadSchema,
 } from './booking.schema.js';
 import type { CreateBookingLinkInput, ListBookingLinksQuery, PublicBookingInput, ReceiptUploadInput } from './booking.schema.js';
@@ -43,6 +47,22 @@ export async function cancelBookingLinkHandler(req: Request, res: Response): Pro
 
 export async function getPublicQuoteHandler(req: Request, res: Response): Promise<void> {
   const data = await getPublicQuote(String(req.params.token));
+  res.json({ data });
+}
+
+export async function getPublicReservationStatusHandler(req: Request, res: Response): Promise<void> {
+  const data = await getPublicReservationStatus(String(req.params.code));
+  res.json({ data });
+}
+
+export async function getPublicAvailabilityHandler(req: Request, res: Response): Promise<void> {
+  const query = publicAvailabilityQuerySchema.parse(req.query);
+  const data = await getPublicAvailability(String(req.params.slug), query);
+  res.json({ data });
+}
+
+export async function getPublicBookingPageConfigHandler(req: Request, res: Response): Promise<void> {
+  const data = await getPublicBookingPageConfig(String(req.params.slug));
   res.json({ data });
 }
 

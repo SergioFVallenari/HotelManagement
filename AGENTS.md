@@ -589,6 +589,32 @@ comparación entre escenarios, no los números absolutos.
 
 ## Convenciones
 
+### Reservas grupales (2026-10-31)
+
+Las migraciones específicas de Supabase deben poder reproducirse en una shadow sin
+`auth`/`realtime`, publicación ni roles de Supabase: comprobar su existencia, sin
+crear sustitutos ni ocultar errores reales de permisos. Ver `backend/MIGRACIONES.md`
+para separar dev/prod y revisar los checksums históricos sin resetear datos.
+
+- Una `Reservation` admite varias `ReservationRoom` con `roomId`, `persons`, `extraBeds`,
+  `roomPrice` y `roomPricingMode` congelados por habitación. Titular, fechas, estado, pagos y
+  comprobante son únicos para el conjunto. `Reservation.persons` y `extraBeds` son las sumas;
+  `roomId` conserva la primera habitación por compatibilidad, no representa toda la ocupación.
+- `POST/PUT /api/reservations` y `POST /api/booking-links` aceptan
+  `rooms: [{ roomId, persons, extraBeds }]`. Sigue vigente el formato legado de una habitación.
+  `BookingLink.rooms` guarda un snapshot JSON; el formulario público muestra distribución por tipo,
+  sin números ni ids internos. Los servicios se cotizan una sola vez para el grupo.
+- Migración `20261031120000_group_reservations`: crea las líneas, rellena las reservas existentes
+  y agrega el snapshot del link. `ReservationRoom` se aísla por su relación con la reserva
+  (no tiene `companyId`); nunca consultarla directamente sin validar el tenant de la reserva.
+- Disponibilidad, calendario, resumen e IA deben considerar todas las líneas. Crear/modificar
+  bloquea las filas de habitaciones en orden de id antes de validar solapamientos y guardar
+  todo en una transacción. `GET /api/public/availability/:slug` admite `roomCount` opcional para
+  buscar una combinación con exactamente esa cantidad de habitaciones; sin él sigue automático.
+- Tests puros: `backend/tests/reservation-rooms.test.ts` y `availability.test.ts`. Los escenarios
+  de demo en `frontend/tests/demo.test.ts` cubren grupo de 16, anticipo conjunto, calendario,
+  liberación, snapshots y rechazo completo ante conflicto en una habitación.
+
 - **Comentarios**: la regla es "sin comentarios", con excepciones ya asentadas — archivos shell
   (`deploy.sh`, `nat-setup.sh`), `Dockerfile`, `.env.example`, `seed.ts` y los `//` que explican un
   porqué no obvio (`mp.controller.ts`, `client.ts`, `SettingsPage.tsx`). Comentá el porqué, no el qué.

@@ -11,8 +11,8 @@ export const guestInputSchema = z.object({
 
 export const serviceInputSchema = z.object({
   serviceId: z.number().int().positive(),
-  quantity: z.number().int().min(1).max(100).default(1),
-  personsCovered: z.number().int().min(1).max(100).optional().nullable(),
+  quantity: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).default(1),
+  personsCovered: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional().nullable(),
 });
 
 export const depositInputSchema = z.object({
@@ -21,9 +21,21 @@ export const depositInputSchema = z.object({
   reference: z.string().max(100).optional().nullable(),
 });
 
+export const roomSelectionSchema = z.object({
+  roomId: z.number().int().positive(),
+  persons: z.number().int().min(1),
+  extraBeds: z.number().int().min(0).default(0),
+});
+
+export const roomSelectionsSchema = z.array(roomSelectionSchema).min(1).max(100).refine(
+  (rooms) => new Set(rooms.map((room) => room.roomId)).size === rooms.length,
+  'No se puede seleccionar dos veces la misma habitación',
+);
+
 export const createReservationSchema = z
   .object({
-    roomId: z.number().int().positive(),
+    roomId: z.number().int().positive().optional(),
+    rooms: roomSelectionsSchema.optional(),
     guestId: z.number().int().positive().optional(),
     guest: guestInputSchema.optional(),
     checkIn: dateStringSchema,
@@ -35,6 +47,7 @@ export const createReservationSchema = z
     generatePaymentLink: z.boolean().optional(),
     payment: depositInputSchema.optional(),
   })
+  .refine((data) => data.roomId !== undefined || data.rooms !== undefined, { message: 'Seleccioná al menos una habitación', path: ['rooms'] })
   .refine((data) => data.guestId !== undefined || data.guest !== undefined, {
     message: 'Debe indicar guestId o datos del huésped',
     path: ['guest'],
@@ -47,6 +60,7 @@ export const createReservationSchema = z
 export const updateReservationSchema = z
   .object({
     roomId: z.number().int().positive().optional(),
+    rooms: roomSelectionsSchema.optional(),
     guestId: z.number().int().positive().optional(),
     guest: guestInputSchema.optional(),
     checkIn: dateStringSchema.optional(),

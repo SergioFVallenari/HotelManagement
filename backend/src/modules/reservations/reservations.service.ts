@@ -3,10 +3,12 @@ import { prisma } from '../../config/prisma.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
 import { nightsBetween, parseDate, todayHotel, assertValidRange } from '../../lib/date.js';
-import { quoteStay, serviceQuantity } from '../../lib/pricing.js';
+import { quoteStay, roomStayTotal, serviceQuantity, type RoomPricingMode } from '../../lib/pricing.js';
 import { getTenantId } from '../../lib/tenant.js';
 import type { CreateReservationInput, ServiceInput, UpdateReservationInput } from './reservations.schema.js';
 import { createOrderForReservation, type OrderGuestData } from '../mercadopago/mp.checkout.js';
+import { roomSelectionsTotal, type RoomSnapshot } from '../../lib/reservationRooms.js';
+import { loadReservationRooms, roomOverlapWhere } from './reservationRooms.service.js';
 
 export interface ReservationRow {
   id: number;
@@ -17,6 +19,9 @@ export interface ReservationRow {
   checkOut: Date;
   persons: number;
   extraBeds: number;
+  roomPrice?: unknown;
+  roomPricingMode?: RoomPricingMode | null;
+  rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: unknown; roomPricingMode: RoomPricingMode; room?: ReservationRow['room'] }[];
   status: string;
   source?: string;
   checkedInAt: Date | null;
@@ -79,6 +84,7 @@ export interface ReservationRow {
 }
 
 export const FULL_INCLUDE = {
+  rooms: { include: { room: { include: { type: true } } }, orderBy: { id: 'asc' } },
   room: { include: { type: true } },
   guest: true,
   services: { include: { service: true } },
@@ -89,12 +95,13 @@ export const FULL_INCLUDE = {
 
 export function serializeReservation(row: ReservationRow) {
   const nights = nightsBetween(row.checkIn, row.checkOut);
-  const roomPrice = decToNum(row.room?.price);
-  const { roomTotal, servicesTotal, total } = quoteStay(
-    nights,
-    roomPrice,
-    (row.services ?? []).map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.unitPrice) })),
-  );
+  const roomPrice = decToNum(row.roomPrice ?? row.room?.price);
+  const roomPricingMode = row.roomPricingMode ?? 'PER_NIGHT';
+  const quoted = quoteStay(nights, 0, (row.services ?? []).map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.unitPrice) })));
+  const rooms = row.rooms?.length ? row.rooms : [{ roomId: row.roomId, persons: row.persons, extraBeds: row.extraBeds, roomPrice, roomPricingMode, room: row.room }];
+  const roomTotal = roomSelectionsTotal(rooms.map((line) => ({ ...line, roomPrice: decToNum(line.roomPrice) })), nights);
+  const servicesTotal = quoted.servicesTotal;
+  const total = round2(roomTotal + servicesTotal);
   const amountPaid = round2((row.payments ?? []).reduce((acc, p) => acc + decToNum(p.amount), 0));
   const balance = round2(total - amountPaid);
 
@@ -102,6 +109,7 @@ export function serializeReservation(row: ReservationRow) {
     id: row.id,
     code: row.code,
     roomId: row.roomId,
+    rooms: rooms.map((line) => ({ roomId: line.roomId, persons: line.persons, extraBeds: line.extraBeds, roomPrice: decToNum(line.roomPrice), roomPricingMode: line.roomPricingMode, room: line.room ? { ...line.room, price: decToNum(line.roomPrice), pricingMode: line.roomPricingMode } : null, total: roomStayTotal(line.roomPricingMode, decToNum(line.roomPrice), nights, line.persons) })),
     guestId: row.guestId,
     checkIn: row.checkIn.toISOString().slice(0, 10),
     checkOut: row.checkOut.toISOString().slice(0, 10),
@@ -127,7 +135,8 @@ export function serializeReservation(row: ReservationRow) {
           number: row.room.number,
           name: row.room.name,
           capacity: row.room.capacity,
-          price: roomPrice,
+           price: roomPrice,
+           pricingMode: roomPricingMode,
           type: row.room.type,
         }
       : null,
@@ -171,7 +180,8 @@ export function serializeReservation(row: ReservationRow) {
       : null,
     totals: {
       nights,
-      roomPrice,
+        roomPrice,
+        roomPricingMode,
       roomTotal,
       servicesTotal,
       total,
@@ -237,6 +247,10 @@ export interface CreateReservationOptions {
   bookingLinkId?: number;
   // Comprobante de pago que subio el huesped.
   receipt?: ReservationReceiptInput;
+  roomPrice?: number;
+  roomPricingMode?: RoomPricingMode;
+  rooms?: RoomSnapshot[];
+  serviceLines?: { serviceId: number; quantity: number; personsCovered: number | null; unitPrice: number }[];
 }
 
 export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
@@ -245,30 +259,20 @@ export async function createReservation(input: CreateReservationInput, options: 
   assertValidRange(checkIn, checkOut);
   const companyId = getTenantId()!;
 
-  const room = await prisma.room.findFirst({ where: { id: input.roomId, isActive: true, companyId } });
-  if (!room) throw notFound('Habitación', input.roomId);
-
-  const persons = input.persons;
-  if (persons > room.capacity) {
-    throw badRequest(`La habitación admite hasta ${room.capacity} personas`);
-  }
-  const extraBeds = input.extraBeds ?? 0;
-  if (extraBeds > room.maxExtraBeds) {
-    throw badRequest(`La habitación admite hasta ${room.maxExtraBeds} cama(s) extra(s)`);
-  }
-  if (extraBeds > 0 && persons < room.capacity) {
-    throw badRequest('Las camas extras solo pueden cargarse cuando la habitación está llena (personas = capacidad)');
-  }
+  const rooms = await loadReservationRooms(input.rooms ?? [{ roomId: input.roomId!, persons: input.persons, extraBeds: input.extraBeds ?? 0 }], options.rooms);
+  if (!options.rooms && options.roomPrice !== undefined) rooms[0]!.roomPrice = options.roomPrice;
+  if (!options.rooms && options.roomPricingMode !== undefined) rooms[0]!.roomPricingMode = options.roomPricingMode;
+  const persons = rooms.reduce((sum, line) => sum + line.persons, 0);
+  const extraBeds = rooms.reduce((sum, line) => sum + line.extraBeds, 0);
 
   const nights = nightsBetween(checkIn, checkOut);
-  const services = await loadServices(input.services ?? [], { persons, extraBeds, nights });
+  const services = options.serviceLines ? [] : await loadServices(input.services ?? [], { persons, extraBeds, nights });
 
-  const roomPrice = decToNum(room.price);
-  const { total } = quoteStay(
-    nights,
-    roomPrice,
-    services.map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.price) })),
-  );
+  const roomPrice = rooms[0]!.roomPrice;
+  const roomPricingMode = rooms[0]!.roomPricingMode;
+  const serviceLines = options.serviceLines ?? services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: decToNum(s.price) }));
+  const { servicesTotal } = quoteStay(nights, 0, serviceLines);
+  const total = round2(roomSelectionsTotal(rooms, nights) + servicesTotal);
   const code = generateCode();
 
   const depositPayment = input.payment;
@@ -280,7 +284,7 @@ export async function createReservation(input: CreateReservationInput, options: 
   const orderAmount = depositViaMp ? deposit : round2(total - deposit);
   const overlapWhere: Prisma.ReservationWhereInput = {
     companyId,
-    roomId: input.roomId,
+    ...roomOverlapWhere(rooms.map((line) => line.roomId)),
     status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
     AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
   };
@@ -312,6 +316,8 @@ export async function createReservation(input: CreateReservationInput, options: 
   }
 
   return prisma.$transaction(async (tx) => {
+    const roomIds = rooms.map((line) => line.roomId);
+    await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" IN (${Prisma.join(roomIds)}) AND "companyId" = ${companyId} ORDER BY "id" FOR UPDATE`;
     // Reclamo atomico de la solicitud de WhatsApp: el update condicional por
     // status OPEN hace que un segundo envio del huesped no cree otra reserva.
     if (options.bookingLinkId !== undefined) {
@@ -350,13 +356,16 @@ export async function createReservation(input: CreateReservationInput, options: 
     const reservation = await tx.reservation.create({
       data: {
         code,
-        roomId: input.roomId,
+        roomId: rooms[0]!.roomId,
+        rooms: { create: rooms.map(({ roomId, persons, extraBeds, roomPrice, roomPricingMode }) => ({ roomId, persons, extraBeds, roomPrice, roomPricingMode })) },
         guestId,
         companyId,
         checkIn,
         checkOut,
         persons,
         extraBeds,
+        roomPrice: roomPrice,
+        roomPricingMode,
         notes: input.notes,
         status: options.forceStatus ?? (wantPaymentLink ? 'PENDING' : 'RESERVED'),
         source: options.source ?? 'STAFF',
@@ -376,7 +385,7 @@ export async function createReservation(input: CreateReservationInput, options: 
             }
           : {}),
         services: {
-          create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
+          create: serviceLines,
         },
       },
       include: FULL_INCLUDE,
@@ -422,27 +431,32 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
   if (input.checkOut !== undefined) checkOut = parseDate(input.checkOut, 'checkOut');
   assertValidRange(checkIn, checkOut);
 
-  const persons = input.persons ?? existing.persons;
-  const extraBeds = input.extraBeds ?? existing.extraBeds;
+  const previousRooms = existing.rooms.length ? existing.rooms.map((line) => ({ ...line, roomPrice: decToNum(line.roomPrice), number: line.room.number, typeName: line.room.type.name, capacity: line.room.capacity })) : [{ roomId: existing.roomId, persons: existing.persons, extraBeds: existing.extraBeds, roomPrice: decToNum(existing.roomPrice ?? existing.room.price), roomPricingMode: existing.roomPricingMode ?? 'PER_NIGHT' as const, number: existing.room.number, typeName: existing.room.type.name, capacity: existing.room.capacity }];
+  if (previousRooms.length > 1 && !input.rooms && (input.roomId !== undefined || input.persons !== undefined || input.extraBeds !== undefined)) throw badRequest('Para modificar una reserva grupal indicá las personas y camas extras de cada habitación');
+  const selections = input.rooms ?? previousRooms.map((line) => ({ roomId: input.roomId ?? line.roomId, persons: input.persons ?? line.persons, extraBeds: input.extraBeds ?? line.extraBeds }));
+  const rooms = await loadReservationRooms(selections, previousRooms);
+  const persons = rooms.reduce((sum, line) => sum + line.persons, 0);
+  const extraBeds = rooms.reduce((sum, line) => sum + line.extraBeds, 0);
   const nights = nightsBetween(checkIn, checkOut);
 
-  let roomId = existing.roomId;
-  if (input.roomId !== undefined) roomId = input.roomId;
+  const roomId = rooms[0]!.roomId;
   const contextChanged =
+    input.rooms !== undefined ||
     input.checkIn !== undefined ||
     input.checkOut !== undefined ||
     (input.persons !== undefined && input.persons !== existing.persons) ||
     (input.extraBeds !== undefined && input.extraBeds !== existing.extraBeds) ||
     roomId !== existing.roomId;
-  const roomOrContextChanged = roomId !== existing.roomId || contextChanged;
 
   const services = input.services !== undefined ? await loadServices(input.services, { persons, extraBeds, nights }) : undefined;
 
   return prisma.$transaction(async (tx) => {
+    const roomIds = [...new Set([...rooms, ...previousRooms].map((line) => line.roomId))];
+    await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" IN (${Prisma.join(roomIds)}) AND "companyId" = ${companyId} ORDER BY "id" FOR UPDATE`;
     const conflictReservation = await tx.reservation.findFirst({
       where: {
         companyId,
-        roomId,
+        ...roomOverlapWhere(rooms.map((line) => line.roomId)),
         status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
         NOT: { id },
         AND: [{ checkIn: { lt: checkOut } }, { checkOut: { gt: checkIn } }],
@@ -468,20 +482,6 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
       guestId = upserted.id;
     }
 
-    if (roomOrContextChanged) {
-      const room = await tx.room.findFirst({ where: { id: roomId, isActive: true, companyId } });
-      if (!room) throw notFound('Habitación', roomId);
-      if (persons > room.capacity) {
-        throw badRequest(`La habitación admite hasta ${room.capacity} personas`);
-      }
-      if (extraBeds > room.maxExtraBeds) {
-        throw badRequest(`La habitación admite hasta ${room.maxExtraBeds} cama(s) extra(s)`);
-      }
-      if (extraBeds > 0 && persons < room.capacity) {
-        throw badRequest('Las camas extras solo pueden cargarse cuando la habitación está llena (personas = capacidad)');
-      }
-    }
-
     const shouldRecomputeLines =
       services === undefined && contextChanged && (existing.services?.length ?? 0) > 0;
 
@@ -489,11 +489,14 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
       where: { id, companyId },
       data: {
         roomId,
+        rooms: { deleteMany: {}, create: rooms.map(({ roomId, persons, extraBeds, roomPrice, roomPricingMode }) => ({ roomId, persons, extraBeds, roomPrice, roomPricingMode })) },
+        roomPrice: rooms[0]!.roomPrice,
+        roomPricingMode: rooms[0]!.roomPricingMode,
         guestId,
         checkIn,
         checkOut,
-        ...(input.persons !== undefined ? { persons } : {}),
-        ...(input.extraBeds !== undefined ? { extraBeds } : {}),
+        persons,
+        extraBeds,
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(services !== undefined
           ? {
@@ -542,6 +545,30 @@ export async function getReservation(id: number) {
   const reservation = await prisma.reservation.findUnique({ where: { id }, include: FULL_INCLUDE });
   if (!reservation) throw notFound('Reserva', id);
   return serializeReservation(reservation);
+}
+
+export async function getPublicReservationByCode(code: string) {
+  const reservation = await prisma.reservation.findFirst({
+    where: { code: code.trim().toUpperCase(), source: 'PUBLIC_LINK' },
+    include: { ...FULL_INCLUDE, company: { select: { name: true, configPage: true } } },
+  });
+  if (!reservation) throw notFound('Reserva', code);
+  const serialized = serializeReservation(reservation);
+  return {
+    code: serialized.code,
+    hotel: { name: reservation.company.name, configPage: reservation.company.configPage },
+    status: serialized.status,
+    checkIn: serialized.checkIn,
+    checkOut: serialized.checkOut,
+    persons: serialized.persons,
+    roomType: reservation.room.type.name,
+    rooms: serialized.rooms.map((line) => ({ roomType: line.room?.type?.name ?? 'Habitación', persons: line.persons, extraBeds: line.extraBeds, total: line.total })),
+    nights: serialized.totals.nights,
+    total: serialized.totals.total,
+    amountPaid: serialized.totals.amountPaid,
+    balance: serialized.totals.balance,
+    createdAt: serialized.createdAt,
+  };
 }
 
 export async function changeStatus(id: number, status: 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED') {

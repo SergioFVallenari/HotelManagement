@@ -83,18 +83,18 @@ async function buildAiContext(conversationId: string) {
         checkIn: { lt: addDays(today, AI_AVAILABILITY_DAYS) },
         checkOut: { gt: today },
       },
-      select: { roomId: true, checkIn: true, checkOut: true, status: true },
+      select: { roomId: true, rooms: { select: { roomId: true } }, checkIn: true, checkOut: true, status: true },
     }),
   ]);
 
   const availability = buildAvailability(
     room.map((item) => ({ id: item.id, typeName: item.type.name, capacity: item.capacity })),
-    reservations.map((reservation) => ({
-      roomId: reservation.roomId,
+    reservations.flatMap((reservation) => [...new Set([reservation.roomId, ...reservation.rooms.map((line) => line.roomId)])].map((roomId) => ({
+      roomId,
       checkIn: reservation.checkIn,
       checkOut: reservation.checkOut,
       status: reservation.status,
-    })),
+    }))),
     today,
   );
 

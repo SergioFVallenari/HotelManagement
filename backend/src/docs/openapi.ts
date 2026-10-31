@@ -135,8 +135,11 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/auth/resend-confirmation', 'post'],
   ['/api/auth/confirm-email', 'get'],
   ['/api/public/booking/{token}', 'get'],
+  ['/api/public/booking/status/{code}', 'get'],
   ['/api/public/booking/{token}', 'post'],
   ['/api/public/booking/{token}/receipt', 'post'],
+  ['/api/public/availability/{slug}', 'get'],
+  ['/api/public/availability/{slug}/config', 'get'],
 ];
 
 const componentSchemas: Record<string, Json> = {
@@ -161,6 +164,7 @@ const componentSchemas: Record<string, Json> = {
   AvailableRoomsMeta: js(schemas.availableRoomsMetaSchema),
   BookingLink: js(schemas.bookingLinkSchema),
   PublicBookingQuote: js(schemas.publicBookingQuoteSchema),
+  PublicBookingPageConfig: js(schemas.publicBookingPageConfigSchema),
   ReceiptUploadUrl: js(schemas.receiptUploadUrlSchema),
   ReservationReceipt: js(schemas.reservationReceiptDetailSchema),
 };
@@ -675,7 +679,7 @@ const paths: Record<string, Json> = {
       tags: ['Reservas'],
       summary: 'Crear reserva',
       description:
-        `${noRole} Acepta un anticipo (payment) en la misma operación, y/o puede generar el link de MercadoPago ` +
+        `${noRole} Acepta varias habitaciones con rooms: [{ roomId, persons, extraBeds }]; personas, camas extras y tarifas se validan por habitación. Titular, fechas, estado y pagos son conjuntos. El formato legado de una habitación sigue vigente. Acepta un anticipo (payment) en la misma operación, y/o puede generar el link de MercadoPago ` +
         'por el saldo (`generatePaymentLink`). Ver descripción ampliada en la portada.',
       requestBody: jsonBody(js(createReservationSchema, 'input'), 'Reserva a crear'),
       responses: {
@@ -1534,7 +1538,7 @@ const paths: Record<string, Json> = {
       tags: ['Reservas por WhatsApp'],
       summary: 'Crear solicitud de reserva y link público',
       description:
-        `${noRole} La recepción elige habitación, fechas, personas, camas extras y servicios; el huésped no elige. ` +
+        `${noRole} La recepción elige una o varias habitaciones con rooms: [{ roomId, persons, extraBeds }], fechas y servicios; el huésped no elige. ` +
         'La cotización (total y anticipo) queda congelada en el link. El anticipo se calcula como el ' +
         '`bookingDepositPercent` del hotel (default 20%) redondeado a múltiplos de $10.000, o se overridea con `deposit`. ' +
         'El link se abre en el frontend como `/reserva/<token>` y es de un solo uso.',
@@ -1679,6 +1683,54 @@ const paths: Record<string, Json> = {
           '404': '`NOT_FOUND`: el token no existe',
           '409': '`LINK_ALREADY_USED`, `LINK_CANCELLED` o `LINK_EXPIRED`',
         }),
+      },
+    }),
+  },
+
+  '/api/public/booking/status/{code}': {
+    get: op({
+      tags: ['Reservas por WhatsApp'],
+      summary: 'Consultar estado público de una reserva',
+      description: 'Público. El código de reserva funciona como credencial. Devuelve únicamente estado, fechas, tipo de habitación e importes. Rate limit: 10 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [{ name: 'code', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        '200': ok({ type: 'object', additionalProperties: true }),
+        ...errors({ '404': '`NOT_FOUND`: código inexistente o reserva no pública' }),
+      },
+    }),
+  },
+
+  '/api/public/availability/{slug}': {
+    get: op({
+      tags: ['Disponibilidad pública'],
+      summary: 'Consultar disponibilidad y cotización orientativa',
+      description: 'Público. Devuelve availableRoomCount con el total de habitaciones activas libres durante toda la estadía, independientemente del tamaño del grupo. Incluye tipos disponibles para alojar al grupo en una habitación y una combinación sugerida. La combinación usa capacidad base, prioriza menos habitaciones y luego menor precio, y detalla personas y total por habitación. No expone números ni datos de huéspedes. Rate limit: 30 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [
+        { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+        queryParam('checkIn', 'Fecha de entrada YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
+        queryParam('checkOut', 'Fecha de salida YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
+        queryParam('persons', 'Cantidad de personas, hasta el máximo informado por la configuración pública del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
+        queryParam('roomCount', 'Cantidad exacta de habitaciones. Si se omite, combina automáticamente la menor cantidad posible.', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
+      ],
+      responses: {
+        '200': ok({ type: 'object', additionalProperties: true }),
+        ...errors({ '404': '`NOT_FOUND`: slug de hotel no registrado' }),
+      },
+    }),
+  },
+
+  '/api/public/availability/{slug}/config': {
+    get: op({
+      tags: ['Disponibilidad pública'],
+      summary: 'Obtener identidad visual pública del hotel',
+      description: 'Público. Devuelve nombre, contacto y tema visual configurado para las páginas públicas del hotel identificado por slug.',
+      security: publicSecurity,
+      parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        '200': ok(ref('PublicBookingPageConfig')),
+        ...errors({ '404': '`NOT_FOUND`: slug de hotel no registrado' }),
       },
     }),
   },

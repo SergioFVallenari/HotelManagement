@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import type { BookingLink, CompanySettings, Room, Service } from '../api/types';
 import { Modal } from './Modal';
+import { RoomSelection } from './RoomSelection';
+import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME } from '../lib/format';
 import { computeBookingDeposit, serviceQuantity } from '../lib/pricing';
 
@@ -25,9 +27,10 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [persons, setPersons] = useState(1);
-  const [extraBeds, setExtraBeds] = useState(0);
+  const [selectedRooms, setSelectedRooms] = useState<SelectedRoom[]>([]);
+  const selectedRoom = selectedRooms[0]?.room ?? null;
+  const persons = selectedRooms.reduce((sum, line) => sum + line.persons, 0);
+  const extraBeds = selectedRooms.reduce((sum, line) => sum + line.extraBeds, 0);
   const [servicesList, setServicesList] = useState<Service[]>([]);
   const [services, setServices] = useState<SelectedService[]>([]);
   const [depositOverride, setDepositOverride] = useState('');
@@ -60,9 +63,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
     setCheckIn('');
     setCheckOut('');
     setRooms([]);
-    setSelectedRoom(null);
-    setPersons(1);
-    setExtraBeds(0);
+    setSelectedRooms([]);
     setServices([]);
     setDepositOverride('');
     setExpiresInDays('15');
@@ -81,7 +82,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
   const servicesTotal = round2(
     services.reduce((acc, item) => acc + quantityOf(item.service, item.personsCovered) * item.service.price, 0),
   );
-  const total = round2((selectedRoom?.price ?? 0) * nights + servicesTotal);
+  const total = round2(selectedRoomsTotal(selectedRooms, nights) + servicesTotal);
   const suggestedDeposit = computeBookingDeposit(total, depositPercent);
 
   async function searchAvailable() {
@@ -93,19 +94,12 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
     try {
       const result = await api<{ data: Room[] }>(`/rooms/available${buildQuery({ checkIn, checkOut })}`);
       setRooms(result.data);
-      setSelectedRoom(null);
+      setSelectedRooms([]);
     } catch (err) {
       onError(err);
     } finally {
       setSearching(false);
     }
-  }
-
-  function chooseRoom(room: Room) {
-    setSelectedRoom(room);
-    setPersons(room.capacity);
-    setExtraBeds(0);
-    setServices((prev) => prev.filter((item) => !item.service.isExtraBed));
   }
 
   function toggleService(service: Service) {
@@ -115,7 +109,8 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
       return;
     }
     if (service.isExtraBed && extraBeds === 0) {
-      setExtraBeds(Math.min(1, selectedRoom?.maxExtraBeds ?? 1));
+      onError(new Error('Indicá primero las camas extras en las habitaciones seleccionadas'));
+      return;
     }
     setServices((prev) => [...prev, { service, personsCovered: null }]);
   }
@@ -126,7 +121,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
       onError(new Error('Elegí una habitación disponible'));
       return;
     }
-    if (extraBeds > 0 && persons < selectedRoom.capacity) {
+    if (selectedRooms.some((line) => line.extraBeds > 0 && line.persons < line.room.capacity)) {
       onError(new Error('Las camas extras solo pueden cargarse cuando la habitación está llena'));
       return;
     }
@@ -142,6 +137,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
         method: 'POST',
         body: {
           roomId: selectedRoom.id,
+          rooms: selectedRooms.map((line) => ({ roomId: line.room.id, persons: line.persons, extraBeds: line.extraBeds })),
           checkIn,
           checkOut,
           persons,
@@ -170,83 +166,23 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
     <Modal open={open} title="Nueva solicitud de reserva" onClose={onClose} error={error} onDismissError={onDismissError} wide>
       <form onSubmit={handleSubmit}>
         <div className="form-section">
-          <h3 className="section-title">1 · Fechas y habitación</h3>
+          <h3 className="section-title">1 · Fechas y habitaciones</h3>
           <div className="filter-row">
             <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
               <span className="input-group-text">Desde</span>
-              <input type="date" className="form-control" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} required />
+              <input type="date" className="form-control" value={checkIn} onChange={(e) => { setCheckIn(e.target.value); setRooms([]); setSelectedRooms([]); }} required />
             </div>
             <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
               <span className="input-group-text">Hasta</span>
-              <input type="date" className="form-control" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} required />
+              <input type="date" className="form-control" value={checkOut} onChange={(e) => { setCheckOut(e.target.value); setRooms([]); setSelectedRooms([]); }} required />
             </div>
             <button type="button" className="btn btn-primary" onClick={searchAvailable} disabled={searching}>
               {searching ? 'Buscando…' : 'Buscar disponibles'}
             </button>
           </div>
 
-          {rooms.length > 0 && (
-            <div className="radio-list">
-              {rooms.map((room) => (
-                <label key={room.id} className={`radio-item ${selectedRoom?.id === room.id ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="booking-room"
-                    className="form-check-input"
-                    checked={selectedRoom?.id === room.id}
-                    onChange={() => chooseRoom(room)}
-                  />
-                  <span className="flex-grow-1">
-                    <strong>{room.number}</strong> · {room.type?.name} · Cap. {room.capacity}
-                  </span>
-                  <span className="text-secondary">{money(room.price)}/noche</span>
-                </label>
-              ))}
-            </div>
-          )}
-
-          {selectedRoom && (
-            <div className="filter-row mt-3 flex-wrap">
-              <label className="field-inline">
-                <span className="form-label mb-0">Personas</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={selectedRoom.capacity}
-                  className="form-control"
-                  style={{ width: 90 }}
-                  value={persons}
-                  onChange={(e) => setPersons(Math.min(selectedRoom.capacity, Math.max(1, Number(e.target.value))))}
-                />
-              </label>
-              {selectedRoom.maxExtraBeds > 0 && (
-                <label className="field-inline">
-                  <span className="form-label mb-0">Camas extras</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={selectedRoom.maxExtraBeds}
-                    className="form-control"
-                    style={{ width: 90 }}
-                    value={extraBeds}
-                    onChange={(e) => {
-                      const value = Math.min(selectedRoom.maxExtraBeds, Math.max(0, Number(e.target.value)));
-                      setExtraBeds(value);
-                      if (value === 0) setServices((prev) => prev.filter((item) => !item.service.isExtraBed));
-                    }}
-                  />
-                </label>
-              )}
-              <span className="text-secondary small align-self-center">
-                El huésped ve el tipo de habitación y las fechas, no el número.
-              </span>
-              {extraBeds > 0 && persons < selectedRoom.capacity && (
-                <span className="text-danger small align-self-center w-100">
-                  Las camas extras solo pueden cargarse cuando la habitación está llena.
-                </span>
-              )}
-            </div>
-          )}
+          {rooms.length > 0 && <RoomSelection rooms={rooms} value={selectedRooms} onChange={setSelectedRooms} />}
+          <p className="small text-secondary">El huésped ve los tipos de habitación, no los números.</p>
           {rooms.length === 0 && <p className="text-secondary mt-2 mb-0">Buscá habitaciones disponibles para el rango elegido.</p>}
           <p className="text-secondary small mb-0">
             Horario: check-in desde las {CHECK_IN_TIME} · check-out hasta las {CHECK_OUT_TIME}.

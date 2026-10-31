@@ -1,0 +1,1 @@
+ALTER TABLE "Company" ADD COLUMN "configPage" JSONB NOT NULL DEFAULT '{}';

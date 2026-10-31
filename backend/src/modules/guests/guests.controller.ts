@@ -45,6 +45,7 @@ export async function getGuest(req: Request, res: Response): Promise<void> {
         take: 20,
         include: {
           room: { select: { id: true, number: true, name: true } },
+          rooms: { include: { room: { select: { id: true, number: true, name: true } } } },
           services: { include: { service: { select: { id: true, name: true } } } },
         },
       },

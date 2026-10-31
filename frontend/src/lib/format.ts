@@ -1,3 +1,4 @@
+const PUBLIC_BOOKING_BASE_URL = import.meta.env?.VITE_PUBLIC_BOOKING_BASE_URL
 export function money(value: number | null | undefined): string {
   const n = Number(value ?? 0);
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(n);
@@ -101,4 +102,12 @@ export function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function generatePublicLink(slug: string) {
+  const normalizedSlug = slug.trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug)) {
+    throw new Error('El identificador del hotel no es válido');
+  }
+
+  return `${PUBLIC_BOOKING_BASE_URL}/${encodeURIComponent(normalizedSlug)}`;
 }

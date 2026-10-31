@@ -12,6 +12,7 @@ export interface Room {
   capacity: number;
   maxExtraBeds: number;
   price: number;
+  pricingMode: 'PER_NIGHT' | 'PER_PERSON';
   amenities: string[];
   isActive: boolean;
   type?: RoomType;
@@ -87,6 +88,7 @@ export interface Reservation {
   id: number;
   code: string;
   roomId: number;
+  rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; total: number; room: Reservation['room'] }[];
   guestId: number;
   checkIn: string;
   checkOut: string;
@@ -103,7 +105,7 @@ export interface Reservation {
   refundedAt: string | null;
   mpCheckoutUrl?: string | null;
   notes: string | null;
-  room?: { id: number; number: string; name: string | null; capacity: number; price: number; type?: RoomType } | null;
+  room?: { id: number; number: string; name: string | null; capacity: number; price: number; pricingMode: 'PER_NIGHT' | 'PER_PERSON'; type?: RoomType } | null;
   guest?: Guest | null;
   services: ReservationServiceLine[];
   payments: Payment[];
@@ -141,9 +143,11 @@ export interface BookingLink {
   nights: number;
   persons: number;
   extraBeds: number;
-  room: { id: number; number: string; typeName: string | null; capacity: number; price: number; label: string } | null;
+  rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; number: string; typeName: string; capacity: number }[];
+  room: { id: number; number: string; typeName: string | null; capacity: number; price: number; pricingMode: 'PER_NIGHT' | 'PER_PERSON'; label: string } | null;
   services: BookingLinkLine[];
   totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
+  roomPricingMode?: 'PER_NIGHT' | 'PER_PERSON';
   expiresAt: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -152,7 +156,7 @@ export interface BookingLink {
 }
 
 export interface PublicBookingQuote {
-  hotel: { name: string; whatsapp: string | null; phone: string | null };
+  hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; slug: string };
   stay: {
     checkIn: string;
     checkOut: string;
@@ -161,11 +165,31 @@ export interface PublicBookingQuote {
     extraBeds: number;
     roomType: string;
     roomCapacity: number | null;
+    rooms?: { roomType: string; capacity: number; persons: number; extraBeds: number; total: number }[];
+    roomPricingMode: 'PER_NIGHT' | 'PER_PERSON';
   };
   services: { name: string; quantity: number; unitPrice: number; lineTotal: number }[];
   totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
   expiresAt: string | null;
   expired: boolean;
+}
+
+export interface PublicAvailability {
+  availableRoomCount: number;
+  combination: {
+    roomCount: number;
+    persons: number;
+    total: number;
+    rooms: { roomType: string; capacity: number; persons: number; total: number }[];
+  } | null;
+  availableRoomCapacity: number;
+  hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null };
+  stay: { checkIn: string; checkOut: string; nights: number; persons: number };
+  options: { roomType: string; available: number; capacity: number; fromPrice: number; total: number }[];
+}
+
+export interface PublicBookingPageConfig {
+  hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; hotelCapacity: number; maxAvailabilityPersons: number };
 }
 
 export interface ReceiptUploadUrl {
@@ -180,6 +204,10 @@ export interface CompanySettings {
   whatsapp: string | null;
   phone: string | null;
   bookingDepositPercent: number;
+  bookingSlug: string | null;
+  configPage: { bookingTheme?: Partial<BookingTheme>; maxAvailabilityPersons?: number | null };
+  hotelCapacity: number;
+  maxAvailabilityPersons: number;
 }
 
 export interface Company {
@@ -360,3 +388,4 @@ export interface AiDraft {
   reply: string;
   canReply: boolean;
 }
+import type { BookingTheme } from '../lib/bookingTheme';

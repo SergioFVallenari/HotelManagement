@@ -62,7 +62,7 @@ export function DashboardPage() {
         <>
           <div className="row g-3 mb-4">
             <div className="col-sm-6 col-xl-3">
-              <div className="card h-100 shadow-sm border-0">
+              <div className="card h-100 shadow-sm metric-card">
                 <div className="card-body">
                   <div className="text-secondary small text-uppercase">Ocupación del período</div>
                   <div className="card-value">{occupiedPct.toFixed(1)}%</div>
@@ -73,7 +73,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="col-sm-6 col-xl-3">
-              <div className="card h-100 shadow-sm border-0">
+              <div className="card h-100 shadow-sm metric-card metric-card--cyan">
                 <div className="card-body">
                   <div className="text-secondary small text-uppercase">Ingresos por pagos</div>
                   <div className="card-value">{money(revenue)}</div>
@@ -84,7 +84,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="col-sm-6 col-xl-3">
-              <div className="card h-100 shadow-sm border-0">
+              <div className="card h-100 shadow-sm metric-card metric-card--blue">
                 <div className="card-body">
                   <div className="text-secondary small text-uppercase">Actividad del período</div>
                   <div className="card-value">
@@ -97,7 +97,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="col-sm-6 col-xl-3">
-              <div className="card h-100 shadow-sm border-0">
+              <div className="card h-100 shadow-sm metric-card metric-card--rose">
                 <div className="card-body">
                   <div className="text-secondary small text-uppercase">Noches disponibles</div>
                   <div className="card-value">{summary.occupancy.availableRoomNights}</div>
@@ -179,8 +179,8 @@ export function DashboardPage() {
                       <AreaChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                         <defs>
                           <linearGradient id="occGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#084C61" stopOpacity={0.35} />
-                            <stop offset="100%" stopColor="#084C61" stopOpacity={0.02} />
+                            <stop offset="0%" stopColor="var(--crm-violet)" stopOpacity={0.45} />
+                            <stop offset="100%" stopColor="var(--crm-violet)" stopOpacity={0.02} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -190,7 +190,7 @@ export function DashboardPage() {
                           labelFormatter={(d) => dateShort(String(d))}
                           formatter={(value) => [`${Number(value ?? 0)}%`, 'Ocupación']}
                         />
-                        <Area type="monotone" dataKey="occupancyPct" name="Ocupación" stroke="#084C61" fill="url(#occGrad)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="occupancyPct" name="Ocupación" stroke="var(--crm-violet)" fill="url(#occGrad)" strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
@@ -206,6 +206,12 @@ export function DashboardPage() {
                   ) : (
                     <ResponsiveContainer width="100%" height={240}>
                       <BarChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--crm-cyan)" />
+                            <stop offset="100%" stopColor="var(--crm-violet)" />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 11 }} minTickGap={24} />
                         <YAxis tickFormatter={(v: number) => `${v >= 1000 ? `${Math.round(v / 1000)}k` : v}`} tick={{ fontSize: 11 }} width={42} />
@@ -213,7 +219,7 @@ export function DashboardPage() {
                           labelFormatter={(d) => dateShort(String(d))}
                           formatter={(value) => [money(Number(value ?? 0)), 'Ingresos']}
                         />
-                        <Bar dataKey="revenue" name="Ingresos" fill="#528290" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="revenue" name="Ingresos" fill="url(#revenueGrad)" radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -234,9 +240,9 @@ export function DashboardPage() {
                         <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={30} />
                         <Tooltip labelFormatter={(d) => dateShort(String(d))} />
                         <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-                        <Line type="monotone" dataKey="created" name="Creadas" stroke="#84A6B0" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="checkIns" name="Check-ins" stroke="#063D4E" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="checkOuts" name="Check-outs" stroke="#052E3A" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="created" name="Creadas" stroke="var(--crm-violet)" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkIns" name="Check-ins" stroke="var(--crm-cyan)" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="checkOuts" name="Check-outs" stroke="var(--crm-blue)" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}

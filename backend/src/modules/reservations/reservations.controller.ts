@@ -20,6 +20,7 @@ import { getReservationReceipt } from '../booking/booking.service.js';
 import { rejectReservationSchema } from '../booking/booking.schema.js';
 
 const listInclude = {
+  rooms: { include: { room: { include: { type: true } } }, orderBy: { id: 'asc' } },
   room: { select: { id: true, number: true, name: true, capacity: true, price: true } },
   guest: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
   services: { include: { service: { select: { id: true, name: true, chargeType: true, isExtraBed: true } } } },
@@ -47,7 +48,6 @@ export async function listReservations(req: Request, res: Response): Promise<voi
         : {}),
     ...(guestId && Number.isInteger(guestId) ? { guestId } : {}),
     ...(source === 'STAFF' || source === 'PUBLIC_LINK' ? { source } : {}),
-    ...(roomId && Number.isInteger(roomId) ? { roomId } : {}),
     ...(from && to
       ? { AND: [{ checkIn: { lt: to } }, { checkOut: { gt: from } }] }
       : from
@@ -61,10 +61,16 @@ export async function listReservations(req: Request, res: Response): Promise<voi
             { code: { contains: search, mode: 'insensitive' } },
             { guest: { OR: [{ firstName: { contains: search, mode: 'insensitive' } }, { lastName: { contains: search, mode: 'insensitive' } }] } },
             { room: { number: { contains: search, mode: 'insensitive' } } },
+            { rooms: { some: { room: { number: { contains: search, mode: 'insensitive' } } } } },
           ],
         }
       : {}),
   };
+
+  if (roomId && Number.isInteger(roomId)) {
+    const filters = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
+    where.AND = [...filters, { OR: [{ roomId }, { rooms: { some: { roomId } } }] }];
+  }
 
   const [total, reservations] = await Promise.all([
     prisma.reservation.count({ where }),

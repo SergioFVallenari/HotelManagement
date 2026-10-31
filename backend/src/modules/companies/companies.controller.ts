@@ -1,7 +1,9 @@
 import type { Request, Response } from 'express';
+import { Prisma } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { unscoped } from '../../lib/tenant.js';
-import { AppError, conflict } from '../../lib/AppError.js';
+import { AppError, badRequest, conflict } from '../../lib/AppError.js';
+import { getBookingCapacity } from '../booking/booking.capacity.js';
 
 const SETTINGS_SELECT = {
   id: true,
@@ -9,6 +11,8 @@ const SETTINGS_SELECT = {
   whatsapp: true,
   phone: true,
   bookingDepositPercent: true,
+  bookingSlug: true,
+  configPage: true,
 } as const;
 
 export async function getCurrentCompany(req: Request, res: Response): Promise<void> {
@@ -17,11 +21,17 @@ export async function getCurrentCompany(req: Request, res: Response): Promise<vo
     select: SETTINGS_SELECT,
   });
   if (!company) throw new AppError(404, 'NOT_FOUND', 'El hotel no existe');
-  res.json({ data: company });
+  res.json({ data: { ...company, ...await getBookingCapacity(company.id, company.configPage) } });
 }
 
 export async function updateCompanySettings(req: Request, res: Response): Promise<void> {
   const input = updateCompanySettingsSchema.parse(req.body) as UpdateCompanySettingsInput;
+  if (input.configPage?.maxAvailabilityPersons != null) {
+    const { hotelCapacity } = await getBookingCapacity(req.user!.companyId, input.configPage);
+    if (input.configPage.maxAvailabilityPersons > hotelCapacity) {
+      throw badRequest(`El máximo de personas no puede superar la capacidad del hotel (${hotelCapacity}).`);
+    }
+  }
   const company = await prisma.company.update({
     where: { id: req.user!.companyId },
     data: {
@@ -30,10 +40,12 @@ export async function updateCompanySettings(req: Request, res: Response): Promis
       ...(input.bookingDepositPercent !== undefined
         ? { bookingDepositPercent: input.bookingDepositPercent }
         : {}),
+      ...(input.bookingSlug !== undefined ? { bookingSlug: input.bookingSlug?.trim() || null } : {}),
+      ...(input.configPage !== undefined ? { configPage: input.configPage as Prisma.InputJsonValue } : {}),
     },
     select: SETTINGS_SELECT,
   });
-  res.json({ data: company });
+  res.json({ data: { ...company, ...await getBookingCapacity(company.id, company.configPage) } });
 }
 import type { CreateCompanyInput, UpdateCompanySettingsInput } from './companies.schema.js';
 import { createCompanySchema, updateCompanySettingsSchema } from './companies.schema.js';

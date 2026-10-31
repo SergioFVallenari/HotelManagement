@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { DEMO_MODE } from '../demo/config';
 import type { Payment, PaymentMethod, Reservation, ReservationReceiptDetail } from '../api/types';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -109,7 +110,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   const awaitingVerification = isPublicLink && status === 'PENDING';
   const checkInAvailable = status !== 'RESERVED' || reservation.checkIn <= hotelToday();
   const linkVisible =
-    !isPublicLink && ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
+    !DEMO_MODE && !isPublicLink && ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
   const linkRegenerable = status === 'PENDING' || status === 'RESERVED' || status === 'CHECKED_IN';
 
   async function generateLink(regenerate = false) {
@@ -225,8 +226,8 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   }
 
   const confirmationMessages = {
-    checkin: `Confirmar el check-in del huésped en esta habitación. Fecha de reserva: ${dateShort(reservation.checkIn)}.`,
-    checkout: 'Confirmar el check-out y liberar la habitación.',
+    checkin: `Confirmar el check-in del grupo en todas las habitaciones de esta reserva. Fecha de reserva: ${dateShort(reservation.checkIn)}.`,
+    checkout: 'Confirmar el check-out y liberar todas las habitaciones de esta reserva.',
     cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
     refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
     approve: `Confirmar que el anticipo de ${money(reservation.bookingLink?.deposit ?? 0)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
@@ -235,15 +236,17 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   return (
     <>
       <Modal open title={`Reserva ${reservation.code}`} onClose={onClose} error={error} onDismissError={onDismissError} wide>
-        <div className="row g-4">
+        <div className="reservation-detail">
+        <div className="row g-3 reservation-overview">
           <div className="col-md-6">
-            <h3 className="h6">Resumen</h3>
+            <section className="reservation-info-card">
+            <h3 className="h6">Estadía</h3>
             <dl className="detail-list">
               <dt>Estado</dt>
               <dd><span className="d-inline-flex align-items-center gap-2"><ActionStatus status={status} /><RefundBadge reservation={reservation} />{isPublicLink && <span className="badge rounded-pill text-bg-light border">Link de WhatsApp</span>}</span></dd>
-              <dt>Habitación</dt>
+              <dt>Habitaciones</dt>
               <dd>
-                {reservation.room?.number} — {reservation.room?.name ?? reservation.room?.type?.name} · Cap. {reservation.room?.capacity}
+                {reservation.rooms?.length ? reservation.rooms.map((line) => <div key={line.roomId}>{line.room?.number} — {line.room?.type?.name} · {line.persons} personas{line.extraBeds > 0 ? ` + ${line.extraBeds} camas extras` : ''}</div>) : `${reservation.room?.number} — ${reservation.room?.name ?? reservation.room?.type?.name} · Cap. ${reservation.room?.capacity}`}
               </dd>
               <dt>Personas</dt>
               <dd>
@@ -280,9 +283,11 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               <dt>Notas</dt>
               <dd>{reservation.notes ?? '—'}</dd>
             </dl>
+            </section>
           </div>
 
           <div className="col-md-6">
+            <section className="reservation-info-card">
             <h3 className="h6">Huésped</h3>
             <dl className="detail-list">
               <dt>Nombre</dt>
@@ -294,6 +299,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               <dt>Email</dt>
               <dd>{reservation.guest?.email ?? '—'}</dd>
             </dl>
+            </section>
           </div>
         </div>
 
@@ -367,11 +373,15 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           </div>
         )}
 
-        <div className="totals-box">
+        <section className="reservation-panel reservation-financials">
+          <h3 className="h6">Resumen de cuenta</h3>
+          <div className="totals-box reservation-totals">
           <div>
             <span>Habitación</span>
             <strong>
-              {reservation.totals.nights} × {money(reservation.totals.roomPrice)}
+              {(reservation.rooms?.length ?? 0) > 1 ? `${reservation.rooms!.length} habitaciones × ${reservation.totals.nights} noches` : reservation.room?.pricingMode === 'PER_PERSON'
+                ? `${reservation.persons} pers. × ${reservation.totals.nights} noches × ${money(reservation.totals.roomPrice)}`
+                : `${reservation.totals.nights} × ${money(reservation.totals.roomPrice)}`}
             </strong>
           </div>
           <div>
@@ -396,7 +406,8 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               {money(reservation.totals.balance)}
             </strong>
           </div>
-        </div>
+          </div>
+        </section>
 
         {linkVisible && (
           <div className="mp-payment-section mt-3">
@@ -438,8 +449,9 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           </div>
         )}
 
-        <div className="row g-4">
+        <div className="row g-4 reservation-breakdown">
           <div className="col-lg-6">
+            <section className="reservation-panel h-100">
             <h3 className="h6">Servicios cargados</h3>
             {reservation.services.length === 0 ? (
               <p className="text-secondary mb-0">Sin servicios.</p>
@@ -475,9 +487,11 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                 </table>
               </div>
             )}
+            </section>
           </div>
 
           <div className="col-lg-6">
+            <section className="reservation-panel h-100">
             <h3 className="h6">Pagos</h3>
             {reservation.payments.length === 0 ? (
               <p className="text-secondary mb-2">Sin pagos registrados.</p>
@@ -510,7 +524,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                   <label className="field-inline">
                     <span className="form-label mb-0">Método</span>
                     <select className="form-select" value={paymentForm.method} onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value as PaymentMethod })}>
-                      {Object.entries(PAYMENT_METHODS).map(([value, label]) => (
+                      {Object.entries(PAYMENT_METHODS).filter(([value]) => !DEMO_MODE || value !== 'MERCADOPAGO').map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -527,6 +541,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                 </div>
               </form>
             )}
+            </section>
           </div>
         </div>
 
@@ -561,6 +576,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             </button>
           </div>
         )}
+        </div>
       </Modal>
 
       <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />

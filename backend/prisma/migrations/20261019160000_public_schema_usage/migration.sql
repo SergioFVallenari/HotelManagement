@@ -4,6 +4,15 @@
 -- (el join del canal privado no se entera: realtime.messages vive en otro
 -- esquema). El proyecto no tiene los default grants de Supabase.
 -- GRANT es repetible → idempotente.
-GRANT USAGE ON SCHEMA public TO anon;
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT USAGE ON SCHEMA public TO service_role;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    GRANT USAGE ON SCHEMA public TO anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT USAGE ON SCHEMA public TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT USAGE ON SCHEMA public TO service_role;
+  END IF;
+END $$;

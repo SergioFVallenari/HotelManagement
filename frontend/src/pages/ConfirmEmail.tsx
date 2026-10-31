@@ -56,7 +56,7 @@ const ConfirmEmail = () => {
                             color: "#084C61",
                         }}
                     >
-                        Hospia<span style={{ color: "#031E27" }}>.</span>
+                        Laixia<span style={{ color: "#031E27" }}>.</span>
                     </span>
                     <div className="text-secondary small mt-1">
                         Gestión hotelera, más simple.
@@ -117,7 +117,7 @@ const ConfirmEmail = () => {
                     {status === "loading"
                         ? "Estamos verificando tu cuenta. Esto solo tomará unos segundos."
                         : status === "success"
-                            ? "Tu dirección de email fue verificada correctamente. Ya podés ingresar a Hospia y comenzar a gestionar tus alojamientos."
+                            ? "Tu dirección de email fue verificada correctamente. Ya podés ingresar a Laixia y comenzar a gestionar tus alojamientos."
                             : message}
                 </p>
 
@@ -163,7 +163,7 @@ const ConfirmEmail = () => {
                     className="border-top mt-4 pt-3 text-secondary"
                     style={{ fontSize: "0.8rem" }}
                 >
-                    © {new Date().getFullYear()} Hospia · Todos los derechos reservados
+                    © {new Date().getFullYear()} Laixia · Todos los derechos reservados
                 </div>
             </div>
         </main>

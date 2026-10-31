@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { DEMO_MODE } from '../demo/config';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { BookingLink } from '../api/types';
@@ -84,7 +86,7 @@ export function BookingLinksPage() {
         </>
       ),
     },
-    { header: 'Habitación', render: (l) => l.room?.label ?? '—' },
+    { header: 'Habitaciones', render: (l) => l.rooms?.length ? l.rooms.map((line) => `${line.typeName} ${line.number}`).join(' + ') : l.room?.label ?? '—' },
     { header: 'Total', align: 'end', render: (l) => money(l.totals.total) },
     { header: 'Anticipo', align: 'end', render: (l) => money(l.totals.deposit) },
     {
@@ -121,6 +123,8 @@ export function BookingLinksPage() {
           + Nueva solicitud
         </button>
       </div>
+
+      {DEMO_MODE && <div className="alert alert-info">Simulación sin envíos a WhatsApp. Creá una solicitud y usá «Ver como huésped» para completar el recorrido en esta misma pestaña. No transfieras dinero ni cargues datos reales.</div>}
 
       <div className="card shadow-sm mb-4">
         <div className="card-body py-3">
@@ -185,7 +189,7 @@ export function BookingLinksPage() {
 
       <Modal
         open={!!created}
-        title={created ? `Link de ${created.room?.label ?? 'la solicitud'}` : 'Link'}
+        title={created ? `Link de ${created.rooms?.length ? `${created.rooms.length} habitación(es)` : created.room?.label ?? 'la solicitud'}` : 'Link'}
         onClose={() => {
           setCreated(null);
           clearError();
@@ -209,8 +213,8 @@ export function BookingLinksPage() {
             </dl>
             <label className="form-label">Link para el huésped</label>
             <div className="d-flex gap-2">
-              <input className="form-control" value={created.url} readOnly onFocus={(e) => e.target.select()} />
-              <button type="button" className="btn btn-outline-secondary text-nowrap" onClick={() => copyLink(created.url)}>
+              <input className="form-control" value={DEMO_MODE ? `${window.location.origin}${created.url}` : created.url} readOnly onFocus={(e) => e.target.select()} />
+              <button type="button" className="btn btn-outline-secondary text-nowrap" onClick={() => copyLink(DEMO_MODE ? `${window.location.origin}${created.url}` : created.url)}>
                 Copiar
               </button>
             </div>
@@ -218,14 +222,19 @@ export function BookingLinksPage() {
               <>
                 <label className="form-label mt-3">Mensaje sugerido</label>
                 <textarea className="form-control" rows={5} value={created.share.message} readOnly />
-                <a
+                {DEMO_MODE ? (
+                  <>
+                    <p className="small text-secondary mt-2">El mensaje es ilustrativo: no se envía a WhatsApp. El link solo funciona en esta pestaña, sin recargar.</p>
+                    {created.status === 'OPEN' && <Link className="btn btn-success w-100 mt-2" to={created.url}>Ver como huésped</Link>}
+                  </>
+                ) : <a
                   className="btn btn-success w-100 mt-3"
                   href={created.share.whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   Compartir por WhatsApp
-                </a>
+                </a>}
               </>
             )}
             <div className="modal-actions">

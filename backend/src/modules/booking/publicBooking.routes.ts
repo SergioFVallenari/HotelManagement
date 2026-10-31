@@ -3,10 +3,12 @@ import { rateLimiter } from '../../middleware/rateLimiter.js';
 import {
   createReceiptUploadHandler,
   getPublicQuoteHandler,
+  getPublicReservationStatusHandler,
   submitBookingHandler,
 } from './booking.controller.js';
 
 const router = Router();
+router.get('/status/:code', rateLimiter(10, 10 * 60 * 1000), getPublicReservationStatusHandler);
 
 // El link se comparte por WhatsApp y lo abre el huesped sin cuenta: el token
 // del path es la unica credencial, por eso el limite es por IP y por ruta.

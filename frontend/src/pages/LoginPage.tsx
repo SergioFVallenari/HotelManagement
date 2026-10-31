@@ -107,7 +107,7 @@ export function LoginPage() {
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-brand">
           <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
-          <h1>Hospia</h1>
+          <h1>Laixia</h1>
           <p>Ingresá para administrar el alojamiento</p>
         </div>
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}

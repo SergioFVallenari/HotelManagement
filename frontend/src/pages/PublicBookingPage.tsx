@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { DEMO_MODE } from '../demo/config';
 import { ApiError, api } from '../api/client';
 import type { PublicBookingQuote, ReceiptUploadUrl } from '../api/types';
 import { ErrorBanner, Spinner } from '../components/Feedback';
 import { money } from '../lib/format';
+import { bookingThemeFromConfig, bookingThemeStyle } from '../lib/bookingTheme';
 
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -20,14 +22,25 @@ const fileSize = (bytes: number): string =>
 
 type Step = 'form' | 'uploading' | 'sending' | 'done';
 
+function DemoNotice() {
+  if (!DEMO_MODE) return null;
+  return <div className="alert alert-info small">
+    <strong>Vista del huésped · Demostración</strong>
+    <p className="mb-2">No transfieras dinero ni cargues datos reales. El comprobante es ficticio; no se suben archivos. Continuá en esta pestaña sin recargar.</p>
+    <Link to="/booking-links" className="me-3">Volver a solicitudes</Link>
+    <Link to="/reservations">Ir a recepción / verificar pago</Link>
+  </div>;
+}
+
 interface SubmitResult {
   code: string;
   total: number;
   deposit: number;
-  hotel: { name: string; whatsapp: string | null; phone: string | null };
+  hotel: { name: string; whatsapp: string | null; phone: string | null; slug: string; };
 }
 
 function hotelContact(hotel: { whatsapp: string | null; phone: string | null }): { label: string; href: string } | null {
+  if (DEMO_MODE) return null;
   const digits = (hotel.whatsapp ?? hotel.phone ?? '').replace(/\D/g, '');
   if (!digits) return null;
   const isWhatsapp = Boolean(hotel.whatsapp);
@@ -46,12 +59,16 @@ export function PublicBookingPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [receipt, setReceipt] = useState<File | null>(null);
-  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', externalRef: '', notes: '' });
+  const [demoReceipt, setDemoReceipt] = useState(false);
+  const [form, setForm] = useState(DEMO_MODE
+    ? { firstName: 'Ana', lastName: 'Demostración', phone: '0000000000', email: 'ana@hotel-demo.example', externalRef: 'DEMO-SIN-VALOR', notes: 'Solicitud ficticia para presentar el recorrido.' }
+    : { firstName: '', lastName: '', phone: '', email: '', externalRef: '', notes: '' });
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setLoadError(null);
     api<{ data: PublicBookingQuote }>(`/public/booking/${encodeURIComponent(token)}`)
       .then((response) => {
         if (alive) setQuote(response.data);
@@ -93,14 +110,14 @@ export function PublicBookingPage() {
     setError(null);
 
     const needsReceipt = quote.totals.deposit > 0;
-    if (needsReceipt && !receipt) {
+    if (needsReceipt && !(DEMO_MODE ? demoReceipt : receipt)) {
       setError('Adjuntá el comprobante de la transferencia para enviar la reserva.');
       return;
     }
 
-    let uploadedPath: string | null = null;
+    let uploadedPath: string | null = DEMO_MODE && demoReceipt ? 'demo-comprobante' : null;
     try {
-      if (receipt) {
+      if (!DEMO_MODE && receipt) {
         setStep('uploading');
         const signed = await api<{ data: ReceiptUploadUrl }>(
           `/public/booking/${encodeURIComponent(token)}/receipt`,
@@ -158,6 +175,7 @@ export function PublicBookingPage() {
     return (
       <div className="login-screen">
         <div className="login-card">
+          <DemoNotice />
           <div className="login-brand">
             <h1>Solicitud de reserva</h1>
           </div>
@@ -170,14 +188,16 @@ export function PublicBookingPage() {
   }
 
   const contact = hotelContact(quote.hotel);
+  const themeStyle = bookingThemeStyle(bookingThemeFromConfig({ bookingTheme: quote.hotel.bookingTheme }));
   const needsReceipt = quote.totals.deposit > 0;
   const busy = step === 'uploading' || step === 'sending';
 
   if (step === 'done' && result) {
     const doneContact = hotelContact(result.hotel);
     return (
-      <div className="login-screen">
+      <div className="login-screen public-booking-theme" style={themeStyle}>
         <div className="booking-card">
+          <DemoNotice />
           <div className="booking-success">
             <div className="booking-success-icon">✓</div>
             <h1 className="h5 mt-3 mb-1">¡Reserva enviada!</h1>
@@ -195,9 +215,12 @@ export function PublicBookingPage() {
             <dt>Anticipo informado</dt>
             <dd className="text-success">{money(result.deposit)}</dd>
           </dl>
-          <p className="text-secondary small">
-            Guardá el código: sirve para consultar el estado de la reserva.
-          </p>
+            <p className="text-secondary small">
+              Guardá el código: sirve para consultar el estado de la reserva.
+            </p>
+            {!DEMO_MODE && <a className="btn btn-outline-primary w-100 mb-3" href={`/consultar-reserva?codigo=${encodeURIComponent(result.code)}&slug=${encodeURIComponent(result.hotel.slug)}`}>
+              Consultar mi reserva
+            </a>}
           {doneContact && (
             <a className="btn btn-primary w-100" href={doneContact.href} target="_blank" rel="noopener noreferrer">
               {doneContact.label}
@@ -209,11 +232,15 @@ export function PublicBookingPage() {
   }
 
   return (
-    <div className="login-screen booking-screen">
+    <div className="login-screen booking-screen public-booking-theme" style={themeStyle}>
       <div className="booking-card">
+        <DemoNotice />
         <div className="login-brand">
           <h1>{quote.hotel.name}</h1>
           <p className="text-secondary mb-0">Solicitud de reserva</p>
+          {DEMO_MODE && (quote.hotel.phone || quote.hotel.whatsapp) && <p className="text-secondary small mt-2 mb-0">
+            Contacto ilustrativo: {quote.hotel.whatsapp && `WhatsApp ${quote.hotel.whatsapp}`} {quote.hotel.phone && `Tel. ${quote.hotel.phone}`}
+          </p>}
         </div>
 
         {quote.expired ? (
@@ -239,15 +266,18 @@ export function PublicBookingPage() {
                 </div>
               </div>
               <p className="text-secondary small mb-0">
-                {quote.stay.roomType} · {quote.stay.persons} persona(s)
+                {quote.stay.rooms?.length ? `${quote.stay.rooms.length} habitación(es)` : quote.stay.roomType} · {quote.stay.persons} persona(s)
                 {quote.stay.extraBeds > 0 ? ` + ${quote.stay.extraBeds} cama(s) extra(s)` : ''}
               </p>
+              {quote.stay.rooms?.map((room, index) => <div className="small mt-2" key={index}>Habitación {index + 1}: {room.roomType} · {room.persons} personas{room.extraBeds > 0 ? ` + ${room.extraBeds} camas extras` : ''} · {money(room.total)}</div>)}
             </div>
 
             <div className="totals-box">
               <div>
                 <span>
-                  Habitación ({quote.stay.nights} × {money(quote.totals.roomTotal / Math.max(1, quote.stay.nights))})
+                  Habitaciones ({(quote.stay.rooms?.length ?? 0) > 1 ? `${quote.stay.rooms!.length} habitaciones × ${quote.stay.nights} noches` : quote.stay.roomPricingMode === 'PER_PERSON'
+                    ? `${quote.stay.persons} personas × ${quote.stay.nights} noches`
+                    : `${quote.stay.nights} noches`})
                 </span>
                 <strong>{money(quote.totals.roomTotal)}</strong>
               </div>
@@ -290,8 +320,8 @@ export function PublicBookingPage() {
               <div className="alert alert-info small">
                 <strong>¿Cómo confirmás la reserva?</strong>
                 <ol className="mb-0 mt-1 ps-3">
-                  <li>Transferí el anticipo de {money(quote.totals.deposit)}.</li>
-                  <li>Adjuntá abajo el comprobante (foto o PDF).</li>
+                  <li>{DEMO_MODE ? `Anticipo simulado de ${money(quote.totals.deposit)}: no realizar transferencias.` : `Transferí el anticipo de ${money(quote.totals.deposit)}.`}</li>
+                  <li>{DEMO_MODE ? 'Usá abajo el comprobante ficticio.' : 'Adjuntá abajo el comprobante (foto o PDF).'}</li>
                   <li>Completá tus datos y enviá el formulario.</li>
                 </ol>
                 {contact && (
@@ -366,18 +396,29 @@ export function PublicBookingPage() {
                   <label className="form-label" htmlFor="booking-receipt">
                     Comprobante de la transferencia *
                   </label>
-                  <input
-                    id="booking-receipt"
-                    ref={fileInput}
-                    className="form-control"
-                    type="file"
-                    accept={ACCEPT}
-                    onChange={pickReceipt}
-                    required={needsReceipt}
-                  />
-                  <div className="form-text">
-                    Foto o PDF, hasta 5 MB. Podés adjuntar la captura de la transferencia o el comprobante del banco.
-                  </div>
+                  {DEMO_MODE ? (
+                    <div>
+                      <button id="booking-receipt" type="button" aria-pressed={demoReceipt} className={`btn ${demoReceipt ? 'btn-success' : 'btn-outline-primary'}`} onClick={() => setDemoReceipt((value) => !value)}>
+                        {demoReceipt ? '✓ Comprobante ficticio adjuntado · Quitar' : 'Usar comprobante ficticio'}
+                      </button>
+                      <div className="form-text">Sin archivo real ni transferencia. La recepción verá una imagen de demostración.</div>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        id="booking-receipt"
+                        ref={fileInput}
+                        className="form-control"
+                        type="file"
+                        accept={ACCEPT}
+                        onChange={pickReceipt}
+                        required={needsReceipt}
+                      />
+                      <div className="form-text">
+                        Foto o PDF, hasta 5 MB. Podés adjuntar la captura de la transferencia o el comprobante del banco.
+                      </div>
+                    </>
+                  )}
                   <div className="mt-2">
                     <label className="form-label" htmlFor="booking-ref">
                       Número de operación (opcional)

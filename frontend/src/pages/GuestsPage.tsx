@@ -28,7 +28,7 @@ const GUESTS_COLUMNS: Column<Guest>[] = [
 
 const GUEST_DETAIL_RES_COLUMNS: Column<Reservation>[] = [
   { header: 'Código', render: (r) => <strong>{r.code}</strong> },
-  { header: 'Habitación', render: (r) => r.room?.number ?? r.roomId },
+  { header: 'Habitaciones', render: (r) => r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? line.roomId).join(', ') : r.room?.number ?? r.roomId },
   { header: 'Período', render: (r) => `${dateShort(r.checkIn)} → ${dateShort(r.checkOut)}` },
   { header: 'Total', align: 'end', render: (r) => money(r.totals?.total ?? 0) },
   { header: 'Estado', render: (r) => <StatusBadge status={r.status} /> },

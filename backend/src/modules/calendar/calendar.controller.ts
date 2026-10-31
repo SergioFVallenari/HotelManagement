@@ -55,15 +55,18 @@ export async function calendar(req: Request, res: Response): Promise<void> {
       checkIn: true,
       checkOut: true,
       roomId: true,
+      rooms: { select: { roomId: true } },
       guest: { select: { firstName: true, lastName: true } },
     },
   });
 
   const byRoom = new Map<number, typeof reservations>();
   for (const reserve of reservations) {
-    const list = byRoom.get(reserve.roomId) ?? [];
-    list.push(reserve);
-    byRoom.set(reserve.roomId, list);
+    for (const roomId of new Set([reserve.roomId, ...reserve.rooms.map((line) => line.roomId)])) {
+      const list = byRoom.get(roomId) ?? [];
+      list.push(reserve);
+      byRoom.set(roomId, list);
+    }
   }
 
   const roomsData = rooms.map((room) => {

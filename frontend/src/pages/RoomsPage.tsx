@@ -18,7 +18,7 @@ const ROOMS_COLUMNS: Column<Room>[] = [
   { header: 'Tipo', render: (r) => r.type?.name ?? r.typeId },
   { header: 'Cap.', render: (r) => r.capacity },
   { header: 'Camas extra máx.', render: (r) => r.maxExtraBeds },
-  { header: 'Precio/noche', render: (r) => money(r.price) },
+  { header: 'Precio', render: (r) => <>{money(r.price)} <span className="text-secondary">/{r.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</span></> },
   { header: 'Amenities', className: 'text-secondary', render: (r) => (r.amenities.length ? r.amenities.join(' · ') : '—') },
   { header: 'Estado', render: (r) => <ActiveBadge active={r.isActive} /> },
   { header: 'Reservas', render: (r) => r._count?.reservations ?? 0 },
@@ -32,15 +32,16 @@ interface RoomForm {
   capacity: number;
   maxExtraBeds: number;
   price: number;
+  pricingMode: 'PER_NIGHT' | 'PER_PERSON';
   amenities: string;
   isActive: boolean;
 }
 
-const emptyForm: RoomForm = { number: '', name: '', typeId: 0, capacity: 2, maxExtraBeds: 0, price: 0, amenities: '', isActive: true };
+const emptyForm: RoomForm = { number: '', name: '', typeId: 0, capacity: 2, maxExtraBeds: 0, price: 0, pricingMode: 'PER_NIGHT', amenities: '', isActive: true };
 
 export function RoomsPage() {
   const { user } = useAuth();
-  const isAdmin = (user?.role === 'ADMIN' || user?.role === 'OWNER');
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'OWNER';
 
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -72,7 +73,7 @@ export function RoomsPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm, typeId: types[0]?.id ?? 0, price: 0 });
+    setForm({ ...emptyForm, typeId: types[0]?.id ?? 0, price: 0, pricingMode: 'PER_NIGHT' });
     clearError();
     setFormOpen(true);
   }
@@ -87,6 +88,7 @@ export function RoomsPage() {
       capacity: room.capacity,
       maxExtraBeds: room.maxExtraBeds,
       price: room.price,
+      pricingMode: room.pricingMode,
       amenities: room.amenities.join(', '),
       isActive: room.isActive,
     });
@@ -109,6 +111,7 @@ export function RoomsPage() {
         capacity: Number(form.capacity),
         maxExtraBeds: Number(form.maxExtraBeds),
         price: Number(form.price),
+        pricingMode: form.pricingMode,
         amenities: form.amenities.split(',').map((a) => a.trim()).filter(Boolean),
         isActive: form.isActive,
       };
@@ -235,7 +238,7 @@ export function RoomsPage() {
                       <td>{room.number}</td>
                       <td>{room.type?.name}</td>
                       <td>{room.capacity}</td>
-                      <td>{money(room.price)}</td>
+                      <td>{money(room.price)} / {room.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</td>
                       <td className="text-secondary">{room.amenities.join(' · ')}</td>
                     </tr>
                   ))}
@@ -312,7 +315,14 @@ export function RoomsPage() {
               <div className="form-text">0 = no se ofrecen camas extra en esta habitación.</div>
             </div>
             <div className="col-sm-6">
-              <label className="form-label">Precio por noche *</label>
+              <label className="form-label">Modalidad de cobro *</label>
+              <select className="form-select" value={form.pricingMode} onChange={(e) => setForm({ ...form, pricingMode: e.target.value as RoomForm['pricingMode'] })}>
+                <option value="PER_NIGHT">Por habitación y noche</option>
+                <option value="PER_PERSON">Por persona y noche</option>
+              </select>
+            </div>
+            <div className="col-sm-6">
+              <label className="form-label">Precio {form.pricingMode === 'PER_PERSON' ? 'por persona y noche' : 'por noche'} *</label>
               <input type="number" min={0} step="0.01" className="form-control" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required />
             </div>
             <div className="col-12">

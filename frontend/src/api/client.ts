@@ -34,6 +34,15 @@ interface RequestOptions {
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (import.meta.env.MODE === 'demo') {
+    const { handleDemoRequest, DemoApiError } = await import('../demo/api');
+    try {
+      return handleDemoRequest<T>(path, options);
+    } catch (err) {
+      if (err instanceof DemoApiError) throw new ApiError(err.message, err.status, err.code);
+      throw err;
+    }
+  }
   const timeoutMs = options.timeoutMs ?? 10000;
   const controller = new AbortController();
   const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined;

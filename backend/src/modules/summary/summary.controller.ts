@@ -32,25 +32,27 @@ export async function summary(req: Request, res: Response): Promise<void> {
 
   const reservations = await prisma.reservation.findMany({
     where: {
-      roomId: { in: roomIds.length > 0 ? roomIds : [-1] },
+      OR: [{ roomId: { in: roomIds } }, { rooms: { some: { roomId: { in: roomIds } } } }],
       status: { not: 'CANCELLED' },
       AND: [{ checkIn: { lt: toExclusive } }, { checkOut: { gt: from } }],
     },
-    select: { checkIn: true, checkOut: true, roomId: true },
+    select: { checkIn: true, checkOut: true, roomId: true, rooms: { select: { roomId: true } } },
   });
 
   const occupiedPerDay = new Array<number>(days).fill(0);
   const bookedNights = new Map<number, Set<number>>();
   for (const r of reservations) {
-    const set = bookedNights.get(r.roomId) ?? new Set<number>();
-    for (let i = 0; i < days; i++) {
-      const day = addDays(from, i);
-      if (r.checkIn < addDays(day, 1) && r.checkOut > day) {
-        set.add(i);
-        occupiedPerDay[i] += 1;
+    for (const roomId of new Set([r.roomId, ...r.rooms.map((line) => line.roomId)].filter((id) => roomIds.includes(id)))) {
+      const set = bookedNights.get(roomId) ?? new Set<number>();
+      for (let i = 0; i < days; i++) {
+        const day = addDays(from, i);
+        if (r.checkIn < addDays(day, 1) && r.checkOut > day) {
+          if (!set.has(i)) occupiedPerDay[i] += 1;
+          set.add(i);
+        }
       }
+      bookedNights.set(roomId, set);
     }
-    bookedNights.set(r.roomId, set);
   }
 
   const occupiedNights = [...bookedNights.values()].reduce((acc, s) => acc + s.size, 0);

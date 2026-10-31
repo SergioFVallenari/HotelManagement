@@ -1,4 +1,4 @@
-import { round2 } from './format';
+import { round2 } from './format.ts';
 
 // Espejo de backend/src/lib/pricing.ts: el frontend solo muestra una
 // estimacion mientras la recepcion arma la solicitud. El total y el anticipo

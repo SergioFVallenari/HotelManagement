@@ -2,6 +2,11 @@
 -- publicación, y los guards evitan fallar si ya se agregaron a mano.
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    RAISE NOTICE 'Publicación supabase_realtime ausente: se omite el alta de tablas';
+    RETURN;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ChannelMessage'
@@ -21,6 +26,11 @@ END $$;
 -- (el backend firma company_id). Sin claims (migraciones/psql) es NULL → deny.
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    RAISE NOTICE 'Rol authenticated ausente: se omiten las policies de postgres_changes';
+    RETURN;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'ChannelMessage' AND policyname = 'company members read own messages'

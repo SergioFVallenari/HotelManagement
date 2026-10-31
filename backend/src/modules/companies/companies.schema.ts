@@ -1,5 +1,19 @@
 import { z } from 'zod';
 
+const bookingThemeSchema = z.object({
+  primary: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  secondary: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  text: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  surface: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+}).strict();
+
+export const publicPageConfigSchema = z.object({
+  bookingTheme: bookingThemeSchema,
+  maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
+}).strict();
+
 export const createCompanySchema = z.object({
   name: z.string().trim().min(1).max(100),
 });
@@ -11,6 +25,8 @@ export const updateCompanySettingsSchema = z
     whatsapp: z.string().trim().max(30).optional().nullable(),
     phone: z.string().trim().max(30).optional().nullable(),
     bookingDepositPercent: z.number().int().min(0).max(100).optional(),
+    bookingSlug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(60).optional().nullable(),
+    configPage: publicPageConfigSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'No hay campos para actualizar' });
 

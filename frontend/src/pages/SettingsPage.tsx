@@ -1,4 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { DEMO_MODE } from '../demo/config';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
@@ -7,9 +9,17 @@ import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { AiConfig, AiSettings, CompanySettings, MpConnection } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
 import { useApiError } from '../components/pagination';
-import { dateTimeShort } from '../lib/format';
+import { dateTimeShort, generatePublicLink } from '../lib/format';
+import {
+  BOOKING_THEME_FIELDS,
+  bookingThemeFromConfig,
+  bookingThemeStyle,
+  DEFAULT_BOOKING_THEME,
+  type BookingTheme,
+} from '../lib/bookingTheme';
 import { APP_RETURN_TO, closeAuthTab, extractOauthQuery, isNative, openAuthTab } from '../lib/mpOauth';
 
 function AiAssistantSection() {
@@ -610,14 +620,26 @@ function BookingSettingsSection() {
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [themeDraft, setThemeDraft] = useState<BookingTheme>(DEFAULT_BOOKING_THEME);
+  const [themeHexDraft, setThemeHexDraft] = useState<Partial<BookingTheme>>({});
+  const themeHexInvalid = BOOKING_THEME_FIELDS.some(({ key }) => !/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key]));
+  const [section, setSection] = useState<'general' | 'anticipos' | 'contacto' | 'apariencia'>('general');
+  const [maxPersonsDraft, setMaxPersonsDraft] = useState<string | null>(null);
+  const maxPersonsValue = maxPersonsDraft ?? String(settings?.configPage.maxAvailabilityPersons ?? '');
+  const maxPersonsInvalid = maxPersonsValue !== '' && (
+    !Number.isInteger(Number(maxPersonsValue)) || Number(maxPersonsValue) < 1 || Number(maxPersonsValue) > (settings?.hotelCapacity ?? 0)
+  );
 
   const form = {
     whatsapp: overrides.whatsapp ?? settings?.whatsapp ?? '',
     phone: overrides.phone ?? settings?.phone ?? '',
     bookingDepositPercent: overrides.bookingDepositPercent ?? settings?.bookingDepositPercent ?? 20,
+    bookingSlug: overrides.bookingSlug ?? settings?.bookingSlug ?? '',
   };
 
   async function save() {
+    if (maxPersonsInvalid) return;
     setSaving(true);
     clearError();
     try {
@@ -627,11 +649,43 @@ function BookingSettingsSection() {
           whatsapp: form.whatsapp.trim() || null,
           phone: form.phone.trim() || null,
           bookingDepositPercent: Number(form.bookingDepositPercent),
+          bookingSlug: form.bookingSlug.trim() || null,
+          configPage: {
+            bookingTheme: bookingThemeFromConfig(settings?.configPage),
+            maxAvailabilityPersons: maxPersonsValue === '' ? null : Number(maxPersonsValue),
+          },
         },
       });
       setOverrides({});
+      setMaxPersonsDraft(null);
       setToast('Configuración de reservas guardada.');
       if (result.data) reload();
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openThemeEditor() {
+    setThemeDraft(bookingThemeFromConfig(settings?.configPage));
+    setThemeHexDraft({});
+    clearError();
+    setThemeOpen(true);
+  }
+
+  async function saveTheme() {
+    if (themeHexInvalid) return;
+    setSaving(true);
+    clearError();
+    try {
+      await api('/companies/current', {
+        method: 'PATCH',
+        body: { configPage: { ...settings?.configPage, bookingTheme: themeDraft } },
+      });
+      setThemeOpen(false);
+      setToast('Estilo de la página pública guardado.');
+      reload();
     } catch (err) {
       handleError(err);
     } finally {
@@ -648,28 +702,57 @@ function BookingSettingsSection() {
           <div className="alert alert-danger mb-0">{error}</div>
         ) : (
           <>
-            <div className="row g-3">
+            <ul className="nav nav-tabs booking-settings-tabs mb-4" role="tablist" aria-label="Configuración de reservas">
+              {([
+                ['general', 'General'],
+                ['anticipos', 'Anticipos'],
+                ['contacto', 'Contacto'],
+                ['apariencia', 'Apariencia'],
+              ] as const).map(([id, label]) => (
+                <li className="nav-item" role="presentation" key={id}>
+                  <button type="button" role="tab" aria-selected={section === id}
+                    className={`nav-link ${section === id ? 'active' : ''}`} onClick={() => setSection(id)}>
+                    {label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {section === 'general' && <>
+              <div className="row g-3">
               <div className="col-md-4">
-                <label className="form-label" htmlFor="booking-deposit-percent">
-                  Anticipo (% del total)
-                </label>
-                <div className="input-group">
-                  <input
-                    id="booking-deposit-percent"
-                    type="number"
-                    min={0}
-                    max={100}
-                    className="form-control"
-                    value={form.bookingDepositPercent}
-                    onChange={(e) => setOverrides({ ...overrides, bookingDepositPercent: Number(e.target.value) })}
-                  />
-                  <span className="input-group-text">%</span>
-                </div>
-                <div className="form-text">
-                  Se redondea al múltiplo de $10.000 más cercano. Con 0% el link se envía sin anticipo (no se pide
-                  comprobante).
-                </div>
+                <label className="form-label" htmlFor="booking-slug">Identificador público del hotel</label>
+                <input id="booking-slug" className="form-control" value={form.bookingSlug}
+                  onChange={(e) => setOverrides({ ...overrides, bookingSlug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                  placeholder="posadaelnomada" />
+                <div className="form-text">Se usa para asociar el sitio público de disponibilidad con este hotel.</div>
               </div>
+              <div className="col-md-4">
+                <label className="form-label" htmlFor="booking-max-persons">Máximo de personas en disponibilidad</label>
+                <input id="booking-max-persons" className={`form-control ${maxPersonsInvalid ? 'is-invalid' : ''}`}
+                  type="number" min={1} max={settings?.hotelCapacity ?? 0} step={1}
+                  value={maxPersonsValue} placeholder={`Automático (${settings?.hotelCapacity ?? 0})`}
+                  onChange={(event) => setMaxPersonsDraft(event.target.value)} />
+                <div className="form-text">Capacidad total del hotel: {settings?.hotelCapacity ?? 0} personas. Suma de la capacidad de las habitaciones activas, sin camas extra. Dejá vacío para usar el total automáticamente.</div>
+                {maxPersonsInvalid && <div className="invalid-feedback">Ingresá un entero entre 1 y {settings?.hotelCapacity ?? 0}, o dejá el campo vacío.</div>}
+              </div>
+              </div>
+              <div className="form-check form-switch mt-3">
+                <input className="form-check-input" type="checkbox" id="booking-portal-enabled" defaultChecked={!DEMO_MODE} disabled />
+                <label className="form-check-label" htmlFor="booking-portal-enabled">{DEMO_MODE ? 'Portal de disponibilidad no incluido en la demo' : 'Portal de disponibilidad habilitado'}</label>
+                <div className="form-text">{DEMO_MODE ? 'El portal de disponibilidad no se publica en la demo. La apariencia se puede probar en el formulario de una solicitud.' : 'La disponibilidad pública se administra desde el estado de publicación del portal.'}</div>
+              </div>
+            </>}
+            {section === 'anticipos' && <div className="row g-3">
+              <div className="col-md-6">
+                <label className="form-label" htmlFor="booking-deposit-percent">Anticipo (% del total)</label>
+                <div className="input-group"><input id="booking-deposit-percent" type="number" min={0} max={100} className="form-control" value={form.bookingDepositPercent}
+                  onChange={(e) => setOverrides({ ...overrides, bookingDepositPercent: Number(e.target.value) })} /><span className="input-group-text">%</span></div>
+                <div className="form-text">Se redondea al múltiplo de $10.000 más cercano. Con 0% no se pide comprobante.</div>
+              </div>
+              <div className="col-md-6"><label className="form-label">Regla de redondeo</label><div className="form-control-plaintext">Al múltiplo de $10.000 más cercano</div>
+                <div className="form-text">La recepción puede ajustar el monto al crear cada link, sin superar el total.</div></div>
+            </div>}
+            {section === 'contacto' && <div className="row g-3">
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-whatsapp">
                   WhatsApp del hotel
@@ -681,7 +764,7 @@ function BookingSettingsSection() {
                   onChange={(e) => setOverrides({ ...overrides, whatsapp: e.target.value })}
                   placeholder="5491123456789"
                 />
-                <div className="form-text">Con código de país. El botón "Compartir por WhatsApp" abre este chat.</div>
+                <div className="form-text">{DEMO_MODE ? 'Dato ilustrativo: no se abrirán chats ni se enviarán mensajes.' : 'Con código de país. El botón "Compartir por WhatsApp" abre este chat.'}</div>
               </div>
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-phone">
@@ -696,22 +779,129 @@ function BookingSettingsSection() {
                 />
                 <div className="form-text">Se muestra al huésped en el formulario público.</div>
               </div>
-            </div>
+              <div className="col-12"><div className="form-text">Otros canales de contacto podrán configurarse próximamente.</div></div>
+            </div>}
 
             {apiError && (
               <div className="alert alert-danger mt-3 mb-0">
                 {apiError}
               </div>
             )}
-
+            {!DEMO_MODE && section === 'general' && settings?.bookingSlug && (
+              <div className="alert alert-success mt-3 mb-0">
+                <p className="mb-2">
+                  Este es el enlace al que debe dirigir el botón de tu landing:
+                </p>
+                <a
+                  href={generatePublicLink(settings.bookingSlug)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {generatePublicLink(settings.bookingSlug)}
+                </a>
+              </div>
+            )}
+            {section === 'apariencia' && <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 p-3 border rounded">
+              <div>
+                <strong>Estilo de la página pública</strong>
+                <div className="form-text">Personalizá los colores de disponibilidad y del formulario de reserva.</div>
+              </div>
+              <button type="button" className="btn btn-outline-primary" onClick={openThemeEditor}>
+                Personalizar estilo
+              </button>
+            </div>}
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || maxPersonsInvalid}>
                 {saving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
           </>
         )}
       </div>
+      <Modal
+        open={themeOpen}
+        title="Estilo de la página pública de reservas"
+        onClose={() => {
+          setThemeOpen(false);
+          clearError();
+        }}
+        wide
+        error={apiError}
+        onDismissError={clearError}
+      >
+        <div className="row g-4">
+          <div className="col-lg-6">
+            <p className="text-secondary small">Estos colores se aplican a la página de disponibilidad y al formulario que recibe el huésped. El fondo primario cubre la página y el secundario, el modal y las tarjetas.</p>
+            <div className="d-grid gap-3">
+              {BOOKING_THEME_FIELDS.map(({ key, label, usage }) => (
+                <div className="d-flex align-items-center gap-3" key={key}>
+                  <input
+                    type="color"
+                    className="form-control form-control-color"
+                    aria-label={label}
+                    value={themeDraft[key]}
+                    onChange={(event) => {
+                      const value = event.target.value.toUpperCase();
+                      setThemeDraft((current) => ({ ...current, [key]: value }));
+                      setThemeHexDraft((current) => ({ ...current, [key]: value }));
+                    }}
+                  />
+                  <div className="flex-grow-1">
+                    <label className="fw-semibold" htmlFor={`booking-theme-hex-${key}`}>{label}</label>
+                    <div className="small text-secondary mb-1">{usage}</div>
+                    <input
+                      id={`booking-theme-hex-${key}`}
+                      type="text"
+                      className={`form-control form-control-sm ${!/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key]) ? 'is-invalid' : ''}`}
+                      value={themeHexDraft[key] ?? themeDraft[key]}
+                      placeholder="#253D46"
+                      maxLength={7}
+                      spellCheck={false}
+                      aria-invalid={!/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key])}
+                      aria-describedby={`booking-theme-hex-error-${key}`}
+                      onChange={(event) => {
+                        const value = event.target.value.toUpperCase();
+                        setThemeHexDraft((current) => ({ ...current, [key]: value }));
+                        if (/^#[0-9A-F]{6}$/.test(value)) {
+                          setThemeDraft((current) => ({ ...current, [key]: value }));
+                        }
+                      }}
+                    />
+                    <div id={`booking-theme-hex-error-${key}`} className="invalid-feedback">Usá # seguido de 6 caracteres hexadecimales (0–9, A–F).</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="btn btn-link px-0 mt-3" onClick={() => {
+              setThemeDraft(DEFAULT_BOOKING_THEME);
+              setThemeHexDraft({});
+            }}>
+              Restaurar colores predeterminados
+            </button>
+          </div>
+          <div className="col-lg-6">
+            <div className="small text-secondary mb-2">Vista previa</div>
+            <div className="booking-theme-preview" style={bookingThemeStyle(themeDraft)}>
+              <div className="booking-theme-preview-card">
+                <span className="booking-theme-preview-accent">POSADA</span>
+                <h3>El nombre de tu hotel</h3>
+                <p>Encontrá una habitación para tu estadía</p>
+                <div className="booking-theme-preview-option">
+                  <strong>Habitación doble</strong>
+                  <span>Desde $80.000</span>
+                </div>
+                <button type="button" className="booking-theme-preview-button">Consultar disponibilidad</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="modal-actions mt-4">
+          <button type="button" className="btn btn-outline-secondary" onClick={() => setThemeOpen(false)} disabled={saving}>Cancelar</button>
+          <button type="button" className="btn btn-primary" onClick={saveTheme} disabled={saving || themeHexInvalid}>
+            {saving ? 'Guardando…' : 'Guardar estilo'}
+          </button>
+        </div>
+      </Modal>
       <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />
     </div>
   );
@@ -730,6 +920,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> 
 // /settings/instagram). La tab se lee solo al montar para que el
 // history.replaceState que limpia el callback no la pise.
 function initialTab(): SettingsTab {
+  if (DEMO_MODE) return 'reservas';
   const value = new URLSearchParams(window.location.search).get('tab');
   return value === 'redes' || value === 'ia' || value === 'reservas' ? value : 'pagos';
 }
@@ -756,6 +947,21 @@ export function SettingsPage() {
     );
   }
 
+  if (DEMO_MODE) {
+    return (
+      <div>
+        <h1 className="h4 mb-1">Configuración de reservas</h1>
+        <p className="text-secondary mb-3">Anticipos, contacto y apariencia de la página que recibe el huésped.</p>
+        <div className="alert alert-info">
+          Los cambios son de demostración y se pierden al recargar. La paleta inicial es la del CRM.
+          Personalizá el estilo en <strong>Apariencia</strong> y probalo con una <Link to="/booking-links">solicitud de reserva</Link> en esta pestaña.
+          No se publican sitios ni se habilitan integraciones externas.
+        </div>
+        <BookingSettingsSection />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
@@ -765,7 +971,7 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <ul className="nav nav-tabs mb-4" role="tablist" aria-label="Configuración">
+      <ul className="nav nav-tabs settings-tabs mb-4" role="tablist" aria-label="Configuración">
         {SETTINGS_TABS.map((item, index) => {
           const active = item.id === tab;
           return (
@@ -809,7 +1015,7 @@ export function SettingsPage() {
         aria-labelledby="settings-tab-reservas"
         className={tab === 'reservas' ? '' : 'd-none'}
       >
-        <h2 className="h5 mb-1">Reservas por WhatsApp</h2>
+        <h2 className="h5 mb-1">Portal de reservas</h2>
         <p className="text-secondary mb-3">
           Anticipo que se le pide al huésped y datos de contacto que se muestran en el formulario público.
         </p>

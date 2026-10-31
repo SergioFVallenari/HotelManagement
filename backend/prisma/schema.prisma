@@ -10,6 +10,7 @@ datasource db {
 model Company {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  bookingSlug String? @unique
   createdById Int?
   // Anticipo que se cobra de las reservas que llegan por el formulario de
   // WhatsApp: porcentaje del total de la estadia (se redondea a multiplos de
@@ -31,6 +32,7 @@ model Company {
   aiSetting   CompanyAiSetting?
   bookingLinks BookingLink[]
   bookingReceipts ReservationReceipt[]
+  configPage Json @default("{}")
 }
 
 model CompanyAiSetting {
@@ -105,6 +107,7 @@ model Room {
   capacity     Int           @default(2)
   maxExtraBeds Int           @default(0)
   price        Decimal       @db.Decimal(10, 2)
+  pricingMode  RoomPricingMode @default(PER_NIGHT)
   amenities    String[]
   isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
@@ -112,12 +115,19 @@ model Room {
   type         RoomType      @relation(fields: [typeId], references: [id])
   company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   reservations Reservation[]
+  reservationRooms ReservationRoom[]
   bookingLinks BookingLink[]
 
   @@unique([companyId, number])
   @@index([typeId])
   @@index([companyId])
 }
+
+enum RoomPricingMode {
+  PER_NIGHT
+  PER_PERSON
+}
+
 
 model Guest {
   id           Int           @id @default(autoincrement())
@@ -183,6 +193,8 @@ model Reservation {
   checkOut     DateTime           @db.Date
   persons      Int                @default(1)
   extraBeds    Int                @default(0)
+  roomPrice    Decimal?           @db.Decimal(10, 2)
+  roomPricingMode RoomPricingMode?
   status       ReservationStatus  @default(RESERVED)
   source       ReservationSource  @default(STAFF)
   checkedInAt  DateTime?
@@ -205,12 +217,28 @@ model Reservation {
   services     ReservationService[]
   receipt      ReservationReceipt?
   bookingLink  BookingLink?
+  rooms        ReservationRoom[]
 
   @@index([companyId, code])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([status])
   @@index([companyId, source])
+}
+
+model ReservationRoom {
+  id              Int             @id @default(autoincrement())
+  reservationId   Int
+  roomId          Int
+  persons         Int
+  extraBeds       Int             @default(0)
+  roomPrice       Decimal         @db.Decimal(10, 2)
+  roomPricingMode RoomPricingMode
+  reservation     Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  room            Room            @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, roomId])
+  @@index([roomId])
 }
 
 // Solicitud de reserva preparada por la recepcion y compartida por WhatsApp.
@@ -232,9 +260,12 @@ model BookingLink {
   checkOut      DateTime          @db.Date
   persons       Int               @default(1)
   extraBeds     Int               @default(0)
+  roomPrice     Decimal?          @db.Decimal(10, 2)
+  roomPricingMode RoomPricingMode?
   // Snapshot de los servicios cotizados: { serviceId, name, quantity,
   // personsCovered, unitPrice, lineTotal }.
   services      Json              @default("[]")
+  rooms         Json              @default("[]")
   total         Decimal           @db.Decimal(10, 2)
   deposit       Decimal           @db.Decimal(10, 2)
   status        BookingLinkStatus @default(OPEN)
