@@ -88,7 +88,6 @@ export function Layout() {
       localStorage.setItem(THEME_KEY, theme);
     } catch {}
   }, [theme]);
-  console.log(user)
   const layoutClass = `${collapsed ? 'sidebar-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''}`.trim();
   function toggleSidebar() {
     setCollapsed((value) => {

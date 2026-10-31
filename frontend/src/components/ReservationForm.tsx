@@ -58,15 +58,15 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
 
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    api<{ data: Service[] }>('/services')
+    const controller = new AbortController();
+    api<{ data: Service[] }>('/services', { signal: controller.signal })
       .then((servicesResult) => {
-        if (!alive) return;
+        if (controller.signal.aborted) return;
         setServicesList(servicesResult.data.filter((s) => s.isActive));
       })
-      .catch((err) => onError(err));
+      .catch((err) => { if (!controller.signal.aborted) onError(err); });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [open]);
 

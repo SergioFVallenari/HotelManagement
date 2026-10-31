@@ -173,14 +173,14 @@ export function MessagesPage() {
 
   useEffect(() => {
     if (!activeId || activeUnread === 0) return;
-    let cancelled = false;
-    api(`/conversations/${activeId}/read`, { method: 'POST' })
+    const controller = new AbortController();
+    api(`/conversations/${activeId}/read`, { method: 'POST', signal: controller.signal })
       .then(() => {
-        if (!cancelled) void refresh();
+        if (!controller.signal.aborted) void refresh();
       })
       .catch(() => {});
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [activeId, activeUnread, refresh]);
 

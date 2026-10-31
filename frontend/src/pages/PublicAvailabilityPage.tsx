@@ -24,25 +24,25 @@ export function PublicAvailabilityPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    api<{ data: PublicBookingPageConfig }>(`/public/availability/${encodeURIComponent(bookingSlug)}/config`)
+    const controller = new AbortController();
+    api<{ data: PublicBookingPageConfig }>(`/public/availability/${encodeURIComponent(bookingSlug)}/config`, { signal: controller.signal })
       .then((response) => {
-        if (alive) {
+        if (!controller.signal.aborted) {
           setPageConfig(response.data);
           setPersons((current) => Math.max(1, Math.min(current, response.data.hotel.maxAvailabilityPersons)));
           setError(null);
         }
       })
       .catch((err) => {
-        if (alive) {
+        if (!controller.signal.aborted) {
           setPageConfig(null);
           setError(err instanceof ApiError ? err.message : 'No se pudo cargar la página del alojamiento.');
         }
       })
       .finally(() => {
-        if (alive) setLoadedConfigSlug(bookingSlug);
+        if (!controller.signal.aborted) setLoadedConfigSlug(bookingSlug);
       });
-    return () => { alive = false; };
+    return () => controller.abort();
   }, [bookingSlug]);
 
   async function search(event: FormEvent) {

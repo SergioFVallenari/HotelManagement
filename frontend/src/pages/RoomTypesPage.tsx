@@ -82,7 +82,6 @@ export function RoomTypesPage() {
 
       <DataTable<RoomType>
         columns={[
-          { header: 'ID', render: (i) => i.id },
           { header: 'Nombre', render: (i) => <strong>{i.name}</strong> },
           { header: 'Habitaciones', render: (i) => i._count?.rooms ?? 0 },
         ]}

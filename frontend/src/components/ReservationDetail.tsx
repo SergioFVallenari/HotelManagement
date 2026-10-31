@@ -59,14 +59,17 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   useEffect(() => {
     if (!reservation || reservation.status !== 'PENDING') return;
     const reservationId = reservation.id;
-    let alive = true;
+    const controller = new AbortController();
+    let pending = false;
     let timer: number | undefined;
     const started = Date.now();
 
     function tick() {
-      api<{ data: Reservation }>(`/reservations/${reservationId}`)
+      if (controller.signal.aborted || pending) return;
+      pending = true;
+      api<{ data: Reservation }>(`/reservations/${reservationId}`, { signal: controller.signal })
         .then((result) => {
-          if (!alive) return;
+          if (controller.signal.aborted) return;
           if (result.data.status === 'RESERVED') {
             onChangedRef.current(result.data);
             showToast('Pago recibido');
@@ -75,12 +78,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           scheduleNext();
         })
         .catch(() => {
-          if (alive) scheduleNext();
-        });
+          if (!controller.signal.aborted) scheduleNext();
+        })
+        .finally(() => { pending = false; });
     }
 
     function scheduleNext() {
-      if (!alive) return;
+      if (controller.signal.aborted) return;
       const delay = Date.now() - started < 30_000 ? 5000 : 15_000;
       timer = window.setTimeout(() => void tick(), delay);
     }
@@ -94,7 +98,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     timer = window.setTimeout(() => void tick(), 5000);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      alive = false;
+      controller.abort();
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };

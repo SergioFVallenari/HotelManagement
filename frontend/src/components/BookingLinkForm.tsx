@@ -40,21 +40,21 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
 
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    api<{ data: Service[] }>('/services')
+    const controller = new AbortController();
+    api<{ data: Service[] }>('/services', { signal: controller.signal })
       .then((result) => {
-        if (alive) setServicesList(result.data.filter((s) => s.isActive));
+        if (!controller.signal.aborted) setServicesList(result.data.filter((s) => s.isActive));
       })
-      .catch((err) => onError(err));
-    api<{ data: CompanySettings }>('/companies/current')
+      .catch((err) => { if (!controller.signal.aborted) onError(err); });
+    api<{ data: CompanySettings }>('/companies/current', { signal: controller.signal })
       .then((result) => {
-        if (alive) setDepositPercent(result.data.bookingDepositPercent);
+        if (!controller.signal.aborted) setDepositPercent(result.data.bookingDepositPercent);
       })
       .catch(() => {
         // sin configuracion se usa el 20% por defecto
       });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [open]);
 

@@ -12,7 +12,6 @@ import type { Column } from '../components/DataTable';
 import { dateShort, money } from '../lib/format';
 
 const GUESTS_COLUMNS: Column<Guest>[] = [
-  { header: 'ID', render: (g) => g.id },
   {
     header: 'Nombre',
     render: (g) => (
@@ -28,7 +27,7 @@ const GUESTS_COLUMNS: Column<Guest>[] = [
 
 const GUEST_DETAIL_RES_COLUMNS: Column<Reservation>[] = [
   { header: 'Código', render: (r) => <strong>{r.code}</strong> },
-  { header: 'Habitaciones', render: (r) => r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? line.roomId).join(', ') : r.room?.number ?? r.roomId },
+  { header: 'Habitaciones', render: (r) => r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? '—').join(', ') : r.room?.number ?? '—' },
   { header: 'Período', render: (r) => `${dateShort(r.checkIn)} → ${dateShort(r.checkOut)}` },
   { header: 'Total', align: 'end', render: (r) => money(r.totals?.total ?? 0) },
   { header: 'Estado', render: (r) => <StatusBadge status={r.status} /> },

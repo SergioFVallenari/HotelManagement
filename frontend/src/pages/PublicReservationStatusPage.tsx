@@ -36,26 +36,23 @@ export function PublicReservationStatusPage() {
   const [reservation, setReservation] = useState<ReservationStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [pageConfig, setPageConfig] = useState<PublicBookingPageConfig | null>(null);
-  const [configLoading, setConfigLoading] = useState(true);
-  const [configError, setConfigError] = useState<string | null>(null);
+  const [config, setConfig] = useState<{ slug: string; data: PublicBookingPageConfig | null; error: string | null } | null>(null);
+  const configLoading = config?.slug !== slug;
+  const pageConfig = configLoading ? null : config.data;
+  const configError = configLoading ? null : config.error;
   const themeStyle = bookingThemeStyle(bookingThemeFromConfig({ bookingTheme: reservation?.hotel.bookingTheme ?? pageConfig?.hotel.bookingTheme }));
 
   useEffect(() => {
-    let alive = true;
-    console.log('Fetching public booking page config for slug:', slug);
-    api<{ data: PublicBookingPageConfig }>(`/public/availability/${encodeURIComponent(slug)}/config`)
+    const controller = new AbortController();
+    api<{ data: PublicBookingPageConfig }>(`/public/availability/${encodeURIComponent(slug)}/config`, { signal: controller.signal })
       .then((response) => {
-        if (alive) setPageConfig(response.data);
+        if (!controller.signal.aborted) setConfig({ slug, data: response.data, error: null });
       })
       .catch((err) => {
-        if (alive) setConfigError(err instanceof ApiError ? err.message : 'No se pudo cargar la página del alojamiento.');
-      })
-      .finally(() => {
-        if (alive) setConfigLoading(false);
+        if (!controller.signal.aborted) setConfig({ slug, data: null, error: err instanceof ApiError ? err.message : 'No se pudo cargar la página del alojamiento.' });
       });
-    return () => { alive = false; };
-  }, []);
+    return () => controller.abort();
+  }, [slug]);
 
   async function search(event: FormEvent) {
     event.preventDefault();

@@ -66,21 +66,21 @@ export function PublicBookingPage() {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const controller = new AbortController();
     setLoading(true);
     setLoadError(null);
-    api<{ data: PublicBookingQuote }>(`/public/booking/${encodeURIComponent(token)}`)
+    api<{ data: PublicBookingQuote }>(`/public/booking/${encodeURIComponent(token)}`, { signal: controller.signal })
       .then((response) => {
-        if (alive) setQuote(response.data);
+        if (!controller.signal.aborted) setQuote(response.data);
       })
       .catch((err: ApiError) => {
-        if (alive) setLoadError(err.message);
+        if (!controller.signal.aborted) setLoadError(err.message);
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [token]);
 

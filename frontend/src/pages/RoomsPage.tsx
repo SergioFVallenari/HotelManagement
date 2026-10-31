@@ -15,7 +15,7 @@ import { dateShort, money, today, addDays } from '../lib/format';
 const ROOMS_COLUMNS: Column<Room>[] = [
   { header: 'N°', render: (r) => <strong>{r.number}</strong> },
   { header: 'Nombre', render: (r) => r.name ?? '—' },
-  { header: 'Tipo', render: (r) => r.type?.name ?? r.typeId },
+  { header: 'Tipo', render: (r) => r.type?.name ?? '—' },
   { header: 'Cap.', render: (r) => r.capacity },
   { header: 'Camas extra máx.', render: (r) => r.maxExtraBeds },
   { header: 'Precio', render: (r) => <>{money(r.price)} <span className="text-secondary">/{r.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</span></> },

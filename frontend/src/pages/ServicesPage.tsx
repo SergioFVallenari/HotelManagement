@@ -14,7 +14,6 @@ import { money, CHARGE_TYPES } from '../lib/format';
 import type { ServiceChargeType } from '../api/types';
 
 const SERVICES_COLUMNS: Column<Service>[] = [
-  { header: 'ID', render: (s) => s.id },
   { header: 'Nombre', render: (s) => <strong>{s.name}</strong> },
   { header: 'Precio', render: (s) => money(s.price) },
   { header: 'Tipo de cobro', render: (s) => CHARGE_TYPES[s.chargeType] ?? s.chargeType },

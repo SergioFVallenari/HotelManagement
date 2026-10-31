@@ -166,9 +166,9 @@ export function ReservationsPage() {
                     {reservations.map((r) => (
                       <tr key={r.id}>
                         <td><strong>{r.code}</strong></td>
-                        <td>{r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? line.roomId).join(', ') : r.room?.number ?? r.roomId}</td>
+                        <td>{r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? '—').join(', ') : r.room?.number ?? '—'}</td>
                         <td>
-                          {r.guest ? `${r.guest.lastName}, ${r.guest.firstName}` : `#${r.guestId}`}
+                          {r.guest ? `${r.guest.lastName}, ${r.guest.firstName}` : '—'}
                         </td>
                         <td>
                           {dateShort(r.checkIn)} → {dateShort(r.checkOut)}

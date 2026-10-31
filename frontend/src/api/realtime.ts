@@ -34,13 +34,15 @@ export function useRealtime(companyId: number | undefined, onEvent: (event: Real
     if (!companyId) return;
 
     let cancelled = false;
+    const controller = new AbortController();
+    let connecting = false;
     let client: SupabaseClient | null = null;
     let channel: RealtimeChannel | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function fetchConfig(): Promise<RealtimeConfig | null> {
       try {
-        const result = await api<{ data: RealtimeConfig }>('/realtime/config');
+        const result = await api<{ data: RealtimeConfig }>('/realtime/config', { signal: controller.signal });
         return result.data;
       } catch {
         return null;
@@ -51,6 +53,7 @@ export function useRealtime(companyId: number | undefined, onEvent: (event: Real
       const config = await fetchConfig();
       if (cancelled || !client || !config) return;
       await client.realtime.setAuth(config.token);
+      if (cancelled) return;
       scheduleRefresh(config.expiresIn);
     }
 
@@ -65,8 +68,19 @@ export function useRealtime(companyId: number | undefined, onEvent: (event: Real
     }
 
     async function connect() {
+      if (cancelled || connecting) return;
+      connecting = true;
+      try {
+        await subscribe();
+      } finally {
+        connecting = false;
+      }
+    }
+
+    async function subscribe() {
       const config = await fetchConfig();
-      if (cancelled || !config) {
+      if (cancelled) return;
+      if (!config) {
         setConnected(false);
         return;
       }
@@ -128,6 +142,7 @@ export function useRealtime(companyId: number | undefined, onEvent: (event: Real
 
     return () => {
       cancelled = true;
+      controller.abort();
       setConnected(false);
       window.removeEventListener('focus', onVisible);
       document.removeEventListener('visibilitychange', onVisible);
