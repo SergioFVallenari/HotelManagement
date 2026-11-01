@@ -69,7 +69,11 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
   });
   if (!company) throw notFound('No encontramos este alojamiento');
 
-  const { maxAvailabilityPersons } = await getBookingCapacity(company.id, company.configPage);
+  const capacity = await getBookingCapacity(company.id, company.configPage);
+  const service = query.includeExtraBeds ? capacity.publicExtraBedService ?? undefined : undefined;
+  const maxAvailabilityPersons = service ? capacity.maxAvailabilityPersonsWithExtraBeds : capacity.maxAvailabilityPersons;
+  const roomCount = capacity.roomCount;
+  if (query.roomCount && query.roomCount > roomCount) throw badRequest('La cantidad solicitada supera las habitaciones habilitadas del alojamiento');
   if (query.roomCount && query.roomCount > query.persons) throw badRequest('La cantidad de habitaciones no puede superar la cantidad de personas');
   if (query.persons > maxAvailabilityPersons) {
     throw badRequest(`La consulta admite hasta ${maxAvailabilityPersons} personas.`);
@@ -95,24 +99,35 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
       },
       reservationRooms: { none: { reservation: { companyId: company.id, status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } } } },
     },
-    select: { typeId: true, capacity: true, price: true, pricingMode: true, type: { select: { name: true } } },
+    select: { typeId: true, capacity: true, maxExtraBeds: true, price: true, pricingMode: true, type: { select: { name: true } }, amenities: true },
     orderBy: { id: 'asc' },
   });
 
-  const grouped = new Map<number, { name: string; count: number; capacity: number; price: number; total: number }>();
+  const grouped = new Map<number, { name: string; count: number; capacity: number; price: number; total: number; amenities: string[] }>();
   for (const room of rooms) {
     if (room.capacity < query.persons) continue;
     const current = grouped.get(room.typeId);
     const price = decToNum(room.price);
     const total = roomStayTotal(room.pricingMode, price, nights, query.persons);
-    if (!current) grouped.set(room.typeId, { name: room.type.name, count: 1, capacity: room.capacity, price, total });
+    if (!current) grouped.set(room.typeId, { name: room.type.name, count: 1, capacity: room.capacity, price, total, amenities: room.amenities });
     else {
       current.count += 1;
       current.capacity = Math.max(current.capacity, room.capacity);
       current.price = Math.min(current.price, price);
       current.total = Math.min(current.total, total);
+      current.amenities = [...new Set([...current.amenities, ...room.amenities])];
     }
   }
+
+  const allocation = allocateAvailableRooms(rooms.map((room) => ({
+    roomType: room.type.name,
+    capacity: room.capacity,
+    maxExtraBeds: room.maxExtraBeds,
+    price: decToNum(room.price),
+    pricingMode: room.pricingMode,
+    amenities: room.amenities,
+  })), query.persons, nights, query.roomCount, query.roomPersons, service);
+  const extraBeds = allocation?.rooms.reduce((sum, room) => sum + room.extraBeds, 0) ?? 0;
 
   return {
     hotel: {
@@ -121,21 +136,23 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
       phone: company.phone,
       bookingTheme: publicBookingTheme(company.configPage),
     },
-    stay: { checkIn: query.checkIn, checkOut: query.checkOut, nights, persons: query.persons },
+    stay: { checkIn: query.checkIn, checkOut: query.checkOut, nights, persons: query.persons, includesExtraBeds: service !== undefined },
     availableRoomCount: rooms.length,
     availableRoomCapacity: rooms.reduce((max, room) => Math.max(max, room.capacity), 0),
-    combination: allocateAvailableRooms(rooms.map((room) => ({
-      roomType: room.type.name,
-      capacity: room.capacity,
-      price: decToNum(room.price),
-      pricingMode: room.pricingMode,
-    })), query.persons, nights, query.roomCount),
-    options: (query.roomCount && query.roomCount > 1 ? [] : [...grouped.values()]).map((option) => ({
+    combination: allocation ? {
+      ...allocation,
+      extraBeds,
+      roomTotal: round2(allocation.rooms.reduce((sum, room) => sum + room.roomTotal, 0)),
+      extraBedsTotal: round2(allocation.rooms.reduce((sum, room) => sum + room.extraBedsTotal, 0)),
+      extraBedService: extraBeds > 0 ? service : null,
+    } : null,
+    options: (service || (query.roomCount && query.roomCount > 1) ? [] : [...grouped.values()]).map((option) => ({
       roomType: option.name,
       available: option.count,
       capacity: option.capacity,
       fromPrice: option.price,
       total: option.total,
+      amenities: option.amenities,
     })),
   };
 }

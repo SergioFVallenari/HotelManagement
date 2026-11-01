@@ -38,6 +38,10 @@ export const companySchema = z.object({
 
 export const companySettingsSchema = z.object({
   hotelCapacity: z.number().int().nonnegative(),
+  hotelCapacityWithExtraBeds: z.number().int().nonnegative(),
+  publicExtraBedsEnabled: z.boolean(),
+  maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative(),
+  publicExtraBedService: z.object({ name: z.string(), price: money(), chargeType: z.enum(['PER_DAY', 'PER_PERSON', 'PACK']) }).nullable(),
   maxAvailabilityPersons: z.number().int().nonnegative(),
   id: z.number().int(),
   name: z.string(),
@@ -47,6 +51,7 @@ export const companySettingsSchema = z.object({
   bookingSlug: z.string().nullable(),
   configPage: z.object({
     maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
+    publicExtraBeds: z.object({ enabled: z.boolean(), serviceId: z.number().int().positive().nullable() }).optional(),
     bookingTheme: z.object({
       primary: z.string(),
       secondary: z.string(),
@@ -363,6 +368,11 @@ export const publicBookingQuoteSchema = z.object({
 
 export const publicBookingPageConfigSchema = z.object({
   hotel: z.object({
+    hotelCapacityWithExtraBeds: z.number().int().nonnegative(),
+    publicExtraBedsEnabled: z.boolean(),
+    maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative(),
+    publicExtraBedService: z.object({ name: z.string(), price: money(), chargeType: z.enum(['PER_DAY', 'PER_PERSON', 'PACK']) }).nullable(),
+    roomCount: z.number().int().nonnegative(),
     hotelCapacity: z.number().int().nonnegative(),
     maxAvailabilityPersons: z.number().int().nonnegative(),
     name: z.string(),

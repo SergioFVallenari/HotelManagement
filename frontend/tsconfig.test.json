@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node", "vite/client"]
   },
-  "include": ["tests/request.test.ts", "src/api/request.ts"]
+  "include": ["tests/request.test.ts", "tests/availability-share.test.ts", "src/api/request.ts", "src/lib/availabilityShare.ts"]
 }

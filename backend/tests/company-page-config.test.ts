@@ -42,3 +42,15 @@ test('la configuración pública rechaza colores inválidos o claves inesperadas
     adminOnly: true,
   }).success, false);
 });
+
+test('las camas extra públicas quedan desactivadas si no se configuran', () => {
+  assert.equal(publicPageConfigSchema.parse(validConfig).publicExtraBeds, undefined);
+  assert.equal(publicPageConfigSchema.safeParse({ ...validConfig, publicExtraBeds: { enabled: false, serviceId: null } }).success, true);
+});
+
+test('habilitar camas extra públicas exige elegir un servicio válido', () => {
+  assert.equal(publicPageConfigSchema.safeParse({ ...validConfig, publicExtraBeds: { enabled: true, serviceId: 12 } }).success, true);
+  for (const publicExtraBeds of [{ enabled: true, serviceId: null }, { enabled: true, serviceId: -1 }, { enabled: 'true', serviceId: 1 }, { enabled: true, serviceId: 1, price: 20 }]) {
+    assert.equal(publicPageConfigSchema.safeParse({ ...validConfig, publicExtraBeds }).success, false);
+  }
+});

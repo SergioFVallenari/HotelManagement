@@ -1705,7 +1705,7 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Consultar disponibilidad y cotización orientativa',
-      description: 'Público. Devuelve availableRoomCount con el total de habitaciones activas libres durante toda la estadía, independientemente del tamaño del grupo. Incluye tipos disponibles para alojar al grupo en una habitación y una combinación sugerida. La combinación usa capacidad base, prioriza menos habitaciones y luego menor precio, y detalla personas y total por habitación. No expone números ni datos de huéspedes. Rate limit: 30 / 10 min por IP.',
+      description: 'Público. Devuelve habitaciones libres, tipos y una combinación sugerida con amenities. Prioriza menos habitaciones y luego menor precio. Sin includeExtraBeds usa solo capacidad base. Con includeExtraBeds=true solo admite camas extra si el hotel habilitó publicExtraBeds y su servicio seleccionado sigue activo y marcado como cama extra. En ese caso devuelve una única combinación (options vacío), respeta maxExtraBeds por habitación y desglosa extraBeds, roomTotal, extraBedsTotal y extraBedService. Las personas de cada línea incluyen a quienes usan camas extra; su tarifa no se duplica en el precio base PER_PERSON. PACK cobra por cama y estadía; PER_DAY/PER_PERSON por cama y noche. No expone números ni datos de huéspedes. Rate limit: 30 / 10 min por IP.',
       security: publicSecurity,
       parameters: [
         { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
@@ -1713,6 +1713,8 @@ const paths: Record<string, Json> = {
         queryParam('checkOut', 'Fecha de salida YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
         queryParam('persons', 'Cantidad de personas, hasta el máximo informado por la configuración pública del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
         queryParam('roomCount', 'Cantidad exacta de habitaciones. Si se omite, combina automáticamente la menor cantidad posible.', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
+        queryParam('includeExtraBeds', 'Aceptación del huésped para agregar camas extra. Por defecto false; nunca habilita un servicio que el hotel no haya publicado.', { schema: { type: 'boolean', default: false } }),
+        queryParam('roomPersons', 'Personas por habitación separadas por comas (ejemplo: 3,1). Requiere roomCount, igual cantidad de valores y suma igual a persons. Busca el menor precio respetando esta distribución.', { schema: { type: 'string', pattern: '^\\d+(,\\d+)*$' } }),
       ],
       responses: {
         '200': ok({ type: 'object', additionalProperties: true }),

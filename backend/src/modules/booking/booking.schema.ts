@@ -24,6 +24,14 @@ export const publicAvailabilityQuerySchema = z.object({
   checkOut: dateStringSchema,
   persons: z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   roomCount: z.coerce.number().int().min(1).max(100).optional(),
+  includeExtraBeds: z.enum(['true', 'false']).transform((value) => value === 'true').optional().default(false),
+  roomPersons: z.string().max(2000).regex(/^\d+(,\d+)*$/, 'La distribución debe contener cantidades de personas separadas por comas')
+    .transform((value) => value.split(',').map(Number))
+    .pipe(z.array(z.number().int().positive().max(Number.MAX_SAFE_INTEGER)).min(1).max(100)).optional(),
+}).superRefine((data, ctx) => {
+  if (!Array.isArray(data.roomPersons)) return;
+  if (data.roomCount !== data.roomPersons.length) ctx.addIssue({ code: 'custom', path: ['roomPersons'], message: 'La distribución debe coincidir con la cantidad de habitaciones' });
+  if (data.roomPersons.reduce((sum, count) => sum + count, 0) !== data.persons) ctx.addIssue({ code: 'custom', path: ['roomPersons'], message: 'La suma de personas por habitación debe coincidir con el total' });
 });
 
 export type PublicAvailabilityQuery = z.infer<typeof publicAvailabilityQuerySchema>;
@@ -37,6 +45,7 @@ export const bookingRoomSnapshotsSchema = z.array(z.object({
   number: z.string(),
   typeName: z.string(),
   capacity: z.number().int().positive(),
+  amenities: z.array(z.string()).optional(),
 }));
 
 // Paso 1 del formulario publico: el huesped pide una URL firmada para subir el

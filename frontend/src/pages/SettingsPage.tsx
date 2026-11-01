@@ -7,7 +7,7 @@ import { IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } f
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { AiConfig, AiSettings, CompanySettings, MpConnection } from '../api/types';
+import type { AiConfig, AiSettings, CompanySettings, MpConnection, Service } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
@@ -615,6 +615,7 @@ function MercadoPagoSection() {
 
 function BookingSettingsSection() {
   const { data, loading, error, reload } = useApi<{ data: CompanySettings }>('/companies/current');
+  const { data: servicesData, loading: servicesLoading, error: servicesError } = useApi<{ data: Service[] }>('/services');
   const settings = data?.data;
   const { error: apiError, handleError, clearError } = useApiError();
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
@@ -626,9 +627,14 @@ function BookingSettingsSection() {
   const themeHexInvalid = BOOKING_THEME_FIELDS.some(({ key }) => !/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key]));
   const [section, setSection] = useState<'general' | 'anticipos' | 'contacto' | 'apariencia'>('general');
   const [maxPersonsDraft, setMaxPersonsDraft] = useState<string | null>(null);
+  const [extraBedsDraft, setExtraBedsDraft] = useState<{ enabled: boolean; serviceId: number | null } | null>(null);
+  const publicExtraBeds = extraBedsDraft ?? settings?.configPage.publicExtraBeds ?? { enabled: false, serviceId: null };
+  const extraBedServices = servicesData?.data.filter((service) => service.isActive && service.isExtraBed) ?? [];
+  const extraBedsInvalid = publicExtraBeds.enabled && !extraBedServices.some((service) => service.id === publicExtraBeds.serviceId);
+  const publicCapacity = publicExtraBeds.enabled && !extraBedsInvalid ? settings?.hotelCapacityWithExtraBeds ?? settings?.hotelCapacity ?? 0 : settings?.hotelCapacity ?? 0;
   const maxPersonsValue = maxPersonsDraft ?? String(settings?.configPage.maxAvailabilityPersons ?? '');
   const maxPersonsInvalid = maxPersonsValue !== '' && (
-    !Number.isInteger(Number(maxPersonsValue)) || Number(maxPersonsValue) < 1 || Number(maxPersonsValue) > (settings?.hotelCapacity ?? 0)
+    !Number.isInteger(Number(maxPersonsValue)) || Number(maxPersonsValue) < 1 || Number(maxPersonsValue) > publicCapacity
   );
 
   const form = {
@@ -639,7 +645,7 @@ function BookingSettingsSection() {
   };
 
   async function save() {
-    if (maxPersonsInvalid) return;
+    if (maxPersonsInvalid || extraBedsInvalid) return;
     setSaving(true);
     clearError();
     try {
@@ -651,13 +657,16 @@ function BookingSettingsSection() {
           bookingDepositPercent: Number(form.bookingDepositPercent),
           bookingSlug: form.bookingSlug.trim() || null,
           configPage: {
+            ...settings?.configPage,
             bookingTheme: bookingThemeFromConfig(settings?.configPage),
             maxAvailabilityPersons: maxPersonsValue === '' ? null : Number(maxPersonsValue),
+            ...(!DEMO_MODE ? { publicExtraBeds } : {}),
           },
         },
       });
       setOverrides({});
       setMaxPersonsDraft(null);
+      setExtraBedsDraft(null);
       setToast('Configuración de reservas guardada.');
       if (result.data) reload();
     } catch (err) {
@@ -729,13 +738,32 @@ function BookingSettingsSection() {
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-max-persons">Máximo de personas en disponibilidad</label>
                 <input id="booking-max-persons" className={`form-control ${maxPersonsInvalid ? 'is-invalid' : ''}`}
-                  type="number" min={1} max={settings?.hotelCapacity ?? 0} step={1}
-                  value={maxPersonsValue} placeholder={`Automático (${settings?.hotelCapacity ?? 0})`}
+                  type="number" min={1} max={publicCapacity} step={1}
+                  value={maxPersonsValue} placeholder={`Automático (${publicCapacity})`}
                   onChange={(event) => setMaxPersonsDraft(event.target.value)} />
-                <div className="form-text">Capacidad total del hotel: {settings?.hotelCapacity ?? 0} personas. Suma de la capacidad de las habitaciones activas, sin camas extra. Dejá vacío para usar el total automáticamente.</div>
-                {maxPersonsInvalid && <div className="invalid-feedback">Ingresá un entero entre 1 y {settings?.hotelCapacity ?? 0}, o dejá el campo vacío.</div>}
+                <div className="form-text">Capacidad base: {settings?.hotelCapacity ?? 0} personas. {publicExtraBeds.enabled && !extraBedsInvalid ? `Con camas extra: ${publicCapacity} personas.` : 'Las consultas públicas no incluyen camas extra.'} Dejá vacío para usar el total automáticamente.</div>
+                {maxPersonsInvalid && <div className="invalid-feedback">Ingresá un entero entre 1 y {publicCapacity}, o dejá el campo vacío.</div>}
               </div>
               </div>
+              <div className="form-check form-switch mt-3">
+                <input id="booking-public-extra-beds" className="form-check-input" type="checkbox" checked={publicExtraBeds.enabled} disabled={DEMO_MODE || servicesLoading || saving}
+                  onChange={(event) => setExtraBedsDraft({ ...publicExtraBeds, enabled: event.target.checked })} />
+                <label className="form-check-label" htmlFor="booking-public-extra-beds">Permitir consultas con camas extra</label>
+                <div className="form-text">El huésped podrá aceptar camas extra para su búsqueda. Desactivarlo no impide que recepción las agregue y cobre en reservas internas.</div>
+              </div>
+              {servicesError && <div className="text-danger small mt-2">No se pudieron cargar los servicios de cama extra.</div>}
+              {publicExtraBeds.enabled && (
+                <div className="mt-3">
+                  <label htmlFor="booking-extra-bed-service" className="form-label">Servicio para cotizar las camas extra</label>
+                  <select id="booking-extra-bed-service" className={`form-select ${extraBedsInvalid ? 'is-invalid' : ''}`} value={publicExtraBeds.serviceId ?? ''} disabled={servicesLoading || saving}
+                    onChange={(event) => setExtraBedsDraft({ ...publicExtraBeds, serviceId: event.target.value ? Number(event.target.value) : null })}>
+                    <option value="">Seleccioná un servicio activo de cama extra</option>
+                    {extraBedServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+                  </select>
+                  {extraBedsInvalid && <div className="invalid-feedback">Seleccioná un servicio activo marcado como cama extra. Podés crearlo en Servicios.</div>}
+                  <div className="form-text">Se respeta el máximo de camas extra de cada habitación. PACK: por cama por estadía; por día o persona: por cama por noche.</div>
+                </div>
+              )}
               <div className="form-check form-switch mt-3">
                 <input className="form-check-input" type="checkbox" id="booking-portal-enabled" defaultChecked={!DEMO_MODE} disabled />
                 <label className="form-check-label" htmlFor="booking-portal-enabled">{DEMO_MODE ? 'Portal de disponibilidad no incluido en la demo' : 'Portal de disponibilidad habilitado'}</label>
@@ -811,7 +839,7 @@ function BookingSettingsSection() {
               </button>
             </div>}
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || maxPersonsInvalid}>
+              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || maxPersonsInvalid || extraBedsInvalid}>
                 {saving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>

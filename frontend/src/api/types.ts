@@ -143,8 +143,8 @@ export interface BookingLink {
   nights: number;
   persons: number;
   extraBeds: number;
-  rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; number: string; typeName: string; capacity: number }[];
-  room: { id: number; number: string; typeName: string | null; capacity: number; price: number; pricingMode: 'PER_NIGHT' | 'PER_PERSON'; label: string } | null;
+  rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; number: string; typeName: string; capacity: number; amenities?: string[] }[];
+  room: { id: number; number: string; typeName: string | null; capacity: number; price: number; pricingMode: 'PER_NIGHT' | 'PER_PERSON'; label: string; amenities?: string[] } | null;
   services: BookingLinkLine[];
   totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
   roomPricingMode?: 'PER_NIGHT' | 'PER_PERSON';
@@ -180,16 +180,20 @@ export interface PublicAvailability {
     roomCount: number;
     persons: number;
     total: number;
-    rooms: { roomType: string; capacity: number; persons: number; total: number }[];
+    extraBeds: number;
+    roomTotal: number;
+    extraBedsTotal: number;
+    extraBedService: { name: string; price: number; chargeType: 'PER_DAY' | 'PER_PERSON' | 'PACK' } | null;
+    rooms: { roomType: string; capacity: number; persons: number; total: number; extraBeds: number; roomTotal: number; extraBedsTotal: number; amenities?: string[] }[];
   } | null;
   availableRoomCapacity: number;
   hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null };
-  stay: { checkIn: string; checkOut: string; nights: number; persons: number };
-  options: { roomType: string; available: number; capacity: number; fromPrice: number; total: number }[];
+  stay: { checkIn: string; checkOut: string; nights: number; persons: number; includesExtraBeds: boolean };
+  options: { roomType: string; available: number; capacity: number; fromPrice: number; total: number, amenities?: string[] }[];
 }
 
 export interface PublicBookingPageConfig {
-  hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; hotelCapacity: number; maxAvailabilityPersons: number };
+  hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; hotelCapacity: number; maxAvailabilityPersons: number; maxAvailabilityPersonsWithExtraBeds: number; publicExtraBedsEnabled: boolean; roomCount: number };
 }
 
 export interface ReceiptUploadUrl {
@@ -205,8 +209,9 @@ export interface CompanySettings {
   phone: string | null;
   bookingDepositPercent: number;
   bookingSlug: string | null;
-  configPage: { bookingTheme?: Partial<BookingTheme>; maxAvailabilityPersons?: number | null };
+  configPage: { bookingTheme?: Partial<BookingTheme>; maxAvailabilityPersons?: number | null; publicExtraBeds?: { enabled: boolean; serviceId: number | null } };
   hotelCapacity: number;
+  hotelCapacityWithExtraBeds?: number;
   maxAvailabilityPersons: number;
 }
 
