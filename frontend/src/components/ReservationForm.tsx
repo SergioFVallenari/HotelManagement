@@ -8,6 +8,8 @@ import { RoomSelection } from './RoomSelection';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { PaginationBar } from './pagination';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, PAYMENT_METHODS } from '../lib/format';
+import { serviceQuantity } from '../lib/pricing';
+import { serviceQuantityLabel } from '../lib/services';
 
 const SUGGESTED_DEPOSIT_RATE = 0.15;
 const DEPOSIT_METHODS: PaymentMethod[] = DEMO_MODE ? ['CASH', 'CARD', 'TRANSFER'] : ['CASH', 'CARD', 'TRANSFER', 'MERCADOPAGO'];
@@ -145,22 +147,14 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   }
 
   function maxPersons(): number {
-    return Math.max(1, persons + extraBeds);
+    return Math.max(1, persons);
   }
 
   function autoQuantity(
     service: Service,
     item?: { quantity: number; personsCovered?: number | null },
   ): number {
-    switch (service.chargeType) {
-      case 'PER_PERSON':
-        return (item?.personsCovered ?? maxPersons()) * nights();
-      case 'PER_DAY':
-        if (service.isExtraBed) return extraBeds > 0 ? extraBeds * nights() : nights();
-        return nights();
-      case 'PACK':
-        return item?.quantity ?? 1;
-    }
+    return serviceQuantity(service.chargeType, { persons, extraBeds, nights: nights(), roomCount: selectedRooms.length }, service.chargeType === 'PACK' ? item?.quantity : service.chargeType === 'PER_PERSON' ? item?.personsCovered ?? maxPersons() : undefined, service.isExtraBed, service.intervalDays);
   }
 
 useEffect(() => {
@@ -176,7 +170,7 @@ useEffect(() => {
     }),
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [checkIn, checkOut, persons, extraBeds]);
+}, [checkIn, checkOut, persons, extraBeds, selectedRooms.length]);
 
 function setPersonsCovered(serviceId: number, personsCovered: number | null) {
   setServices((prev) =>
@@ -288,7 +282,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         ...(deposit > 0 ? { payment: { amount: deposit, method: depositMethod } } : {}),
         services: services.map((s) => ({
           serviceId: s.service.id,
-          quantity: s.quantity,
+          quantity: Math.max(1, s.quantity),
           ...(s.personsCovered !== undefined && s.personsCovered !== null ? { personsCovered: s.personsCovered } : {}),
         })),
       };
@@ -447,6 +441,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                           {service.name} <span className="text-secondary small">({money(service.price)})</span>
                         </label>
                       </div>
+                      {service.description && <div className="small text-secondary text-break mt-1" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}
                       {selected && (
                         <div className="d-flex align-items-center gap-2 mt-2 flex-wrap">
                           {service.chargeType === 'PACK' ? (
@@ -488,7 +483,9 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                           ) : (
                             <span className="text-secondary small">
                               {selected.quantity} unidades ={' '}
-                              {service.isExtraBed
+                              {service.chargeType === 'PER_ROOM_INTERVAL'
+                                ? serviceQuantityLabel({ ...service, quantity: selected.quantity }, { persons, nights: nights() }, selectedRooms.length)
+                                : service.isExtraBed
                                 ? `${Math.max(1, extraBeds)} cama(s) extra(s) × ${nights()} noche(s)`
                                 : `${nights()} noche(s)`}{' '}
                               · {CHARGE_TYPES[service.chargeType]}

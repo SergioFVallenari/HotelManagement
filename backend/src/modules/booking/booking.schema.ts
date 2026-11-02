@@ -23,18 +23,32 @@ export const publicAvailabilityQuerySchema = z.object({
   checkIn: dateStringSchema,
   checkOut: dateStringSchema,
   persons: z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  roomTypeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  roomId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   roomCount: z.coerce.number().int().min(1).max(100).optional(),
+  services: z.string().max(10000).transform((value, ctx) => {
+    try { return JSON.parse(value) as unknown; }
+    catch { ctx.addIssue({ code: 'custom', message: 'Los servicios deben tener formato JSON válido' }); return z.NEVER; }
+  }).pipe(z.array(z.object({ serviceId: z.number().int().positive(), quantity: z.number().int().min(1).max(1000).optional() }).strict()).max(100)
+    .refine((lines) => new Set(lines.map((line) => line.serviceId)).size === lines.length, 'No repitas servicios')).optional(),
   includeExtraBeds: z.enum(['true', 'false']).transform((value) => value === 'true').optional().default(false),
   roomPersons: z.string().max(2000).regex(/^\d+(,\d+)*$/, 'La distribución debe contener cantidades de personas separadas por comas')
     .transform((value) => value.split(',').map(Number))
     .pipe(z.array(z.number().int().positive().max(Number.MAX_SAFE_INTEGER)).min(1).max(100)).optional(),
 }).superRefine((data, ctx) => {
+  if (data.roomId !== undefined && data.roomCount !== undefined && data.roomCount !== 1) ctx.addIssue({ code: 'custom', path: ['roomCount'], message: 'La consulta de una habitación seleccionada admite una sola habitación' });
   if (!Array.isArray(data.roomPersons)) return;
   if (data.roomCount !== data.roomPersons.length) ctx.addIssue({ code: 'custom', path: ['roomPersons'], message: 'La distribución debe coincidir con la cantidad de habitaciones' });
   if (data.roomPersons.reduce((sum, count) => sum + count, 0) !== data.persons) ctx.addIssue({ code: 'custom', path: ['roomPersons'], message: 'La suma de personas por habitación debe coincidir con el total' });
 });
 
 export type PublicAvailabilityQuery = z.infer<typeof publicAvailabilityQuerySchema>;
+
+export const publicCalendarQuerySchema = z.object({
+  from: dateStringSchema,
+  to: dateStringSchema,
+  roomTypeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
 
 export const bookingRoomSnapshotsSchema = z.array(z.object({
   roomId: z.number().int().positive(),

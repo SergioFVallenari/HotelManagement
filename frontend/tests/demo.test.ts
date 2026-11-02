@@ -44,6 +44,36 @@ test('un link grupal congela todas las tarifas y muestra la distribución sin n�
   assert.equal(approved.payments[0].amount, link.totals.deposit);
 });
 
+test('limpieza automática por habitación congela descripción y frecuencia al emitir el link', () => {
+  const api = createDemoApi(TODAY);
+  const service = api<{ data: Service }>('/services', { method: 'POST', body: { name: 'Limpieza adicional', description: 'Baño y recambio de toallas. No incluye sábanas.', price: 5000, chargeType: 'PER_ROOM_INTERVAL', intervalDays: 3 } }).data;
+  const rooms = [9, 10].map((roomId) => ({ roomId, persons: 2, extraBeds: 0 }));
+  const link = makeLink(api, { rooms, persons: 4, checkIn: '2026-12-01', checkOut: '2026-12-11', services: [{ serviceId: service.id, quantity: 999 }] });
+  assert.equal(link.services[0].quantity, 6);
+  assert.equal(link.totals.servicesTotal, 30000);
+  api(`/services/${service.id}`, { method: 'PUT', body: { description: 'Otra oferta', intervalDays: 1, price: 99000 } });
+  const quote = api<{ data: PublicBookingQuote }>(`/public/booking/${link.token}`).data;
+  assert.equal(quote.services[0].description, service.description);
+  assert.equal(quote.services[0].intervalDays, 3);
+  assert.equal(quote.services[0].lineTotal, 30000);
+  const reservation = submitLink(api, link);
+  assert.equal(reservation.services[0].description, service.description);
+  assert.equal(reservation.services[0].intervalDays, 3);
+  assert.equal(reservation.services[0].quantity, 6);
+  assert.equal(reservation.totals.total, link.totals.total);
+});
+
+test('limpieza sin intervenciones durante una estadía corta no genera cargos', () => {
+  const api = createDemoApi(TODAY);
+  const service = api<{ data: Service }>('/services', { method: 'POST', body: { name: 'Limpieza cada tres días', price: 5000, chargeType: 'PER_ROOM_INTERVAL', intervalDays: 3 } }).data;
+  const link = makeLink(api, { services: [{ serviceId: service.id, quantity: 1 }] });
+  assert.equal(link.services[0].quantity, 0);
+  assert.equal(link.totals.servicesTotal, 0);
+  const reservation = submitLink(api, link);
+  assert.equal(reservation.services[0].quantity, 0);
+  assert.equal(reservation.totals.servicesTotal, 0);
+});
+
 test('un conflicto en la última habitación rechaza todo el grupo sin ocupar las demás', () => {
   const api = createDemoApi(TODAY);
   api('/reservations', { method: 'POST', body: { ...draft, roomId: 12, persons: 4 } });

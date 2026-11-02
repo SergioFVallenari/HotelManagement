@@ -9,6 +9,7 @@ import {
   getPublicReservationStatus,
   getPublicAvailability,
   getPublicBookingPageConfig,
+  getPublicCalendar,
   listBookingLinks,
   submitBooking,
 } from './booking.service.js';
@@ -17,6 +18,7 @@ import {
   listBookingLinksQuerySchema,
   publicBookingSchema,
   publicAvailabilityQuerySchema,
+  publicCalendarQuerySchema,
   receiptUploadSchema,
 } from './booking.schema.js';
 import type { CreateBookingLinkInput, ListBookingLinksQuery, PublicBookingInput, ReceiptUploadInput } from './booking.schema.js';
@@ -63,6 +65,12 @@ export async function getPublicAvailabilityHandler(req: Request, res: Response):
 
 export async function getPublicBookingPageConfigHandler(req: Request, res: Response): Promise<void> {
   const data = await getPublicBookingPageConfig(String(req.params.slug));
+  res.json({ data });
+}
+
+export async function getPublicCalendarHandler(req: Request, res: Response): Promise<void> {
+  const query = publicCalendarQuerySchema.parse(req.query);
+  const data = await getPublicCalendar(String(req.params.slug), query);
   res.json({ data });
 }
 

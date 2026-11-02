@@ -7,6 +7,7 @@ import { RoomSelection } from './RoomSelection';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME } from '../lib/format';
 import { computeBookingDeposit, serviceQuantity } from '../lib/pricing';
+import { serviceQuantityLabel } from '../lib/services';
 
 interface Props {
   open: boolean;
@@ -70,13 +71,13 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
   }, [open]);
 
   const nights = checkIn && checkOut ? Math.max(1, nightsCount(checkIn, checkOut)) : 1;
-  const maxPersons = Math.max(1, persons + extraBeds);
+  const maxPersons = Math.max(1, persons);
 
   // Las cantidades se derivan en render: si cambian las fechas o las personas,
   // se recalculan solas y no hay estado duplicado que pueda quedar viejo.
   function quantityOf(service: Service, personsCovered: number | null): number {
     const requested = personsCovered === null ? null : Math.min(personsCovered, maxPersons);
-    return serviceQuantity(service.chargeType, { persons, extraBeds, nights }, requested, service.isExtraBed);
+    return serviceQuantity(service.chargeType, { persons, extraBeds, nights, roomCount: selectedRooms.length }, service.chargeType === 'PER_PERSON' ? requested ?? maxPersons : requested, service.isExtraBed, service.intervalDays);
   }
 
   const servicesTotal = round2(
@@ -144,7 +145,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
           extraBeds,
           services: services.map((item) => ({
             serviceId: item.service.id,
-            quantity: quantityOf(item.service, item.personsCovered),
+            quantity: Math.max(1, quantityOf(item.service, item.personsCovered)),
             ...(item.personsCovered !== null ? { personsCovered: item.personsCovered } : {}),
           })),
           ...(deposit !== undefined ? { deposit } : {}),
@@ -212,6 +213,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
                           {service.name} <span className="text-secondary small">({money(service.price)})</span>
                         </label>
                       </div>
+                      {service.description && <div className="small text-secondary text-break mt-1" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}
                       {selected && (
                         <div className="d-flex align-items-center gap-2 mt-2 flex-wrap">
                           {service.chargeType === 'PER_PERSON' ? (
@@ -241,7 +243,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
                             </>
                           ) : (
                             <span className="text-secondary small">
-                              {quantityOf(service, selected.personsCovered)} unidades · {CHARGE_TYPES[service.chargeType]}
+                              {quantityOf(service, selected.personsCovered)} unidades · {service.chargeType === 'PER_ROOM_INTERVAL' ? serviceQuantityLabel({ ...service, quantity: quantityOf(service, selected.personsCovered) }, { persons, nights }, selectedRooms.length) : CHARGE_TYPES[service.chargeType]}
                             </span>
                           )}
                         </div>

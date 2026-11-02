@@ -474,16 +474,16 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                   <tbody>
                     {reservation.services.map((s) => (
                       <tr key={s.id}>
-                        <td>{s.name}</td>
+                        <td>{s.name}{s.description && <div className="small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{s.description}</div>}</td>
                         <td>{s.quantity}</td>
                         <td className="text-secondary">
                           {s.chargeType === 'PER_PERSON'
                             ? s.personsCovered != null
-                              ? `${s.personsCovered} de ${reservation.persons + reservation.extraBeds}`
+                              ? `${s.personsCovered} de ${reservation.persons}`
                               : 'todas'
                             : '—'}
                         </td>
-                        <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}</td>
+                        <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}{s.chargeType === 'PER_ROOM_INTERVAL' && <div className="small">Cada {s.intervalDays} día(s), sin incluir el día de salida</div>}</td>
                         <td className="text-end">{money(s.lineTotal)}</td>
                       </tr>
                     ))}

@@ -23,7 +23,7 @@ const listInclude = {
   rooms: { include: { room: { include: { type: true } } }, orderBy: { id: 'asc' } },
   room: { select: { id: true, number: true, name: true, capacity: true, price: true } },
   guest: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
-  services: { include: { service: { select: { id: true, name: true, chargeType: true, isExtraBed: true } } } },
+  services: { include: { service: { select: { id: true, name: true, description: true, intervalDays: true, chargeType: true, isExtraBed: true } } } },
   payments: true,
   receipt: { select: { id: true, fileName: true, mimeType: true, size: true, externalRef: true, createdAt: true } },
 } as const;

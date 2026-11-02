@@ -57,7 +57,7 @@ async function buildAiContext(conversationId: string) {
     prisma.company.findUnique({ where: { id: conversation.companyId }, select: { name: true } }),
     prisma.service.findMany({
       where: { companyId: conversation.companyId, isActive: true },
-      select: { name: true, price: true, chargeType: true },
+      select: { name: true, description: true, intervalDays: true, price: true, chargeType: true },
     }),
     prisma.channelMessage.findMany({
       where: { conversationId, sentAt: { gte: conversation.account.connectedAt } },
@@ -106,6 +106,8 @@ async function buildAiContext(conversationId: string) {
       name: service.name,
       price: decToNum(service.price),
       chargeType: service.chargeType,
+      description: service.description,
+      intervalDays: service.intervalDays,
     })),
     rooms: room.map((item) => ({
       name: item.name,

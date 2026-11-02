@@ -287,6 +287,8 @@ export function PublicBookingPage() {
                     <div key={`${line.name}-${index}`}>
                       <span>
                         {line.name} <span className="text-secondary small">× {line.quantity}</span>
+                        {line.description && <span className="d-block small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{line.description}</span>}
+                        {line.chargeType === 'PER_ROOM_INTERVAL' && <span className="d-block small text-secondary">Cada {line.intervalDays} día(s), por habitación, sin incluir el día de salida.</span>}
                       </span>
                       <strong>{money(line.lineTotal)}</strong>
                     </div>

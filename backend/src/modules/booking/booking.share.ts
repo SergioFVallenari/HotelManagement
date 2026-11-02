@@ -9,6 +9,7 @@ export interface ShareStay {
   total: number;
   deposit: number;
   url: string;
+  services?: { name: string; description?: string | null; intervalDays?: number | null; chargeType: string; quantity: number; lineTotal: number }[];
 }
 
 export function formatArs(value: number): string {
@@ -26,12 +27,16 @@ export function formatDateShort(value: string): string {
 }
 
 export function buildShareMessage(stay: ShareStay): string {
+  const services = stay.services?.length ? '\n\nServicios incluidos:\n' + stay.services.map((line) => {
+    const frequency = line.chargeType === 'PER_ROOM_INTERVAL' ? ` · cada ${line.intervalDays} días, por habitación, sin incluir la salida` : '';
+    return `${line.name} × ${line.quantity}${frequency}: $${formatArs(line.lineTotal)}${line.description ? `\nIncluye: ${line.description}` : ''}`;
+  }).join('\n') : '';
   return (
     `¡Hola! Te dejo el link para reservar en ${stay.hotelName}: ${stay.roomLabel}, ` +
     `del ${formatDateShort(stay.checkIn)} al ${formatDateShort(stay.checkOut)} (${stay.nights} ${stay.nights === 1 ? 'noche' : 'noches'}). ` +
     `Total $${formatArs(stay.total)}. ` +
     `Para reservar tenés que transferir $${formatArs(stay.deposit)}. ` +
-    `${stay.url}`
+    `${stay.url}${services}`
   );
 }
 

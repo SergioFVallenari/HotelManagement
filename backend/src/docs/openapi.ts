@@ -140,6 +140,7 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/public/booking/{token}/receipt', 'post'],
   ['/api/public/availability/{slug}', 'get'],
   ['/api/public/availability/{slug}/config', 'get'],
+  ['/api/public/availability/{slug}/calendar', 'get'],
 ];
 
 const componentSchemas: Record<string, Json> = {
@@ -1705,15 +1706,18 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Consultar disponibilidad y cotización orientativa',
-      description: 'Público. Devuelve habitaciones libres, tipos y una combinación sugerida con amenities. Prioriza menos habitaciones y luego menor precio. Sin includeExtraBeds usa solo capacidad base. Con includeExtraBeds=true solo admite camas extra si el hotel habilitó publicExtraBeds y su servicio seleccionado sigue activo y marcado como cama extra. En ese caso devuelve una única combinación (options vacío), respeta maxExtraBeds por habitación y desglosa extraBeds, roomTotal, extraBedsTotal y extraBedService. Las personas de cada línea incluyen a quienes usan camas extra; su tarifa no se duplica en el precio base PER_PERSON. PACK cobra por cama y estadía; PER_DAY/PER_PERSON por cama y noche. No expone números ni datos de huéspedes. Rate limit: 30 / 10 min por IP.',
+      description: 'Público. Con roomId cotiza exclusivamente la habitación seleccionada en el calendario y devuelve su identificación real en stay.room, sin alternativas. Sin roomId devuelve habitaciones libres, una combinación sugerida y options seleccionables por tipo. Cada opción incluye su propia combination completa, roomCount, roomTotal, servicios y total para poder elegirla y compartirla por WhatsApp. Las alternativas también contemplan grupos y camas extra, respetando la distribución solicitada. La combinación sugerida prioriza menos habitaciones y luego menor precio. Sin includeExtraBeds usa solo capacidad base. Con includeExtraBeds=true solo admite camas extra si el hotel habilitó publicExtraBeds y su servicio seleccionado sigue activo y marcado como cama extra. Respeta maxExtraBeds por habitación y desglosa extraBeds, roomTotal, extraBedsTotal y extraBedService. Las personas de cada línea incluyen a quienes usan camas extra; su tarifa no se duplica en el precio base PER_PERSON. PACK cobra por cama y estadía; PER_DAY/PER_PERSON por cama y noche. No expone datos de huéspedes. Rate limit: 30 / 10 min por IP.',
       security: publicSecurity,
       parameters: [
         { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
         queryParam('checkIn', 'Fecha de entrada YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
         queryParam('checkOut', 'Fecha de salida YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
         queryParam('persons', 'Cantidad de personas, hasta el máximo informado por la configuración pública del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
+        queryParam('roomTypeId', 'Tipo de habitación elegido entre hotel.roomTypes de /config. Opcional: al omitirlo combina cualquier tipo. Filtra opciones, combinación, capacidad y cantidad de habitaciones. Solo acepta tipos del hotel con habitaciones activas. stay.roomType devuelve el nombre solicitado, incluso sin disponibilidad.', { schema: { type: 'integer', minimum: 1 } }),
+        queryParam('roomId', 'Habitación elegida en el calendario. Debe estar activa, pertenecer al hotel y coincidir con roomTypeId si se envía. Cotiza exclusivamente esa habitación, limita personas a su capacidad y camas extra habilitadas, fuerza una sola habitación y devuelve options vacío. stay.room contiene id, número, nombre, capacidad y máximo de camas extra reales. Si se ocupó, devuelve combination=null y availableRoomCount=0 sin sustituirla por otra. No crea ni bloquea una reserva.', { schema: { type: 'integer', minimum: 1 } }),
         queryParam('roomCount', 'Cantidad exacta de habitaciones. Si se omite, combina automáticamente la menor cantidad posible.', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
         queryParam('includeExtraBeds', 'Aceptación del huésped para agregar camas extra. Por defecto false; nunca habilita un servicio que el hotel no haya publicado.', { schema: { type: 'boolean', default: false } }),
+        queryParam('services', 'Array JSON de {serviceId, quantity?}. Solo servicios activos publicados por el hotel. quantity se usa solo para PACK (1 por defecto); PER_PERSON cobra por todos los huéspedes y noches, PER_DAY por noche. PER_ROOM_INTERVAL cobra por habitación e intervención cada intervalDays, sin incluir check-in ni check-out: floor((noches-1)/intervalDays) × habitaciones. Devuelve services con descripción, frecuencia, cantidades, unitPrice y lineTotal, servicesTotal y totales incluyendo servicios. Cada opción tiene su propio desglose de servicios según la cantidad de habitaciones.', { schema: { type: 'string' } }),
         queryParam('roomPersons', 'Personas por habitación separadas por comas (ejemplo: 3,1). Requiere roomCount, igual cantidad de valores y suma igual a persons. Busca el menor precio respetando esta distribución.', { schema: { type: 'string', pattern: '^\\d+(,\\d+)*$' } }),
       ],
       responses: {
@@ -1723,11 +1727,38 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/public/availability/{slug}/calendar': {
+    get: op({
+      tags: ['Disponibilidad pública'],
+      summary: 'Consultar calendario público por tipo de habitación',
+      description: 'Público. Habitaciones activas del hotel con número y nombre reales. Cada celda contiene únicamente available (disponibilidad por noche); no expone reservas ni huéspedes. Bloquean PENDING, RESERVED y CHECKED_IN, incluidas reservas grupales. Rango inclusivo de hasta 62 días. Rate limit: 120 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [
+        { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+        queryParam('roomTypeId', 'Tipo de habitación del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
+        queryParam('from', 'Primer día del calendario', { required: true, schema: { type: 'string', format: 'date' } }),
+        queryParam('to', 'Último día del calendario', { required: true, schema: { type: 'string', format: 'date' } }),
+      ],
+      responses: {
+        '200': ok({ type: 'object', properties: {
+          from: { type: 'string', format: 'date' }, to: { type: 'string', format: 'date' },
+          days: { type: 'array', items: { type: 'string', format: 'date' } },
+          rooms: { type: 'array', items: { type: 'object', properties: {
+            id: { type: 'integer' }, number: { type: 'string' }, name: { type: ['string', 'null'] }, typeName: { type: ['string', 'null'] },
+            capacity: { type: 'integer', minimum: 1 }, maxExtraBeds: { type: 'integer', minimum: 0 },
+            cells: { type: 'array', items: { type: 'object', properties: { available: { type: 'boolean' } }, required: ['available'] } },
+          }, required: ['id', 'number', 'name', 'typeName', 'capacity', 'maxExtraBeds', 'cells'] } },
+        }, required: ['from', 'to', 'days', 'rooms'] }),
+        ...errors({ '404': '`NOT_FOUND`: alojamiento inexistente' }),
+      },
+    }),
+  },
+
   '/api/public/availability/{slug}/config': {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Obtener identidad visual pública del hotel',
-      description: 'Público. Devuelve nombre, contacto y tema visual configurado para las páginas públicas del hotel identificado por slug.',
+      description: 'Público. Devuelve nombre, contacto, tema visual, capacidad, configuración de camas extra, roomTypes (tipos con habitaciones activas, cantidad y límites de personas con/sin camas extra) y publicServices (id, nombre, precio y modalidad de cobro de servicios activos habilitados por el hotel).',
       security: publicSecurity,
       parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
       responses: {

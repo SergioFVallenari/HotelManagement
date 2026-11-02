@@ -7,6 +7,15 @@ const room = (capacity: number, price = 100, pricingMode: AvailableRoom['pricing
   roomType: 'Estándar', capacity, price, pricingMode,
 });
 
+test('el tipo de habitación en la consulta es opcional y debe ser un identificador positivo entero', () => {
+  const query = { checkIn: '2027-01-10', checkOut: '2027-01-12', persons: '2' };
+  assert.equal(publicAvailabilityQuerySchema.parse(query).roomTypeId, undefined);
+  assert.equal(publicAvailabilityQuerySchema.parse({ ...query, roomTypeId: '4' }).roomTypeId, 4);
+  for (const roomTypeId of ['0', '-1', '1.5', 'doble', '', '9007199254740992']) {
+    assert.equal(publicAvailabilityQuerySchema.safeParse({ ...query, roomTypeId }).success, false);
+  }
+});
+
 test('16 personas se distribuyen en cuatro habitaciones cuádruples', () => {
   const result = allocateAvailableRooms(Array.from({ length: 4 }, () => room(4)), 16, 2);
   assert.equal(result?.roomCount, 4);

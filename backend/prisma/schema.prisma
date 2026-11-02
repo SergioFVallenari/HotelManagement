@@ -149,11 +149,14 @@ enum ServiceChargeType {
   PER_PERSON
   PER_DAY
   PACK
+  PER_ROOM_INTERVAL
 }
 
 model Service {
   id           Int                  @id @default(autoincrement())
   name         String
+  description  String?              @db.Text
+  intervalDays Int?
   price        Decimal              @db.Decimal(10, 2)
   chargeType   ServiceChargeType    @default(PACK)
   isExtraBed   Boolean              @default(false)
@@ -305,6 +308,11 @@ model ReservationService {
   id            Int         @id @default(autoincrement())
   reservationId Int
   serviceId     Int
+  name          String?
+  description   String?     @db.Text
+  chargeType    ServiceChargeType?
+  intervalDays  Int?
+  isExtraBed    Boolean?
   quantity      Int         @default(1)
   personsCovered Int?
   unitPrice     Decimal     @db.Decimal(10, 2)

@@ -46,6 +46,18 @@ describe('buildShareMessage', () => {
     const message = buildShareMessage({ ...stay, nights: 1 });
     assert.match(message, /1 noche\)/);
   });
+
+  it('comparte las inclusiones y la frecuencia de los servicios congelados', () => {
+    const message = buildShareMessage({ ...stay, services: [
+      { name: 'Spa', chargeType: 'PACK', quantity: 1, lineTotal: 20000, description: 'Una sesión de 60 minutos para una persona.' },
+      { name: 'Limpieza', chargeType: 'PER_ROOM_INTERVAL', intervalDays: 3, quantity: 6, lineTotal: 30000, description: 'Baño y toallas.' },
+    ] });
+    assert.ok(message.includes('Servicios incluidos:'));
+    assert.ok(message.includes('Spa × 1: $20.000'));
+    assert.ok(message.includes('Incluye: Una sesión de 60 minutos para una persona.'));
+    assert.ok(message.includes('cada 3 días, por habitación, sin incluir la salida'));
+    assert.ok(message.includes(stay.url));
+  });
 });
 
 describe('normalizeWhatsAppPhone', () => {
@@ -88,7 +100,7 @@ describe('parseServiceLines', () => {
       { serviceId: 3, name: 'Desayuno', chargeType: 'PER_PERSON', quantity: 6, personsCovered: 2, unitPrice: 8000, lineTotal: 48000 },
     ]);
     assert.deepEqual(lines, [
-      { serviceId: 3, name: 'Desayuno', chargeType: 'PER_PERSON', quantity: 6, personsCovered: 2, unitPrice: 8000, lineTotal: 48000 },
+      { serviceId: 3, name: 'Desayuno', description: null, intervalDays: null, chargeType: 'PER_PERSON', quantity: 6, personsCovered: 2, unitPrice: 8000, lineTotal: 48000 },
     ]);
   });
 
@@ -108,5 +120,16 @@ describe('parseServiceLines', () => {
     const [line] = parseServiceLines([{ serviceId: 1, name: 'Cochera', chargeType: 'PER_DAY', quantity: 2, unitPrice: '1500.50', lineTotal: '3001.00' }]);
     assert.equal(line.unitPrice, 1500.5);
     assert.equal(line.lineTotal, 3001);
+  });
+
+  it('conserva descripción, frecuencia y cantidades congeladas sin depender del catálogo', () => {
+    const snapshot = [{ serviceId: 4, name: 'Limpieza', description: 'Baño y recambio de toallas. No incluye sábanas.', intervalDays: 3, chargeType: 'PER_ROOM_INTERVAL', isExtraBed: false, quantity: 6, personsCovered: null, unitPrice: 5000, lineTotal: 30000 }];
+    const lines = parseServiceLines(snapshot);
+    snapshot[0].description = 'Otra descripción';
+    snapshot[0].intervalDays = 1;
+    assert.equal(lines[0].description, 'Baño y recambio de toallas. No incluye sábanas.');
+    assert.equal(lines[0].intervalDays, 3);
+    assert.equal(lines[0].quantity, 6);
+    assert.equal(lines[0].lineTotal, 30000);
   });
 });

@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma, type BookingLinkStatus } from '../../generated/prisma/client.js';
+import { getCalendar } from '../calendar/calendar.service.js';
+import { publicCalendarData } from '../../lib/calendar.js';
+import { Prisma, type BookingLinkStatus, type ServiceChargeType } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
 import { assertValidRange, nightsBetween, parseDate, todayHotel } from '../../lib/date.js';
-import { computeBookingDeposit, quoteStay, roomStayTotal } from '../../lib/pricing.js';
+import { computeBookingDeposit, quoteStay } from '../../lib/pricing.js';
 import { bookingRoomSnapshotsSchema } from './booking.schema.js';
 import { getTenantId, withTenant } from '../../lib/tenant.js';
 import { createReservation, getPublicReservationByCode, loadServices } from '../reservations/reservations.service.js';
@@ -18,7 +20,8 @@ import type {
 } from './booking.schema.js';
 import { publicPageConfigSchema } from '../companies/companies.schema.js';
 import { getBookingCapacity } from './booking.capacity.js';
-import { allocateAvailableRooms } from '../../lib/availability.js';
+import { quoteAvailabilityChoices } from '../../lib/availabilityChoices.js';
+import { publicRoomTypeOptions } from '../../lib/bookingCapacity.js';
 import { roomSelectionsTotal, type RoomSnapshot } from '../../lib/reservationRooms.js';
 import { loadReservationRooms, roomOverlapWhere } from '../reservations/reservationRooms.service.js';
 import { generateBookingToken } from './booking.token.js';
@@ -51,15 +54,32 @@ export async function getPublicBookingPageConfig(slug: string) {
     select: { id: true, name: true, whatsapp: true, phone: true, configPage: true },
   });
   if (!company) throw notFound('No encontramos este alojamiento');
+  const capacity = await getBookingCapacity(company.id, company.configPage);
+  const config = publicPageConfigSchema.safeParse(company.configPage);
+  const types = await prisma.roomType.findMany({
+    where: { companyId: company.id, rooms: { some: { companyId: company.id, isActive: true } } },
+    select: { id: true, name: true, rooms: { where: { companyId: company.id, isActive: true }, select: { capacity: true, maxExtraBeds: true } } },
+    orderBy: { name: 'asc' },
+  });
   return {
     hotel: {
-      ...await getBookingCapacity(company.id, company.configPage),
+      ...capacity,
+      roomTypes: publicRoomTypeOptions(types, capacity.publicExtraBedsEnabled, config.success ? config.data.maxAvailabilityPersons : null),
       name: company.name,
       whatsapp: company.whatsapp,
       phone: company.phone,
       bookingTheme: publicBookingTheme(company.configPage),
     },
   };
+}
+
+export async function getPublicCalendar(slug: string, query: { from: string; to: string; roomTypeId: number }) {
+  const company = await prisma.company.findUnique({ where: { bookingSlug: slug.toLowerCase() }, select: { id: true } });
+  if (!company) throw notFound('No encontramos este alojamiento');
+  const type = await prisma.roomType.findFirst({ where: { id: query.roomTypeId, companyId: company.id }, select: { id: true } });
+  if (!type) throw badRequest('El tipo de habitación seleccionado no pertenece a este alojamiento');
+  const calendar = await getCalendar({ ...query, companyId: company.id, publicView: true });
+  return publicCalendarData(calendar);
 }
 
 export async function getPublicAvailability(slug: string, query: PublicAvailabilityQuery) {
@@ -69,11 +89,22 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
   });
   if (!company) throw notFound('No encontramos este alojamiento');
 
-  const capacity = await getBookingCapacity(company.id, company.configPage);
+  const selectedRoomType = query.roomTypeId !== undefined ? await prisma.roomType.findFirst({
+    where: { id: query.roomTypeId, companyId: company.id },
+    select: { name: true },
+  }) : null;
+  const capacity = await getBookingCapacity(company.id, company.configPage, query.roomTypeId);
+  if (query.roomTypeId !== undefined && (!selectedRoomType || capacity.roomCount === 0)) throw badRequest('El tipo de habitación seleccionado no está habilitado para este alojamiento');
   const service = query.includeExtraBeds ? capacity.publicExtraBedService ?? undefined : undefined;
-  const maxAvailabilityPersons = service ? capacity.maxAvailabilityPersonsWithExtraBeds : capacity.maxAvailabilityPersons;
+  const selectedRoom = query.roomId !== undefined ? await prisma.room.findFirst({
+    where: { id: query.roomId, companyId: company.id, isActive: true, ...(query.roomTypeId !== undefined ? { typeId: query.roomTypeId } : {}) },
+    select: { id: true, number: true, name: true, capacity: true, maxExtraBeds: true, type: { select: { name: true } } },
+  }) : null;
+  if (query.roomId !== undefined && !selectedRoom) throw badRequest('La habitación seleccionada no está habilitada para este alojamiento y tipo');
+  const hotelLimit = service ? capacity.maxAvailabilityPersonsWithExtraBeds : capacity.maxAvailabilityPersons;
+  const maxAvailabilityPersons = selectedRoom ? Math.min(hotelLimit, selectedRoom.capacity + (service ? selectedRoom.maxExtraBeds : 0)) : hotelLimit;
   const roomCount = capacity.roomCount;
-  if (query.roomCount && query.roomCount > roomCount) throw badRequest('La cantidad solicitada supera las habitaciones habilitadas del alojamiento');
+  if (query.roomCount && query.roomCount > roomCount) throw badRequest('La cantidad solicitada supera las habitaciones habilitadas para esta búsqueda');
   if (query.roomCount && query.roomCount > query.persons) throw badRequest('La cantidad de habitaciones no puede superar la cantidad de personas');
   if (query.persons > maxAvailabilityPersons) {
     throw badRequest(`La consulta admite hasta ${maxAvailabilityPersons} personas.`);
@@ -90,6 +121,8 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
     where: {
       companyId: company.id,
       isActive: true,
+      ...(query.roomId !== undefined ? { id: query.roomId } : {}),
+      ...(query.roomTypeId !== undefined ? { typeId: query.roomTypeId } : {}),
       reservations: {
         none: {
           status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
@@ -99,35 +132,30 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
       },
       reservationRooms: { none: { reservation: { companyId: company.id, status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } } } },
     },
-    select: { typeId: true, capacity: true, maxExtraBeds: true, price: true, pricingMode: true, type: { select: { name: true } }, amenities: true },
+    select: { id: true, typeId: true, capacity: true, maxExtraBeds: true, price: true, pricingMode: true, type: { select: { name: true } }, amenities: true },
     orderBy: { id: 'asc' },
   });
 
-  const grouped = new Map<number, { name: string; count: number; capacity: number; price: number; total: number; amenities: string[] }>();
-  for (const room of rooms) {
-    if (room.capacity < query.persons) continue;
-    const current = grouped.get(room.typeId);
-    const price = decToNum(room.price);
-    const total = roomStayTotal(room.pricingMode, price, nights, query.persons);
-    if (!current) grouped.set(room.typeId, { name: room.type.name, count: 1, capacity: room.capacity, price, total, amenities: room.amenities });
-    else {
-      current.count += 1;
-      current.capacity = Math.max(current.capacity, room.capacity);
-      current.price = Math.min(current.price, price);
-      current.total = Math.min(current.total, total);
-      current.amenities = [...new Set([...current.amenities, ...room.amenities])];
-    }
-  }
-
-  const allocation = allocateAvailableRooms(rooms.map((room) => ({
-    roomType: room.type.name,
-    capacity: room.capacity,
-    maxExtraBeds: room.maxExtraBeds,
-    price: decToNum(room.price),
-    pricingMode: room.pricingMode,
-    amenities: room.amenities,
-  })), query.persons, nights, query.roomCount, query.roomPersons, service);
-  const extraBeds = allocation?.rooms.reduce((sum, room) => sum + room.extraBeds, 0) ?? 0;
+  const choices = quoteAvailabilityChoices({
+    rooms: rooms.map((room) => ({
+      id: room.id,
+      typeId: room.typeId,
+      roomType: room.type.name,
+      capacity: room.capacity,
+      maxExtraBeds: room.maxExtraBeds,
+      price: decToNum(room.price),
+      pricingMode: room.pricingMode,
+      amenities: room.amenities,
+    })),
+    persons: query.persons,
+    selectedRoomId: query.roomId,
+    nights,
+    roomCount: query.roomCount,
+    roomPersons: query.roomPersons,
+    extraBedService: service,
+    publicServices: capacity.publicServices,
+    services: query.services ?? [],
+  });
 
   return {
     hotel: {
@@ -136,24 +164,14 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
       phone: company.phone,
       bookingTheme: publicBookingTheme(company.configPage),
     },
-    stay: { checkIn: query.checkIn, checkOut: query.checkOut, nights, persons: query.persons, includesExtraBeds: service !== undefined },
+    stay: {
+      checkIn: query.checkIn, checkOut: query.checkOut, nights, persons: query.persons,
+      includesExtraBeds: service !== undefined, roomType: selectedRoom?.type.name ?? selectedRoomType?.name ?? null,
+      ...(selectedRoom ? { room: { id: selectedRoom.id, number: selectedRoom.number, name: selectedRoom.name, capacity: selectedRoom.capacity, maxExtraBeds: selectedRoom.maxExtraBeds } } : {}),
+    },
     availableRoomCount: rooms.length,
+    ...choices,
     availableRoomCapacity: rooms.reduce((max, room) => Math.max(max, room.capacity), 0),
-    combination: allocation ? {
-      ...allocation,
-      extraBeds,
-      roomTotal: round2(allocation.rooms.reduce((sum, room) => sum + room.roomTotal, 0)),
-      extraBedsTotal: round2(allocation.rooms.reduce((sum, room) => sum + room.extraBedsTotal, 0)),
-      extraBedService: extraBeds > 0 ? service : null,
-    } : null,
-    options: (service || (query.roomCount && query.roomCount > 1) ? [] : [...grouped.values()]).map((option) => ({
-      roomType: option.name,
-      available: option.count,
-      capacity: option.capacity,
-      fromPrice: option.price,
-      total: option.total,
-      amenities: option.amenities,
-    })),
   };
 }
 
@@ -235,6 +253,7 @@ export function serializeBookingLink(row: BookingLinkRow) {
         total,
         deposit,
         url,
+        services: lines,
       })
     : '';
 
@@ -308,6 +327,9 @@ export function serializePublicQuote(row: BookingLinkRow) {
     },
     services: lines.map((l) => ({
       name: l.name,
+      description: l.description ?? null,
+      chargeType: l.chargeType,
+      intervalDays: l.intervalDays ?? null,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
       lineTotal: l.lineTotal,
@@ -347,10 +369,13 @@ export async function createBookingLink(input: CreateBookingLinkInput) {
   }
 
   const nights = nightsBetween(checkIn, checkOut);
-  const services = await loadServices(input.services, { persons, extraBeds, nights });
+  const services = await loadServices(input.services, { persons, extraBeds, nights, roomCount: rooms.length });
   const lines: BookingServiceLine[] = services.map((s) => ({
     serviceId: s.id,
     name: s.name,
+    description: s.description,
+    intervalDays: s.intervalDays,
+    isExtraBed: s.isExtraBed,
     chargeType: s.chargeType,
     quantity: s.quantity,
     personsCovered: s.personsCovered,
@@ -574,7 +599,7 @@ export async function submitBooking(token: string, guest: PublicBookingInput) {
           skipPaymentLink: true,
           bookingLinkId: row.id,
           rooms: bookingRooms(row),
-          serviceLines: lines.map((line) => ({ serviceId: line.serviceId, quantity: line.quantity, personsCovered: line.personsCovered, unitPrice: line.unitPrice })),
+          serviceLines: lines.map((line) => ({ serviceId: line.serviceId, name: line.name, description: line.description ?? null, chargeType: line.chargeType as ServiceChargeType, intervalDays: line.intervalDays ?? null, isExtraBed: line.isExtraBed, quantity: line.quantity, personsCovered: line.personsCovered, unitPrice: line.unitPrice })),
           roomPrice: decToNum(row.roomPrice ?? row.room?.price),
           roomPricingMode: row.roomPricingMode ?? row.room?.pricingMode ?? 'PER_NIGHT',
           ...(receipt

@@ -1,7 +1,7 @@
 import type { BookingLink, CalendarData, CompanySettings, Guest, PaymentMethod, Reservation, ReservationStatus, Room, Service, Summary } from '../api/types.ts';
 import { BOOKING_THEME_FIELDS, bookingThemeFromConfig, DEFAULT_BOOKING_THEME } from '../lib/bookingTheme.ts';
 import { round2 } from '../lib/format.ts';
-import { computeBookingDeposit } from '../lib/pricing.ts';
+import { computeBookingDeposit, serviceQuantity } from '../lib/pricing.ts';
 import { createDemoData, dayRange, demoUser, shiftDay, updateTotals, type DemoData } from './data.ts';
 
 export class DemoApiError extends Error {
@@ -135,8 +135,10 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
     const lines = ((input.services ?? []) as Input[]).map((line, index) => {
       const service = requireRow(store.services, Number(line.serviceId));
       if (!service.isActive) throw new DemoApiError('El servicio está inactivo.');
-      const quantity = positive(line.quantity, 'La cantidad del servicio');
-      return { id: index + 1, serviceId: service.id, name: service.name, chargeType: service.chargeType, isExtraBed: service.isExtraBed, personsCovered: line.personsCovered == null ? null : Number(line.personsCovered), quantity, unitPrice: service.price, lineTotal: round2(quantity * service.price) };
+      const quantity = service.chargeType === 'PER_ROOM_INTERVAL'
+        ? serviceQuantity(service.chargeType, { persons: stay.persons, extraBeds: stay.extraBeds, nights: stay.nights, roomCount: stay.rooms.length }, undefined, false, service.intervalDays)
+        : positive(line.quantity, 'La cantidad del servicio');
+      return { id: index + 1, serviceId: service.id, name: service.name, description: service.description ?? null, intervalDays: service.intervalDays ?? null, chargeType: service.chargeType, isExtraBed: service.isExtraBed, personsCovered: line.personsCovered == null ? null : Number(line.personsCovered), quantity, unitPrice: service.price, lineTotal: round2(quantity * service.price) };
     });
     const roomTotal = round2(stay.rooms.reduce((sum, line) => sum + line.total, 0));
     const servicesTotal = round2(lines.reduce((sum, line) => sum + line.lineTotal, 0));
@@ -313,8 +315,11 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
         saved = { id: rowId, number, name: name || null, typeId: type.id, type, capacity, maxExtraBeds, price: round2(price), pricingMode: values.pricingMode, amenities: values.amenities, isActive: values.isActive !== false } as Room;
       } else if (kind === 'services') {
         const price = Number(values.price);
-        if (!name || !Number.isFinite(price) || price < 0 || !['PER_PERSON', 'PER_DAY', 'PACK'].includes(text(values.chargeType))) throw new DemoApiError('Completá los datos válidos del servicio.');
-        saved = { id: rowId, name, price: round2(price), chargeType: values.chargeType, isExtraBed: values.isExtraBed === true, isActive: values.isActive !== false } as Service;
+        const description = text(values.description) || null;
+        const intervalDays = values.intervalDays == null ? null : Number(values.intervalDays);
+        if (!name || !Number.isFinite(price) || price < 0 || !['PER_PERSON', 'PER_DAY', 'PACK', 'PER_ROOM_INTERVAL'].includes(text(values.chargeType)) || (description && description.length > 1000)) throw new DemoApiError('Completá los datos válidos del servicio.');
+        if (values.chargeType === 'PER_ROOM_INTERVAL' ? !Number.isInteger(intervalDays) || intervalDays! < 1 || intervalDays! > 365 || values.isExtraBed === true : intervalDays !== null) throw new DemoApiError('La frecuencia del servicio no es válida.');
+        saved = { id: rowId, name, description, intervalDays, price: round2(price), chargeType: values.chargeType, isExtraBed: values.isExtraBed === true, isActive: values.isActive !== false } as Service;
       } else if (kind === 'room-types') {
         if (!name) throw new DemoApiError('Indicá el nombre del tipo de habitación.');
         if (store.roomTypes.some((t) => t.id !== rowId && t.name.toLowerCase() === name.toLowerCase())) throw new DemoApiError('Ya existe ese tipo de habitación.', 409);

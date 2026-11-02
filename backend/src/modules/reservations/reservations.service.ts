@@ -57,7 +57,12 @@ export interface ReservationRow {
     quantity: number;
     personsCovered: number | null;
     unitPrice: unknown;
-    service?: { id: number; name: string; chargeType: ServiceChargeType; isExtraBed: boolean } | null;
+    name?: string | null;
+    description?: string | null;
+    chargeType?: ServiceChargeType | null;
+    intervalDays?: number | null;
+    isExtraBed?: boolean | null;
+    service?: { id: number; name: string; description?: string | null; intervalDays?: number | null; chargeType: ServiceChargeType; isExtraBed: boolean } | null;
   }[];
   payments?: {
     id: number;
@@ -144,9 +149,11 @@ export function serializeReservation(row: ReservationRow) {
     services: (row.services ?? []).map((s) => ({
       id: s.id,
       serviceId: s.serviceId,
-      name: s.service?.name ?? null,
-      chargeType: s.service?.chargeType ?? null,
-      isExtraBed: s.service?.isExtraBed ?? false,
+      name: s.name ?? s.service?.name ?? null,
+      description: s.name != null ? s.description ?? null : s.service?.description ?? null,
+      intervalDays: s.name != null ? s.intervalDays ?? null : s.service?.intervalDays ?? null,
+      chargeType: s.chargeType ?? s.service?.chargeType ?? null,
+      isExtraBed: s.isExtraBed ?? s.service?.isExtraBed ?? false,
       personsCovered: s.personsCovered,
       quantity: s.quantity,
       unitPrice: decToNum(s.unitPrice),
@@ -196,7 +203,7 @@ function generateCode(): string {
   return `RSV-${Date.now().toString(36).toUpperCase()}${rand}`;
 }
 
-export async function loadServices(items: ServiceInput[], ctx: { persons: number; extraBeds: number; nights: number }) {
+export async function loadServices(items: ServiceInput[], ctx: { persons: number; extraBeds: number; nights: number; roomCount?: number }) {
   const ids = [...new Set(items.map((i) => i.serviceId))];
   const services = await prisma.service.findMany({
     where: { id: { in: ids }, isActive: true },
@@ -206,20 +213,23 @@ export async function loadServices(items: ServiceInput[], ctx: { persons: number
   const byId = new Map(services.map((s) => [s.id, s]));
   return items.map((item) => {
     const service = byId.get(item.serviceId)!;
-    const maxPersons = ctx.persons + ctx.extraBeds;
+    const maxPersons = ctx.persons;
     if (service.chargeType === 'PER_PERSON' && item.personsCovered != null && (item.personsCovered < 1 || item.personsCovered > maxPersons)) {
       throw badRequest(`La cantidad de personas del servicio "${service.name}" debe estar entre 1 y ${maxPersons}`);
     }
     return {
       id: service.id,
       name: service.name,
+      description: service.description,
+      intervalDays: service.intervalDays,
       chargeType: service.chargeType,
       isExtraBed: service.isExtraBed,
       quantity: serviceQuantity(
         service.chargeType,
         ctx,
-        service.chargeType === 'PACK' ? item.quantity : service.chargeType === 'PER_PERSON' ? (item.personsCovered ?? undefined) : undefined,
+        service.chargeType === 'PACK' ? item.quantity : service.chargeType === 'PER_PERSON' ? (item.personsCovered ?? ctx.persons) : undefined,
         service.isExtraBed,
+        service.intervalDays,
       ),
       personsCovered: service.chargeType === 'PER_PERSON' && item.personsCovered != null ? item.personsCovered : null,
       price: service.price,
@@ -250,7 +260,7 @@ export interface CreateReservationOptions {
   roomPrice?: number;
   roomPricingMode?: RoomPricingMode;
   rooms?: RoomSnapshot[];
-  serviceLines?: { serviceId: number; quantity: number; personsCovered: number | null; unitPrice: number }[];
+  serviceLines?: { serviceId: number; name?: string; description?: string | null; chargeType?: ServiceChargeType; intervalDays?: number | null; isExtraBed?: boolean; quantity: number; personsCovered: number | null; unitPrice: number }[];
 }
 
 export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
@@ -266,11 +276,11 @@ export async function createReservation(input: CreateReservationInput, options: 
   const extraBeds = rooms.reduce((sum, line) => sum + line.extraBeds, 0);
 
   const nights = nightsBetween(checkIn, checkOut);
-  const services = options.serviceLines ? [] : await loadServices(input.services ?? [], { persons, extraBeds, nights });
+  const services = options.serviceLines ? [] : await loadServices(input.services ?? [], { persons, extraBeds, nights, roomCount: rooms.length });
 
   const roomPrice = rooms[0]!.roomPrice;
   const roomPricingMode = rooms[0]!.roomPricingMode;
-  const serviceLines = options.serviceLines ?? services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: decToNum(s.price) }));
+  const serviceLines = options.serviceLines ?? services.map((s) => ({ serviceId: s.id, name: s.name, description: s.description, chargeType: s.chargeType, intervalDays: s.intervalDays, isExtraBed: s.isExtraBed, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: decToNum(s.price) }));
   const { servicesTotal } = quoteStay(nights, 0, serviceLines);
   const total = round2(roomSelectionsTotal(rooms, nights) + servicesTotal);
   const code = generateCode();
@@ -448,7 +458,7 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
     (input.extraBeds !== undefined && input.extraBeds !== existing.extraBeds) ||
     roomId !== existing.roomId;
 
-  const services = input.services !== undefined ? await loadServices(input.services, { persons, extraBeds, nights }) : undefined;
+  const services = input.services !== undefined ? await loadServices(input.services, { persons, extraBeds, nights, roomCount: rooms.length }) : undefined;
 
   return prisma.$transaction(async (tx) => {
     const roomIds = [...new Set([...rooms, ...previousRooms].map((line) => line.roomId))];
@@ -502,7 +512,7 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
           ? {
               services: {
                 deleteMany: {},
-                create: services.map((s) => ({ serviceId: s.id, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
+                create: services.map((s) => ({ serviceId: s.id, name: s.name, description: s.description, chargeType: s.chargeType, intervalDays: s.intervalDays, isExtraBed: s.isExtraBed, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
               },
             }
           : {}),
@@ -510,22 +520,23 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
           ? {
               services: {
                 update: (existing.services ?? []).map((line) => {
-                  const maxPersons = persons + extraBeds;
+                  const maxPersons = persons;
                   return {
                     where: { id: line.id },
                     data: {
                       quantity:
-                        line.service.chargeType === 'PACK'
+                        (line.chargeType ?? line.service.chargeType) === 'PACK'
                           ? line.quantity
                           : serviceQuantity(
-                              line.service.chargeType,
-                              { persons, extraBeds, nights },
-                              line.service.chargeType === 'PER_PERSON'
+                              line.chargeType ?? line.service.chargeType,
+                              { persons, extraBeds, nights, roomCount: rooms.length },
+                              (line.chargeType ?? line.service.chargeType) === 'PER_PERSON'
                                 ? line.personsCovered == null
-                                  ? undefined
+                                  ? persons
                                   : Math.min(line.personsCovered, maxPersons)
                                 : undefined,
-                              line.service.isExtraBed,
+                              line.isExtraBed ?? line.service.isExtraBed,
+                              line.name != null ? line.intervalDays : line.service.intervalDays,
                             ),
                     },
                   };

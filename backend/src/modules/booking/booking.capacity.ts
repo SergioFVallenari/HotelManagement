@@ -3,27 +3,34 @@ import { publicAvailabilityLimits } from '../../lib/bookingCapacity.js';
 import { publicPageConfigSchema } from '../companies/companies.schema.js';
 import { decToNum } from '../../lib/money.js';
 
-export async function getBookingCapacity(companyId: number, configPage: unknown) {
+export async function getBookingCapacity(companyId: number, configPage: unknown, roomTypeId?: number) {
   const rooms = await prisma.room.aggregate({
-    where: { companyId, isActive: true },
+    where: { companyId, isActive: true, ...(roomTypeId !== undefined ? { typeId: roomTypeId } : {}) },
     _count: { _all: true },
     _sum: { capacity: true, maxExtraBeds: true },
   });
   const hotelCapacity = rooms._sum.capacity ?? 0;
   const config = publicPageConfigSchema.safeParse(configPage);
   const extraBeds = config.success ? config.data.publicExtraBeds : undefined;
+  const publicServices = await prisma.service.findMany({
+    where: { companyId, id: { in: config.success ? config.data.publicServiceIds ?? [] : [] }, isActive: true, isExtraBed: false },
+    select: { id: true, name: true, description: true, intervalDays: true, price: true, chargeType: true },
+    orderBy: { name: 'asc' },
+  });
   const service = extraBeds?.enabled && extraBeds.serviceId ? await prisma.service.findFirst({
     where: { id: extraBeds.serviceId, companyId, isActive: true, isExtraBed: true },
     select: { name: true, price: true, chargeType: true },
   }) : null;
   const hotelCapacityWithExtraBeds = hotelCapacity + (rooms._sum.maxExtraBeds ?? 0);
+  const publicExtraBedService = service && service.chargeType !== 'PER_ROOM_INTERVAL' ? { ...service, chargeType: service.chargeType, price: decToNum(service.price) } : null;
   const configuredLimit = config.success ? config.data.maxAvailabilityPersons : null;
   return {
     hotelCapacity,
+    publicServices: publicServices.map((service) => ({ ...service, price: decToNum(service.price) })),
     hotelCapacityWithExtraBeds,
-    publicExtraBedsEnabled: service !== null,
-    publicExtraBedService: service ? { ...service, price: decToNum(service.price) } : null,
+    publicExtraBedsEnabled: publicExtraBedService !== null,
+    publicExtraBedService,
     roomCount: rooms._count._all,
-    ...publicAvailabilityLimits(hotelCapacity, rooms._sum.maxExtraBeds ?? 0, service !== null, configuredLimit),
+    ...publicAvailabilityLimits(hotelCapacity, rooms._sum.maxExtraBeds ?? 0, publicExtraBedService !== null, configuredLimit),
   };
 }

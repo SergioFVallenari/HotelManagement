@@ -12,6 +12,7 @@ const bookingThemeSchema = z.object({
 export const publicPageConfigSchema = z.object({
   bookingTheme: bookingThemeSchema,
   maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
+  publicServiceIds: z.array(z.number().int().positive()).max(100).refine((ids) => new Set(ids).size === ids.length, 'No repitas servicios').optional(),
   publicExtraBeds: z.object({
     enabled: z.boolean(),
     serviceId: z.number().int().positive().nullable(),

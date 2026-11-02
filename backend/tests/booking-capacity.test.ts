@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { availabilityPersonsLimit, publicAvailabilityLimits } from '../src/lib/bookingCapacity.js';
+import { availabilityPersonsLimit, publicAvailabilityLimits, publicRoomTypeOptions } from '../src/lib/bookingCapacity.js';
 
 test('sin límite configurado se usa toda la capacidad del hotel', () => {
   assert.equal(availabilityPersonsLimit(32), 32);
@@ -25,4 +25,20 @@ test('solo aumenta el máximo público cuando el hotel habilita camas extra con 
 test('el máximo configurado del hotel se respeta con y sin aceptación de camas extra', () => {
   assert.deepEqual(publicAvailabilityLimits(4, 2, true, 5), { maxAvailabilityPersons: 4, maxAvailabilityPersonsWithExtraBeds: 5 });
   assert.deepEqual(publicAvailabilityLimits(4, 2, true, 3), { maxAvailabilityPersons: 3, maxAvailabilityPersonsWithExtraBeds: 3 });
+});
+
+test('cada tipo informa su propia cantidad de habitaciones y capacidad, sin mezclar categorías', () => {
+  const types = [
+    { id: 1, name: 'Doble', rooms: [{ capacity: 2, maxExtraBeds: 1 }, { capacity: 2, maxExtraBeds: 0 }] },
+    { id: 2, name: 'Familiar', rooms: [{ capacity: 4, maxExtraBeds: 1 }] },
+    { id: 3, name: 'Sin habitaciones activas', rooms: [] },
+  ];
+  assert.deepEqual(publicRoomTypeOptions(types, true), [
+    { id: 1, name: 'Doble', roomCount: 2, maxAvailabilityPersons: 4, maxAvailabilityPersonsWithExtraBeds: 5 },
+    { id: 2, name: 'Familiar', roomCount: 1, maxAvailabilityPersons: 4, maxAvailabilityPersonsWithExtraBeds: 5 },
+  ]);
+  assert.deepEqual(publicRoomTypeOptions(types, false, 3), [
+    { id: 1, name: 'Doble', roomCount: 2, maxAvailabilityPersons: 3, maxAvailabilityPersonsWithExtraBeds: 3 },
+    { id: 2, name: 'Familiar', roomCount: 1, maxAvailabilityPersons: 3, maxAvailabilityPersonsWithExtraBeds: 3 },
+  ]);
 });
