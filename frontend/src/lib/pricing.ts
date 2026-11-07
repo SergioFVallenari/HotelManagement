@@ -1,4 +1,10 @@
 import { round2 } from './format.ts';
+import type { Discount } from '../api/types.ts';
+
+export function discountPreview(subtotal: number, discount?: Discount | null): number {
+  if (!discount || !Number.isFinite(discount.value)) return 0;
+  return round2(Math.max(0, Math.min(subtotal, discount.type === 'PERCENTAGE' ? subtotal * discount.value / 100 : discount.value)));
+}
 
 // Espejo de backend/src/lib/pricing.ts: el frontend solo muestra una
 // estimacion mientras la recepcion arma la solicitud. El total y el anticipo

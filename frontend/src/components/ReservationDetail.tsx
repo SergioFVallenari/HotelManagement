@@ -234,7 +234,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     checkout: 'Confirmar el check-out y liberar todas las habitaciones de esta reserva.',
     cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
     refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
-    approve: `Confirmar que el anticipo de ${money(reservation.bookingLink?.deposit ?? 0)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
+    approve: `Confirmar que el anticipo de ${money(reservation.depositRequired)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
   };
 
   return (
@@ -348,7 +348,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             {awaitingVerification && (
               <>
                 <p className="text-secondary small mb-2 mt-2">
-                  Revisá que la transferencia coincida con el anticipo de {money(reservation.bookingLink?.deposit ?? 0)}. Al
+                  Revisá que la transferencia coincida con el anticipo de {money(reservation.depositRequired)}. Al
                   aprobar, se registra el pago y la reserva pasa a <strong>Reservada</strong>.
                 </p>
                 <div className="d-flex gap-2 flex-wrap">
@@ -396,6 +396,10 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             <span>Servicios</span>
             <strong>{money(reservation.totals.servicesTotal)}</strong>
           </div>
+          {(reservation.totals.discountAmount ?? 0) > 0 && <div>
+            <span>Descuento{reservation.discount?.type === 'PERCENTAGE' ? ` (${reservation.discount.value}%)` : ''}</span>
+            <strong className="text-success">−{money(reservation.totals.discountAmount)}</strong>
+          </div>}
           <div>
             <span>Total</span>
             <strong>{money(reservation.totals.total)}</strong>

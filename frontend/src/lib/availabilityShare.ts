@@ -2,7 +2,7 @@ import type { PublicAvailability } from '../api/types.ts';
 import { dateShort, money } from './format.ts';
 import { serviceQuantityLabel } from './services.ts';
 
-export function buildAvailabilityMessage(result: Pick<PublicAvailability, 'hotel' | 'stay' | 'combination'> & Partial<Pick<PublicAvailability, 'services'>>): string {
+export function buildAvailabilityMessage(result: Pick<PublicAvailability, 'hotel' | 'stay' | 'combination'> & Partial<Pick<PublicAvailability, 'services'>>, roomTypeCount?: number): string {
   const { hotel, stay, combination } = result;
   const nights = `${stay.nights} ${stay.nights === 1 ? 'noche' : 'noches'}`;
   const persons = (count: number) => `${count} ${count === 1 ? 'persona' : 'personas'}`;
@@ -14,7 +14,7 @@ export function buildAvailabilityMessage(result: Pick<PublicAvailability, 'hotel
     `*Salida:* ${dateShort(stay.checkOut).replaceAll('-', '/')} · *${nights}*`,
     `*Huéspedes:* ${persons(stay.persons)}`,
   ];
-  if (stay.roomType) lines.push(`*Tipo solicitado:* ${stay.roomType}`);
+  if (stay.roomType && roomTypeCount !== 1) lines.push(`*Tipo solicitado:* ${stay.roomType}`);
   if (stay.room) lines.push(`*Habitación seleccionada:* ${stay.room.number}${stay.room.name ? ` · ${stay.room.name}` : ''}`);
   if (combination) {
     lines.push('', `*${combination.roomCount} ${combination.roomCount === 1 ? `habitación ${combination.rooms[0]?.roomType ?? ''}`.trim() : 'habitaciones'}*`);

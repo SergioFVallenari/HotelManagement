@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { requiresCsrfHeader } from '../lib/requestSecurity.js';
+import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '../modules/recipients/recipients.schema.js';
+import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
 import { credentialsSchema, loginSchema, registerSchema, resendSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
 import { createRoomSchema, updateRoomSchema } from '../modules/rooms/rooms.schema.js';
@@ -144,6 +147,7 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
 ];
 
 const componentSchemas: Record<string, Json> = {
+  NotificationRecipient: js(recipientSchema),
   Company: js(schemas.companySchema),
   CompanySettings: js(schemas.companySettingsSchema),
   AuthUser: js(schemas.authUserSchema),
@@ -171,6 +175,38 @@ const componentSchemas: Record<string, Json> = {
 };
 
 const paths: Record<string, Json> = {
+  '/api/recipients': {
+    get: op({
+      tags: ['Notificaciones'],
+      summary: 'Listar destinatarios de notificaciones del hotel',
+      description: `${ownerOrAdmin} Incluye activos e inactivos. La empresa se obtiene exclusivamente de la sesión.`,
+      responses: { '200': ok({ type: 'array', items: ref('NotificationRecipient') }), ...errors() },
+    }),
+    post: op({
+      tags: ['Notificaciones'],
+      summary: 'Agregar un destinatario de notificaciones',
+      description: `${ownerOrAdmin} Normaliza el email a minúsculas y lo activa por defecto. No permite elegir companyId ni envía correos.`,
+      requestBody: jsonBody(js(createRecipientSchema, 'input'), 'Nombre, email y activación del destinatario'),
+      responses: { '201': ok(ref('NotificationRecipient')), ...errors(), '409': errResponse('El email ya está registrado en este hotel') },
+    }),
+  },
+  '/api/recipients/{id}': {
+    patch: op({
+      tags: ['Notificaciones'],
+      summary: 'Editar o activar/desactivar un destinatario',
+      description: `${ownerOrAdmin} Actualización parcial. Desactivar conserva el destinatario y lo excluye de la consulta de destinatarios activos. No permite cambiarlo de hotel.`,
+      parameters: [pathIdParam('ID del destinatario de este hotel')],
+      requestBody: jsonBody(js(updateRecipientSchema, 'input'), 'Campos a actualizar; el switch envía únicamente enabled'),
+      responses: { '200': ok(ref('NotificationRecipient')), ...errors(), '409': errResponse('El email ya está registrado en este hotel') },
+    }),
+    delete: op({
+      tags: ['Notificaciones'],
+      summary: 'Eliminar un destinatario del hotel',
+      description: ownerOrAdmin,
+      parameters: [pathIdParam('ID del destinatario de este hotel')],
+      responses: { '204': empty('Destinatario eliminado'), ...errors(), '404': errResponse('DESTINATARIO_NO_ENCONTRADO: el destinatario no existe en este hotel') },
+    }),
+  },
   '/health': {
     get: op({
       tags: ['Estado'],
@@ -560,7 +596,7 @@ const paths: Record<string, Json> = {
       tags: ['Huéspedes'],
       summary: 'Crear huésped',
       description: noRole,
-      requestBody: jsonBody(js(createGuestSchema, 'input'), 'Datos del huésped'),
+      requestBody: jsonBody(js(createGuestSchema, 'input'), 'Nombre y apellido obligatorios; email y teléfono opcionales. Los contactos vacíos se guardan como null.'),
       responses: {
         '201': ok(ref('Guest'), 'Huésped creado'),
         ...errors({
@@ -1336,6 +1372,24 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/ai/reservations/chat': {
+    post: op({
+      tags: ['Asistente de IA'],
+      summary: 'Preparar una reserva manual desde el chat interno',
+      description: 'Requiere sesión. Independiente de Instagram. Solo propone: no crea reservas ni pagos. Consulta disponibilidad real y devuelve una propuesta firmada válida por 10 minutos, o una pregunta aclaratoria. Hasta 30 mensajes por conversación.',
+      requestBody: jsonBody(js(reservationChatSchema, 'input'), 'Historial del chat interno'),
+      responses: { '200': ok({ type: 'object', properties: { reply: { type: 'string' }, proposal: { type: ['object', 'null'], additionalProperties: true } } }), ...errors(), '502': errResponse('Respuesta inválida o fallo de Gemini'), '503': errResponse('IA no configurada') },
+    }),
+  },
+  '/api/ai/reservations/confirm': {
+    post: op({
+      tags: ['Asistente de IA'],
+      summary: 'Confirmar la propuesta del chat interno',
+      description: 'Solo acepta una propuesta firmada para el usuario y empresa de la sesión. Revalida disponibilidad, capacidad y precios; crea una reserva STAFF sin pagos. Los reintentos de la misma propuesta devuelven la reserva existente.',
+      requestBody: jsonBody(js(confirmAiReservationSchema, 'input'), 'Token de la propuesta revisada por recepción'),
+      responses: { '201': ok(ref('Reservation')), ...errors(), '409': errResponse('Propuesta vencida, cambio de precios o habitación ocupada') },
+    }),
+  },
   '/api/ai/config': {
     get: op({
       tags: ['Asistente de IA'],
@@ -1358,13 +1412,14 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Asistente de IA'],
       summary: 'Configuración del asistente de IA de la empresa',
-      description: noRole + ' Devuelve los defaults (`enabled: false`, `autoReply: true`) si la empresa nunca configuró nada.',
+      description: noRole + ' Devuelve los defaults (`enabled: false`, `autoReply: true`, `reservationAssistantEnabled: false`) si la empresa nunca configuró nada. El asistente de reservas es independiente del de mensajes.',
       responses: {
         '200': okPlain(
           {
             data: {
               type: 'object',
               properties: {
+                reservationAssistantEnabled: { type: 'boolean' },
                 enabled: { type: 'boolean' },
                 autoReply: { type: 'boolean' },
                 instructions: { type: 'string', nullable: true },
@@ -1379,12 +1434,13 @@ const paths: Record<string, Json> = {
     put: op({
       tags: ['Asistente de IA'],
       summary: 'Actualizar la configuración del asistente de IA',
-      description: ownerOrAdmin + ' Upsert de la configuración de la empresa.',
+      description: ownerOrAdmin + ' Upsert de la configuración de la empresa. `reservationAssistantEnabled` habilita el chat interno y su confirmación, independientemente de `enabled` (mensajes). Si se omite, conserva el valor existente.',
       requestBody: jsonBody(
         {
           type: 'object',
           required: ['enabled', 'autoReply'],
           properties: {
+            reservationAssistantEnabled: { type: 'boolean' },
             enabled: { type: 'boolean' },
             autoReply: { type: 'boolean' },
             instructions: { type: 'string', maxLength: 2000, nullable: true },
@@ -1398,6 +1454,7 @@ const paths: Record<string, Json> = {
             data: {
               type: 'object',
               properties: {
+                reservationAssistantEnabled: { type: 'boolean' },
                 enabled: { type: 'boolean' },
                 autoReply: { type: 'boolean' },
                 instructions: { type: 'string', nullable: true },
@@ -1820,6 +1877,26 @@ const paths: Record<string, Json> = {
   },
 };
 
+for (const [path, methods] of Object.entries(paths)) {
+  for (const [method, value] of Object.entries(methods)) {
+    if (!['post', 'put', 'patch', 'delete'].includes(method) || !requiresCsrfHeader(method, path)) continue;
+    const operation = value as Json;
+    operation.parameters = [
+      ...((operation.parameters as Json[] | undefined) ?? []),
+      {
+        name: 'X-GH-CSRF',
+        in: 'header',
+        required: true,
+        description: 'Protección CSRF por preflight CORS. Valor fijo 1; no es un token secreto.',
+        schema: { type: 'string', const: '1' },
+      },
+    ];
+    const responses = operation.responses as Record<string, Json>;
+    const previous = responses['403']?.description;
+    responses['403'] = errResponse(`${previous ? `${previous}. ` : ''}SOLICITUD_NO_PERMITIDA: falta X-GH-CSRF: 1 o el Origin no pertenece a CORS_ORIGINS`);
+  }
+}
+
 export const info = {
   title: 'API Gestión Hotel',
   version: '1.0.0',
@@ -1837,6 +1914,11 @@ export const info = {
     '## Envelope',
     'Las respuestas exitosas van envueltas en `{ data, meta? }` (salvo auth y `/health`). ' +
       'Los errores siempre devuelven `{ error: { code, message, details? } }`.',
+    '',
+    '## Protección CSRF',
+    'Las escrituras requieren `X-GH-CSRF: 1`, incluso login y logout. Si se envía `Origin`, debe coincidir exactamente con `CORS_ORIGINS`. ' +
+      'Los clientes CLI pueden omitir Origin, pero no la cabecera. Swagger la agrega automáticamente. ' +
+      'Solo se exceptúan los webhooks de MercadoPago/Instagram y los POST públicos de reserva por token.',
     '',
     '## Códigos de error',
     '- `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_JSON` (400); `UNAUTHORIZED` (401); `FORBIDDEN`, `REGISTER_KEY_REQUIRED` (403); `NOT_FOUND`, `MP_NOT_CONNECTED` (404).',
@@ -1879,6 +1961,7 @@ export const openApiDocument = {
     },
   ],
   tags: [
+    { name: 'Notificaciones', description: 'Destinatarios de avisos por email, aislados por hotel' },
     { name: 'Estado', description: 'Health check' },
     { name: 'Autenticación', description: 'Login de 2 pasos y sesión' },
     { name: 'Empresas', description: 'Hoteles (multi-tenant)' },

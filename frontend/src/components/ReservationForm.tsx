@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import { DEMO_MODE } from '../demo/config';
-import type { Guest, PageMeta, PaymentMethod, Reservation, Room, Service } from '../api/types';
+import type { Discount, Guest, PageMeta, PaymentMethod, Reservation, Room, Service } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
+import { DiscountInput } from './DiscountInput';
 import { Modal } from './Modal';
 import { RoomSelection } from './RoomSelection';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { PaginationBar } from './pagination';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, PAYMENT_METHODS } from '../lib/format';
-import { serviceQuantity } from '../lib/pricing';
+import { discountPreview, serviceQuantity } from '../lib/pricing';
 import { serviceQuantityLabel } from '../lib/services';
 
 const SUGGESTED_DEPOSIT_RATE = 0.15;
@@ -31,6 +33,9 @@ interface GuestSelection {
 }
 
 export function ReservationForm({ open, onClose, onCreated, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
+  const canDiscount = user?.role === 'ADMIN' || user?.role === 'OWNER';
+  const [discount, setDiscount] = useState<Discount | null>(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -91,6 +96,7 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
     setGuestSearched(false);
     setNewGuest({ firstName: '', lastName: '', phone: '', email: '' });
     setNotes('');
+    setDiscount(null);
     setPaymentLink(false);
     setDepositMode('none');
     setDepositAmount('');
@@ -210,10 +216,15 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
     });
   }
 
-  function estimateTotal(): number {
+  function estimateSubtotal(): number {
     if (!selectedRoom) return 0;
     const servicesTotal = services.reduce((acc, s) => acc + s.quantity * s.service.price, 0);
     return round2(selectedRoomsTotal(selectedRooms, nights()) + servicesTotal);
+  }
+
+  function estimateTotal(): number {
+    const subtotal = estimateSubtotal();
+    return round2(subtotal - discountPreview(subtotal, canDiscount ? discount : null));
   }
 
   function suggestedDeposit(): number {
@@ -278,6 +289,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         persons,
         extraBeds,
         notes: notes.trim() || null,
+        ...(canDiscount && discount ? { discount } : {}),
         ...(depositViaMp() ? {} : { generatePaymentLink: paymentLink }),
         ...(deposit > 0 ? { payment: { amount: deposit, method: depositMethod } } : {}),
         services: services.map((s) => ({
@@ -294,16 +306,16 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         }
         body.guestId = selectedGuest.id;
       } else {
-        if (!newGuest.firstName || !newGuest.lastName || !newGuest.phone || !newGuest.email) {
-          onError(new Error('Completá nombre, apellido, teléfono y email del huésped'));
+        if (!newGuest.firstName.trim() || !newGuest.lastName.trim()) {
+          onError(new Error('Completá nombre y apellido del huésped'));
           setSaving(false);
           return;
         }
         body.guest = {
           firstName: newGuest.firstName.trim(),
           lastName: newGuest.lastName.trim(),
-          phone: newGuest.phone.trim(),
-          email: newGuest.email.trim(),
+          phone: newGuest.phone.trim() || null,
+          email: newGuest.email.trim() || null,
         };
       }
 
@@ -366,12 +378,12 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                 <input className="form-control" value={newGuest.lastName} onChange={(e) => setNewGuest({ ...newGuest, lastName: e.target.value })} required />
               </div>
               <div className="col-sm-6">
-                <label className="form-label">Teléfono *</label>
-                <input className="form-control" value={newGuest.phone} onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })} required />
+                <label className="form-label">Teléfono (opcional)</label>
+                <input type="tel" className="form-control" minLength={3} maxLength={30} value={newGuest.phone} onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })} />
               </div>
               <div className="col-sm-6">
-                <label className="form-label">Email *</label>
-                <input type="email" className="form-control" value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} required />
+                <label className="form-label">Email (opcional)</label>
+                <input type="email" className="form-control" maxLength={200} value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} />
               </div>
             </div>
           ) : (
@@ -507,7 +519,12 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
             <p className="text-secondary mb-0">Elegí una habitación para ver el total y cobrar un anticipo.</p>
           ) : (
             <>
+              {canDiscount && <DiscountInput value={discount} subtotal={estimateSubtotal()} onChange={setDiscount} />}
               <div className="totals-box">
+                {canDiscount && discount && <>
+                  <div><span>Subtotal</span><strong>{money(estimateSubtotal())}</strong></div>
+                  <div><span>Descuento{discount.type === 'PERCENTAGE' ? ` (${discount.value}%)` : ''}</span><strong className="text-success">−{money(discountPreview(estimateSubtotal(), discount))}</strong></div>
+                </>}
                 <div>
                   <span>Total de la reserva</span>
                   <strong>{money(estimateTotal())}</strong>

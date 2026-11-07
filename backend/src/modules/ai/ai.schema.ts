@@ -5,6 +5,7 @@ export const conversationIdSchema = z.object({
 });
 
 export const updateAiSettingsSchema = z.object({
+  reservationAssistantEnabled: z.boolean().optional(),
   enabled: z.boolean(),
   autoReply: z.boolean(),
   instructions: z

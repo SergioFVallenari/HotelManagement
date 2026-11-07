@@ -101,3 +101,23 @@ test('un fallo de red no se interpreta como cancelación o timeout', async (t) =
   t.mock.method(globalThis, 'fetch', async () => { throw error; });
   await assert.rejects(requestJson(URL), (err) => err === error);
 });
+
+test('todas las escrituras incluyen la cabecera CSRF, incluso sin cuerpo', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => new Response('{"ok":true}'));
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'post']) {
+    await requestJson(URL, { method });
+    const options = fetch.mock.calls.at(-1)!.arguments[1] as RequestInit;
+    assert.equal(options.method, method.toUpperCase());
+    assert.deepEqual(options.headers, { 'X-GH-CSRF': '1' });
+    assert.equal(options.body, undefined);
+    assert.equal(options.credentials, 'include');
+  }
+});
+
+test('las escrituras JSON conservan Content-Type y agregan la cabecera CSRF', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => new Response('{}'));
+  await requestJson(URL, { method: 'POST', body: { name: 'Huésped' } });
+  const options = fetch.mock.calls[0].arguments[1] as RequestInit;
+  assert.deepEqual(options.headers, { 'Content-Type': 'application/json', 'X-GH-CSRF': '1' });
+  assert.equal(options.body, JSON.stringify({ name: 'Huésped' }));
+});

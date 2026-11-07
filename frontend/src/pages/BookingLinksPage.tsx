@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FilterPanel } from '../components/FilterPanel';
 import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { api, buildQuery } from '../api/client';
@@ -105,7 +106,7 @@ export function BookingLinksPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Reservas por WhatsApp</h1>
           <p className="text-secondary mb-0">
@@ -126,19 +127,15 @@ export function BookingLinksPage() {
 
       {DEMO_MODE && <div className="alert alert-info">Simulación sin envíos a WhatsApp. Creá una solicitud y usá «Ver como huésped» para completar el recorrido en esta misma pestaña. No transfieras dinero ni cargues datos reales.</div>}
 
-      <div className="card shadow-sm mb-4">
-        <div className="card-body py-3">
-          <div className="filter-row">
-            <select className="form-select" style={{ width: 220 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+      <FilterPanel activeCount={status ? 1 : 0}>
+            <select className="form-select filter-select" aria-label="Estado de la solicitud" value={status} onChange={(e) => setStatus(e.target.value)}>
               {FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-      </div>
+      </FilterPanel>
 
       <DataTable<BookingLink>
         columns={columns}
@@ -204,6 +201,10 @@ export function BookingLinksPage() {
               <dd>
                 {dateShort(created.checkIn)} → {dateShort(created.checkOut)} ({created.nights} noche(s))
               </dd>
+              {(created.totals.discountAmount ?? 0) > 0 && <>
+                <dt>Descuento{created.discount?.type === 'PERCENTAGE' ? ` (${created.discount.value}%)` : ''}</dt>
+                <dd className="text-success">−{money(created.totals.discountAmount)}</dd>
+              </>}
               <dt>Total</dt>
               <dd>{money(created.totals.total)}</dd>
               <dt>Anticipo</dt>

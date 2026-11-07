@@ -8,6 +8,7 @@ export interface ShareStay {
   nights: number;
   total: number;
   deposit: number;
+  discountAmount?: number;
   url: string;
   services?: { name: string; description?: string | null; intervalDays?: number | null; chargeType: string; quantity: number; lineTotal: number }[];
 }
@@ -35,7 +36,8 @@ export function buildShareMessage(stay: ShareStay): string {
     `¡Hola! Te dejo el link para reservar en ${stay.hotelName}: ${stay.roomLabel}, ` +
     `del ${formatDateShort(stay.checkIn)} al ${formatDateShort(stay.checkOut)} (${stay.nights} ${stay.nights === 1 ? 'noche' : 'noches'}). ` +
     `Total $${formatArs(stay.total)}. ` +
-    `Para reservar tenés que transferir $${formatArs(stay.deposit)}. ` +
+    (stay.discountAmount ? `Descuento aplicado $${formatArs(stay.discountAmount)}. ` : '') +
+    (stay.deposit > 0 ? `Para reservar tenés que transferir $${formatArs(stay.deposit)}. ` : 'Completá tus datos para solicitar la reserva. ') +
     `${stay.url}${services}`
   );
 }

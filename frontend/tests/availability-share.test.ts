@@ -52,6 +52,17 @@ test('la consulta identifica la habitación real elegida junto a tipo, fechas, p
   assert.ok(buildAvailabilityMessage(result).includes('*Habitación seleccionada:* 108\n'));
 });
 
+test('omite el tipo solicitado cuando el alojamiento tiene un único tipo habilitado', () => {
+  const result = quote();
+  result.stay.roomType = 'Dormi';
+  result.stay.room = { id: 2, number: '2', name: 'Dormi 2', capacity: 4, maxExtraBeds: 1 };
+  const message = buildAvailabilityMessage(result, 1);
+  assert.ok(!message.includes('*Tipo solicitado:*'));
+  assert.ok(message.includes('*Habitación seleccionada:* 2 · Dormi 2'));
+  assert.ok(message.includes('*1 habitación Dormi*'));
+  assert.ok(buildAvailabilityMessage(result, 2).includes('*Tipo solicitado:* Dormi'));
+});
+
 test('usa singular para una persona y una noche sin mencionar camas extra innecesarias', () => {
   const result = quote();
   result.stay = { ...result.stay, nights: 1, persons: 1, checkOut: '2026-11-02' };

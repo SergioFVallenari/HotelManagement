@@ -3,6 +3,7 @@ import { useApi } from '../api/useApi';
 import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
+import { FilterPanel } from '../components/FilterPanel';
 import { StatusBadge } from '../components/Badge';
 import { dateShort, firstDayOfMonth, lastDayOfMonth, money, PAYMENT_METHODS, today } from '../lib/format';
 import {
@@ -32,29 +33,28 @@ export function DashboardPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Dashboard</h1>
           <p className="text-secondary mb-0">Resumen de ocupación e ingresos del período</p>
         </div>
-        <div className="filter-row">
-          <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+      </div>
+        <FilterPanel onApply={() => setQuery(buildQuery({ from, to }))}>
+          <label className="input-group mb-0 filter-date">
             <span className="input-group-text">Desde</span>
             <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+          </label>
+          <label className="input-group mb-0 filter-date">
             <span className="input-group-text">Hasta</span>
             <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
+          </label>
           <button
-            type="button"
+            type="submit"
             className="btn btn-primary btn-sm"
-            onClick={() => setQuery(buildQuery({ from, to }))}
           >
             Aplicar
           </button>
-        </div>
-      </div>
+        </FilterPanel>
 
       <LoadState loading={loading} error={error} onRetry={reload} />
 

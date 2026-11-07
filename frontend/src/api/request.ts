@@ -33,11 +33,14 @@ export async function requestJson<T>(url: string, options: RequestOptions = {}, 
   }, timeoutMs) : undefined;
 
   try {
+    const method = (options.method ?? 'GET').toUpperCase();
+    const headers: Record<string, string> = options.body !== undefined ? { 'Content-Type': 'application/json' } : {};
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers['X-GH-CSRF'] = '1';
     const response = await fetch(url, {
-      method: options.method ?? 'GET',
+      method,
       credentials: 'include',
       // Un Content-Type en GET dispara un preflight innecesario.
-      headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });

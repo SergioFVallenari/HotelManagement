@@ -2,6 +2,14 @@ export function availabilityPersonsLimit(hotelCapacity: number, configured?: num
   return Math.min(hotelCapacity, configured ?? hotelCapacity);
 }
 
+export function summarizeRoomCapacity(rooms: { capacity: number; maxExtraBeds: number }[]) {
+  return {
+    roomCount: rooms.length,
+    capacity: rooms.reduce((sum, room) => sum + room.capacity, 0),
+    extraBeds: rooms.reduce((sum, room) => sum + room.maxExtraBeds, 0),
+  };
+}
+
 export function publicAvailabilityLimits(baseCapacity: number, extraBeds: number, enabled: boolean, configured?: number | null) {
   return {
     maxAvailabilityPersons: availabilityPersonsLimit(baseCapacity, configured),

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dateStringSchema, serviceInputSchema, roomSelectionsSchema } from '../reservations/reservations.schema.js';
+import { dateStringSchema, serviceInputSchema, roomSelectionsSchema, discountSchema } from '../reservations/reservations.schema.js';
 
 // Solicitud de reserva que prepara la recepcion y comparte por WhatsApp.
 export const createBookingLinkSchema = z.object({
@@ -12,6 +12,7 @@ export const createBookingLinkSchema = z.object({
   services: z.array(serviceInputSchema).default([]),
   // Anticipo manual: si no viene se calcula con el % del hotel.
   deposit: z.number().min(0).optional().nullable(),
+  discount: discountSchema.optional(),
   expiresInDays: z.number().int().min(1).max(90).optional(),
 }).refine((data) => data.roomId !== undefined || data.rooms !== undefined, { message: 'Seleccioná al menos una habitación', path: ['rooms'] });
 

@@ -15,7 +15,15 @@ router.get(
   '/api/docs',
   setup(openApiDocument, {
     customSiteTitle: 'API Gestión Hotel — Documentación',
-    explorer: true,
+      explorer: true,
+      swaggerOptions: {
+        requestInterceptor: function (request: { method: string; headers: Record<string, string> }) {
+          if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) {
+            request.headers['X-GH-CSRF'] = '1';
+          }
+          return request;
+        },
+      },
   }),
 );
 

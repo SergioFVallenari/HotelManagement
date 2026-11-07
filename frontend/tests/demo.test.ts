@@ -8,6 +8,98 @@ const TODAY = '2026-10-26';
 const stay = { checkIn: '2026-12-01', checkOut: '2026-12-04' };
 const draft = { ...stay, roomId: 1, persons: 2, guestId: 1, services: [] };
 
+test('descuento porcentual manual conserva subtotal, calcula el anticipo y descuenta los pagos del total neto', () => {
+  const api = createDemoApi(TODAY);
+  const created = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...draft, discount: { type: 'PERCENTAGE', value: 10 }, payment: { amount: 20000, method: 'TRANSFER' } } }).data;
+  assert.equal(created.totals.subtotal, 204000);
+  assert.equal(created.totals.roomTotal, 204000);
+  assert.equal(created.totals.discountAmount, 20400);
+  assert.equal(created.totalAmount, 183600);
+  assert.equal(created.totals.balance, 163600);
+  assert.deepEqual(created.discount, { type: 'PERCENTAGE', value: 10 });
+});
+
+test('el descuento fijo del link permanece congelado al cambiar precios y aprobar la reserva', () => {
+  const api = createDemoApi(TODAY);
+  const link = makeLink(api, { discount: { type: 'FIXED', value: 24000 } });
+  const quote = api<{ data: PublicBookingQuote }>(`/public/booking/${link.token}`).data;
+  assert.equal(quote.totals.subtotal, 204000);
+  assert.equal(quote.totals.discountAmount, 24000);
+  assert.equal(quote.totals.total, 180000);
+  assert.deepEqual(quote.discount, { type: 'FIXED', value: 24000 });
+  api('/rooms/1', { method: 'PUT', body: { price: 999999 } });
+  const reservation = submitLink(api, link);
+  assert.equal(reservation.totals.total, 180000);
+  assert.equal(reservation.totals.discountAmount, 24000);
+  const approved = api<{ data: Reservation }>(`/reservations/${reservation.id}/approve`, { method: 'POST' }).data;
+  assert.equal(approved.totals.amountPaid, link.totals.deposit);
+  assert.equal(approved.totals.balance, 180000 - link.totals.deposit);
+});
+
+test('rechaza descuentos inválidos sin crear una reserva ni ocupar habitaciones', () => {
+  const api = createDemoApi(TODAY);
+  for (const discount of [{ type: 'FIXED', value: 204000.01 }, { type: 'PERCENTAGE', value: 101 }, { type: 'FIXED', value: -1 }]) {
+    assert.throws(() => api('/reservations', { method: 'POST', body: { ...draft, discount } }), DemoApiError);
+  }
+  const created = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...draft, discount: { type: 'PERCENTAGE', value: 100 } } }).data;
+  assert.equal(created.totalAmount, 0);
+  assert.equal(created.depositRequired, 0);
+});
+
+test('guarda el anticipo ingresado sin reemplazarlo por el automático ni cambiarlo con pagos posteriores', () => {
+  const api = createDemoApi(TODAY);
+  const created = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...draft, payment: { amount: 7500, method: 'TRANSFER' } } }).data;
+  assert.equal(created.totalAmount, 204000);
+  assert.equal(created.depositRequired, 7500);
+  assert.equal(created.totals.amountPaid, 7500);
+  api('/companies/current', { method: 'PATCH', body: { bookingDepositPercent: 80 } });
+  api('/rooms/1', { method: 'PUT', body: { price: 999999 } });
+  const paid = api<{ data: Reservation }>(`/reservations/${created.id}/payments`, { method: 'POST', body: { amount: 30000, method: 'CASH' } }).data;
+  assert.equal(paid.totalAmount, created.totalAmount);
+  assert.equal(paid.depositRequired, created.depositRequired);
+  assert.equal(paid.totals.total, created.totalAmount);
+  assert.equal(paid.totals.balance, 166500);
+});
+
+test('copia los importes del link incluso con anticipo manual cero y nueva configuración', () => {
+  const api = createDemoApi(TODAY);
+  const link = makeLink(api, { deposit: 0 });
+  api('/companies/current', { method: 'PATCH', body: { bookingDepositPercent: 80 } });
+  const reservation = submitLink(api, link);
+  assert.equal(reservation.totalAmount, link.totals.total);
+  assert.equal(reservation.depositRequired, 0);
+});
+
+test('reserva manual y ficha de huésped admiten solo nombre y apellido sin compartir homónimos', () => {
+  const api = createDemoApi(TODAY);
+  const name = { firstName: 'Juan', lastName: 'Pérez' };
+  const first = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...stay, roomId: 1, persons: 2, guest: name } }).data;
+  const second = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...stay, roomId: 2, persons: 2, guest: name } }).data;
+  assert.equal(first.guest?.email, null);
+  assert.equal(first.guest?.phone, null);
+  assert.notEqual(first.guestId, second.guestId);
+  const third = api<{ data: Guest }>('/guests', { method: 'POST', body: name }).data;
+  assert.notEqual(third.id, first.guestId);
+  assert.equal(third.email, null);
+  assert.equal(third.phone, null);
+  const updated = api<{ data: Guest }>(`/guests/${third.id}`, { method: 'PUT', body: { email: 'juan@example.com', phone: '123456' } }).data;
+  assert.equal(updated.email, 'juan@example.com');
+  const cleared = api<{ data: Guest }>(`/guests/${third.id}`, { method: 'PUT', body: { email: '', phone: null } }).data;
+  assert.equal(cleared.email, null);
+  assert.equal(cleared.phone, null);
+});
+
+test('contactos opcionales no permiten valores inválidos ni emails duplicados', () => {
+  const api = createDemoApi(TODAY);
+  const name = { firstName: 'Juan', lastName: 'Pérez' };
+  assert.throws(() => api('/guests', { method: 'POST', body: { ...name, email: 'inválido' } }), DemoApiError);
+  assert.throws(() => api('/guests', { method: 'POST', body: { ...name, phone: '12' } }), DemoApiError);
+  api('/guests', { method: 'POST', body: { ...name, email: 'juan@example.com', phone: '123456' } });
+  assert.throws(() => api('/guests', { method: 'POST', body: { ...name, email: 'juan@example.com' } }), DemoApiError);
+  const reservation = api<{ data: Reservation }>('/reservations', { method: 'POST', body: { ...stay, roomId: 1, persons: 2, guest: { ...name, email: 'juan@example.com' } } }).data;
+  assert.equal(reservation.guest?.phone, '123456');
+});
+
 test('reserva grupal para 16 personas ocupa cuatro habitaciones y cobra un anticipo conjunto', () => {
   const api = createDemoApi(TODAY);
   const rooms = [9, 10, 11, 12].map((roomId) => ({ roomId, persons: 4, extraBeds: 0 }));

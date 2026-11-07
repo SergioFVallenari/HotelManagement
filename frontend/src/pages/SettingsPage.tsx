@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
-import { IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
+import { IconBell, IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
@@ -12,6 +12,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
 import { useApiError } from '../components/pagination';
+import { RecipientSettings } from '../components/RecipientSettings';
 import { dateTimeShort, generatePublicLink } from '../lib/format';
 import { serviceRateLabel } from '../lib/services';
 import {
@@ -35,6 +36,7 @@ function AiAssistantSection() {
   // El form se deriva en render: settings del backend + overrides del usuario.
   // Así no hay setState en effect y un refetch no pisa lo que se está editando.
   const form: AiSettings = {
+    reservationAssistantEnabled: settings?.reservationAssistantEnabled ?? false,
     enabled: settings?.enabled ?? false,
     autoReply: settings?.autoReply ?? true,
     instructions: settings?.instructions ?? null,
@@ -52,6 +54,7 @@ function AiAssistantSection() {
       await api('/ai/settings', {
         method: 'PUT',
         body: {
+          reservationAssistantEnabled: form.reservationAssistantEnabled,
           enabled: form.enabled,
           autoReply: form.autoReply,
           instructions: form.instructions?.trim() || null,
@@ -71,7 +74,7 @@ function AiAssistantSection() {
         {config?.data.configured === false && (
           <div className="alert alert-warning mb-3">
             El asistente no está configurado en el backend (falta <code>GEMINI_API_KEY</code>). Los borradores y las
-            respuestas automáticas no van a funcionar hasta cargarla.
+             respuestas automáticas y el chat de reservas no van a funcionar hasta cargarla.
           </div>
         )}
         {loading || !settings ? (
@@ -85,6 +88,15 @@ function AiAssistantSection() {
           </div>
         ) : (
           <div>
+            <h3 className="h6">Reservas internas</h3>
+            <div className="form-check form-switch mb-4">
+              <input className="form-check-input" type="checkbox" id="ai-reservation-enabled"
+                checked={form.reservationAssistantEnabled}
+                onChange={(e) => patch({ reservationAssistantEnabled: e.target.checked })} />
+              <label className="form-check-label" htmlFor="ai-reservation-enabled">Habilitar el asistente de reservas</label>
+              <div className="form-text">Permite crear reservas manuales desde el chat de Reservas, siempre con confirmación. Es independiente de Instagram. Desactivarlo también bloquea las propuestas pendientes.</div>
+            </div>
+            <h3 className="h6">Bandeja de mensajes</h3>
             <div className="form-check form-switch mb-3">
               <input
                 className="form-check-input"
@@ -94,7 +106,7 @@ function AiAssistantSection() {
                 onChange={(e) => patch({ enabled: e.target.checked })}
               />
               <label className="form-check-label" htmlFor="ai-enabled">
-                Habilitar el asistente de IA
+                Habilitar el asistente de mensajes
               </label>
               <div className="form-text">Muestra el botón de borradores en la bandeja de mensajes.</div>
             </div>
@@ -954,13 +966,14 @@ function BookingSettingsSection() {
   );
 }
 
-type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia';
+type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia' | 'notificaciones';
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
   { id: 'pagos', label: 'Pagos online', icon: <IconCreditCard size={16} /> },
   { id: 'reservas', label: 'Reservas', icon: <IconBrandWhatsapp size={16} /> },
   { id: 'redes', label: 'Redes sociales', icon: <IconBrandInstagram size={16} /> },
   { id: 'ia', label: 'Asistente de IA', icon: <IconSparkles size={16} /> },
+  { id: 'notificaciones', label: 'Notificaciones', icon: <IconBell size={16} /> },
 ];
 
 // El callback de Instagram aterriza en /settings?tab=redes (redirect de
@@ -969,7 +982,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> 
 function initialTab(): SettingsTab {
   if (DEMO_MODE) return 'reservas';
   const value = new URLSearchParams(window.location.search).get('tab');
-  return value === 'redes' || value === 'ia' || value === 'reservas' ? value : 'pagos';
+  return value === 'redes' || value === 'ia' || value === 'reservas' || value === 'notificaciones' ? value : 'pagos';
 }
 
 export function SettingsPage() {
@@ -1011,10 +1024,10 @@ export function SettingsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Configuración</h1>
-          <p className="text-secondary mb-0">Pagos online, reservas por WhatsApp, redes sociales y asistente de IA del hotel.</p>
+          <p className="text-secondary mb-0">Pagos online, reservas, redes sociales, asistente de IA y destinatarios de notificaciones del hotel.</p>
         </div>
       </div>
 
@@ -1087,6 +1100,14 @@ export function SettingsPage() {
           Borradores y respuestas automáticas en la bandeja de mensajes (Instagram).
         </p>
         <AiAssistantSection />
+      </div>
+      <div
+        role="tabpanel"
+        id="settings-panel-notificaciones"
+        aria-labelledby="settings-tab-notificaciones"
+        className={tab === 'notificaciones' ? '' : 'd-none'}
+      >
+        <RecipientSettings key={user?.companyId} />
       </div>
     </div>
   );

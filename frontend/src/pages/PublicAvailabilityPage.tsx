@@ -101,7 +101,7 @@ export function PublicAvailabilityPage() {
   const quote = result;
   const contact = quote?.hotel.whatsapp || quote?.hotel.phone;
   const contactDigits = contact?.replace(/\D/g, '');
-  const whatsappMessage = quote ? buildAvailabilityMessage(quote) : '';
+  const whatsappMessage = quote ? buildAvailabilityMessage(quote, roomTypes.length) : '';
   const theme = bookingThemeFromConfig({ bookingTheme: pageConfig?.hotel.bookingTheme ?? result?.hotel.bookingTheme });
   const themeStyle = bookingThemeStyle(theme);
 

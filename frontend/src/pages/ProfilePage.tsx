@@ -71,7 +71,7 @@ export function ProfilePage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Mi perfil</h1>
           <p className="text-secondary mb-0">Tus datos y, si sos propietario, tus hoteles.</p>

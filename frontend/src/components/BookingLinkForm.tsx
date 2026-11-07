@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
-import type { BookingLink, CompanySettings, Room, Service } from '../api/types';
+import type { BookingLink, CompanySettings, Discount, Room, Service } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
+import { DiscountInput } from './DiscountInput';
 import { Modal } from './Modal';
 import { RoomSelection } from './RoomSelection';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME } from '../lib/format';
-import { computeBookingDeposit, serviceQuantity } from '../lib/pricing';
+import { computeBookingDeposit, discountPreview, serviceQuantity } from '../lib/pricing';
 import { serviceQuantityLabel } from '../lib/services';
 
 interface Props {
@@ -24,6 +26,9 @@ interface SelectedService {
 }
 
 export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
+  const canDiscount = user?.role === 'ADMIN' || user?.role === 'OWNER';
+  const [discount, setDiscount] = useState<Discount | null>(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -67,6 +72,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
     setSelectedRooms([]);
     setServices([]);
     setDepositOverride('');
+    setDiscount(null);
     setExpiresInDays('15');
   }, [open]);
 
@@ -83,7 +89,9 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
   const servicesTotal = round2(
     services.reduce((acc, item) => acc + quantityOf(item.service, item.personsCovered) * item.service.price, 0),
   );
-  const total = round2(selectedRoomsTotal(selectedRooms, nights) + servicesTotal);
+  const subtotal = round2(selectedRoomsTotal(selectedRooms, nights) + servicesTotal);
+  const discountAmount = discountPreview(subtotal, canDiscount ? discount : null);
+  const total = round2(subtotal - discountAmount);
   const suggestedDeposit = computeBookingDeposit(total, depositPercent);
 
   async function searchAvailable() {
@@ -127,7 +135,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
       return;
     }
     const deposit = depositOverride.trim() === '' ? undefined : clampAmount(Number(depositOverride), total);
-    if (deposit !== undefined && deposit <= 0) {
+    if (deposit !== undefined && deposit <= 0 && total > 0) {
       onError(new Error('Indicá un monto de anticipo válido o dejalo vacío para usar el porcentaje del hotel'));
       return;
     }
@@ -149,6 +157,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
             ...(item.personsCovered !== null ? { personsCovered: item.personsCovered } : {}),
           })),
           ...(deposit !== undefined ? { deposit } : {}),
+          ...(canDiscount && discount ? { discount } : {}),
           ...(Number.isInteger(days) && days > 0 ? { expiresInDays: days } : {}),
         },
       });
@@ -262,7 +271,12 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
             <p className="text-secondary mb-0">Elegí una habitación para ver el total y el anticipo sugerido.</p>
           ) : (
             <>
+              {canDiscount && <DiscountInput value={discount} subtotal={subtotal} onChange={setDiscount} />}
               <div className="totals-box">
+                {canDiscount && discount && <>
+                  <div><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+                  <div><span>Descuento{discount.type === 'PERCENTAGE' ? ` (${discount.value}%)` : ''}</span><strong className="text-success">−{money(discountAmount)}</strong></div>
+                </>}
                 <div>
                   <span>Total de la estadía</span>
                   <strong>{money(total)}</strong>

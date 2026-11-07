@@ -26,7 +26,7 @@ export function LoginPage() {
   const [resent, setResent] = useState(false);
 
   const emailOk = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
-  const allowRegister = import.meta.env.VITE_ALLOW_REGISTER === 'true';
+  const allowRegister = import.meta.env.VITE_ALLOW_REGISTER === 'true' || import.meta.env.VITE_ALLOW_REGISTER === '1';
 
   if (user) return <Navigate to="/" replace />;
 

@@ -86,6 +86,11 @@ describe('buildOrderPayload', () => {
     assert.equal('event_date' in items[0], false);
   });
 
+  it('no inventa payer para un huésped con nombre pero sin email', () => {
+    const payload = buildOrderPayload({ ...base, guest: { firstName: 'Juan', lastName: 'Pérez', email: null } });
+    assert.equal('payer' in payload, false);
+  });
+
   it('arma las urls de retorno apuntando a la app', () => {
     const payload = buildOrderPayload(base);
     const online = (payload.config as Record<string, Record<string, unknown>>).online;

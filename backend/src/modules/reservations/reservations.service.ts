@@ -7,8 +7,13 @@ import { quoteStay, roomStayTotal, serviceQuantity, type RoomPricingMode } from 
 import { getTenantId } from '../../lib/tenant.js';
 import type { CreateReservationInput, ServiceInput, UpdateReservationInput } from './reservations.schema.js';
 import { createOrderForReservation, type OrderGuestData } from '../mercadopago/mp.checkout.js';
-import { roomSelectionsTotal, type RoomSnapshot } from '../../lib/reservationRooms.js';
+import type { RoomSnapshot } from '../../lib/reservationRooms.js';
 import { loadReservationRooms, roomOverlapWhere } from './reservationRooms.service.js';
+import { resolveReservationGuest } from '../guests/guests.reservation.js';
+import { registerReservationNotification } from '../notifications/notification.service.js';
+import { calculateReservationAmounts, readReservationAmounts } from '../../lib/reservationAmounts.js';
+import { calculateDiscount } from '../../lib/discount.js';
+import { roomSelectionsTotal } from '../../lib/reservationRooms.js';
 
 export interface ReservationRow {
   id: number;
@@ -19,6 +24,11 @@ export interface ReservationRow {
   checkOut: Date;
   persons: number;
   extraBeds: number;
+  totalAmount: unknown;
+  depositRequired: unknown;
+  discountType?: 'PERCENTAGE' | 'FIXED' | null;
+  discountValue?: unknown;
+  discountAmount?: unknown;
   roomPrice?: unknown;
   roomPricingMode?: RoomPricingMode | null;
   rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: unknown; roomPricingMode: RoomPricingMode; room?: ReservationRow['room'] }[];
@@ -48,8 +58,8 @@ export interface ReservationRow {
     id: number;
     firstName: string;
     lastName: string;
-    phone: string;
-    email: string;
+    phone: string | null;
+    email: string | null;
   } | null;
   services?: {
     id: number;
@@ -104,14 +114,17 @@ export function serializeReservation(row: ReservationRow) {
   const roomPricingMode = row.roomPricingMode ?? 'PER_NIGHT';
   const quoted = quoteStay(nights, 0, (row.services ?? []).map((s) => ({ quantity: s.quantity, unitPrice: decToNum(s.unitPrice) })));
   const rooms = row.rooms?.length ? row.rooms : [{ roomId: row.roomId, persons: row.persons, extraBeds: row.extraBeds, roomPrice, roomPricingMode, room: row.room }];
-  const roomTotal = roomSelectionsTotal(rooms.map((line) => ({ ...line, roomPrice: decToNum(line.roomPrice) })), nights);
   const servicesTotal = quoted.servicesTotal;
-  const total = round2(roomTotal + servicesTotal);
-  const amountPaid = round2((row.payments ?? []).reduce((acc, p) => acc + decToNum(p.amount), 0));
-  const balance = round2(total - amountPaid);
+  const { totalAmount: total, depositRequired, amountPaid, balance } = readReservationAmounts(row, row.payments);
+  const discountAmount = decToNum(row.discountAmount);
+  const subtotal = round2(total + discountAmount);
+  const roomTotal = round2(subtotal - servicesTotal);
 
   return {
     id: row.id,
+    totalAmount: total,
+    discount: row.discountType ? { type: row.discountType, value: decToNum(row.discountValue) } : null,
+    depositRequired,
     code: row.code,
     roomId: row.roomId,
     rooms: rooms.map((line) => ({ roomId: line.roomId, persons: line.persons, extraBeds: line.extraBeds, roomPrice: decToNum(line.roomPrice), roomPricingMode: line.roomPricingMode, room: line.room ? { ...line.room, price: decToNum(line.roomPrice), pricingMode: line.roomPricingMode } : null, total: roomStayTotal(line.roomPricingMode, decToNum(line.roomPrice), nights, line.persons) })),
@@ -136,14 +149,14 @@ export function serializeReservation(row: ReservationRow) {
     updatedAt: row.updatedAt,
     room: row.room
       ? {
-          id: row.room.id,
-          number: row.room.number,
-          name: row.room.name,
-          capacity: row.room.capacity,
-           price: roomPrice,
-           pricingMode: roomPricingMode,
-          type: row.room.type,
-        }
+        id: row.room.id,
+        number: row.room.number,
+        name: row.room.name,
+        capacity: row.room.capacity,
+        price: roomPrice,
+        pricingMode: roomPricingMode,
+        type: row.room.type,
+      }
       : null,
     guest: row.guest,
     services: (row.services ?? []).map((s) => ({
@@ -168,29 +181,31 @@ export function serializeReservation(row: ReservationRow) {
     })),
     receipt: row.receipt
       ? {
-          id: row.receipt.id,
-          fileName: row.receipt.fileName,
-          mimeType: row.receipt.mimeType,
-          size: row.receipt.size,
-          externalRef: row.receipt.externalRef,
-          createdAt: row.receipt.createdAt,
-        }
+        id: row.receipt.id,
+        fileName: row.receipt.fileName,
+        mimeType: row.receipt.mimeType,
+        size: row.receipt.size,
+        externalRef: row.receipt.externalRef,
+        createdAt: row.receipt.createdAt,
+      }
       : null,
     bookingLink: row.bookingLink
       ? {
-          id: row.bookingLink.id,
-          token: row.bookingLink.token,
-          status: row.bookingLink.status,
-          deposit: decToNum(row.bookingLink.deposit),
-          expiresAt: row.bookingLink.expiresAt,
-        }
+        id: row.bookingLink.id,
+        token: row.bookingLink.token,
+        status: row.bookingLink.status,
+        deposit: decToNum(row.bookingLink.deposit),
+        expiresAt: row.bookingLink.expiresAt,
+      }
       : null,
     totals: {
       nights,
-        roomPrice,
-        roomPricingMode,
+      roomPrice,
+      roomPricingMode,
       roomTotal,
       servicesTotal,
+      subtotal,
+      discountAmount,
       total,
       amountPaid,
       balance,
@@ -246,6 +261,8 @@ export interface ReservationReceiptInput {
 }
 
 export interface CreateReservationOptions {
+  idempotencyCode?: string;
+  expectedTotal?: number;
   // Fuerza el estado inicial (las reservas que llegan por WhatsApp nacen PENDING).
   forceStatus?: ReservationStatus;
   // De donde sale la reserva.
@@ -261,6 +278,8 @@ export interface CreateReservationOptions {
   roomPricingMode?: RoomPricingMode;
   rooms?: RoomSnapshot[];
   serviceLines?: { serviceId: number; name?: string; description?: string | null; chargeType?: ServiceChargeType; intervalDays?: number | null; isExtraBed?: boolean; quantity: number; personsCovered: number | null; unitPrice: number }[];
+  totalAmount?: number;
+  depositRequired?: number;
 }
 
 export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
@@ -281,9 +300,20 @@ export async function createReservation(input: CreateReservationInput, options: 
   const roomPrice = rooms[0]!.roomPrice;
   const roomPricingMode = rooms[0]!.roomPricingMode;
   const serviceLines = options.serviceLines ?? services.map((s) => ({ serviceId: s.id, name: s.name, description: s.description, chargeType: s.chargeType, intervalDays: s.intervalDays, isExtraBed: s.isExtraBed, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: decToNum(s.price) }));
-  const { servicesTotal } = quoteStay(nights, 0, serviceLines);
-  const total = round2(roomSelectionsTotal(rooms, nights) + servicesTotal);
-  const code = generateCode();
+  const subtotal = round2(roomSelectionsTotal(rooms, nights) + quoteStay(nights, 0, serviceLines).servicesTotal);
+  const { discountAmount } = calculateDiscount(subtotal, input.discount);
+  let amounts: { totalAmount: number; depositRequired: number };
+  if (options.totalAmount !== undefined && options.depositRequired !== undefined) {
+    amounts = { totalAmount: options.totalAmount, depositRequired: options.depositRequired };
+  } else {
+    const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { bookingDepositPercent: true } });
+    amounts = calculateReservationAmounts(rooms, nights, serviceLines, company.bookingDepositPercent, input.payment?.amount, input.discount);
+  }
+  const { totalAmount: total, depositRequired } = amounts;
+  if (options.expectedTotal !== undefined && total !== options.expectedTotal) {
+    throw conflict('PRECIO_MODIFICADO', 'Los precios cambiaron. Pedí una nueva propuesta antes de confirmar.');
+  }
+  const code = options.idempotencyCode ?? generateCode();
 
   const depositPayment = input.payment;
   const deposit = depositPayment ? round2(depositPayment.amount) : 0;
@@ -325,9 +355,13 @@ export async function createReservation(input: CreateReservationInput, options: 
     order = await createOrderForReservation({ companyId, code, amount: orderAmount, guest: guestContext, checkIn: input.checkIn });
   }
 
-  return prisma.$transaction(async (tx) => {
+  const reservationId = await prisma.$transaction(async (tx) => {
     const roomIds = rooms.map((line) => line.roomId);
     await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" IN (${Prisma.join(roomIds)}) AND "companyId" = ${companyId} ORDER BY "id" FOR UPDATE`;
+    if (options.idempotencyCode) {
+      const existing = await tx.reservation.findFirst({ where: { companyId, code }, select: { id: true } });
+      if (existing) return existing.id;
+    }
     // Reclamo atomico de la solicitud de WhatsApp: el update condicional por
     // status OPEN hace que un segundo envio del huesped no cree otra reserva.
     if (options.bookingLinkId !== undefined) {
@@ -354,12 +388,7 @@ export async function createReservation(input: CreateReservationInput, options: 
       if (!guest) throw notFound('Huésped', input.guestId);
       guestId = guest.id;
     } else {
-      const guest = input.guest!;
-      const upserted = await tx.guest.upsert({
-        where: { companyId_email: { companyId, email: guest.email } },
-        update: { firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone },
-        create: { ...guest, companyId },
-      });
+      const upserted = await resolveReservationGuest(tx, companyId, input.guest!);
       guestId = upserted.id;
     }
 
@@ -376,29 +405,40 @@ export async function createReservation(input: CreateReservationInput, options: 
         extraBeds,
         roomPrice: roomPrice,
         roomPricingMode,
+        totalAmount: total,
+        discountType: input.discount?.type ?? null,
+        discountValue: input.discount?.value ?? 0,
+        discountAmount,
+        depositRequired,
         notes: input.notes,
         status: options.forceStatus ?? (wantPaymentLink ? 'PENDING' : 'RESERVED'),
         source: options.source ?? 'STAFF',
         ...(order ? { mpOrderId: order.orderId, mpCheckoutUrl: order.checkoutUrl, mpExpectedAmount: orderAmount } : {}),
         ...(options.receipt
           ? {
-              receipt: {
-                create: {
-                  companyId,
-                  storagePath: options.receipt.storagePath,
-                  fileName: options.receipt.fileName,
-                  mimeType: options.receipt.mimeType,
-                  size: options.receipt.size,
-                  externalRef: options.receipt.externalRef ?? null,
-                },
+            receipt: {
+              create: {
+                companyId,
+                storagePath: options.receipt.storagePath,
+                fileName: options.receipt.fileName,
+                mimeType: options.receipt.mimeType,
+                size: options.receipt.size,
+                externalRef: options.receipt.externalRef ?? null,
               },
-            }
+            },
+          }
           : {}),
         services: {
           create: serviceLines,
         },
       },
-      include: FULL_INCLUDE,
+      select: { id: true, source: true, status: true },
+    });
+    await registerReservationNotification(tx, {
+      companyId,
+      reservationId: reservation.id,
+      source: reservation.source,
+      status: reservation.status,
     });
 
     if (options.bookingLinkId !== undefined) {
@@ -408,7 +448,7 @@ export async function createReservation(input: CreateReservationInput, options: 
       });
     }
 
-    if (depositPayment === undefined || deposit <= 0 || depositViaMp) return serializeReservation(reservation);
+    if (depositPayment === undefined || deposit <= 0 || depositViaMp) return reservation.id;
 
     await tx.payment.create({
       data: {
@@ -419,9 +459,12 @@ export async function createReservation(input: CreateReservationInput, options: 
       },
     });
 
-    const withDeposit = await tx.reservation.findUniqueOrThrow({ where: { id: reservation.id }, include: FULL_INCLUDE });
-    return serializeReservation(withDeposit);
-  });
+    return reservation.id;
+  }, { timeout: 15_000, maxWait: 10_000 });
+
+  const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId, companyId }, include: FULL_INCLUDE });
+
+  return serializeReservation(reservation);
 }
 
 export async function updateReservation(id: number, input: UpdateReservationInput) {
@@ -484,18 +527,14 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
       guestId = guest.id;
     }
     if (input.guest !== undefined && input.guestId === undefined) {
-      const upserted = await tx.guest.upsert({
-        where: { companyId_email: { companyId, email: input.guest.email } },
-        update: { firstName: input.guest.firstName, lastName: input.guest.lastName, phone: input.guest.phone },
-        create: { ...input.guest, companyId },
-      });
+      const upserted = await resolveReservationGuest(tx, companyId, input.guest);
       guestId = upserted.id;
     }
 
     const shouldRecomputeLines =
       services === undefined && contextChanged && (existing.services?.length ?? 0) > 0;
 
-    const updated = await tx.reservation.update({
+    let updated = await tx.reservation.update({
       where: { id, companyId },
       data: {
         roomId,
@@ -510,43 +549,52 @@ export async function updateReservation(id: number, input: UpdateReservationInpu
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(services !== undefined
           ? {
-              services: {
-                deleteMany: {},
-                create: services.map((s) => ({ serviceId: s.id, name: s.name, description: s.description, chargeType: s.chargeType, intervalDays: s.intervalDays, isExtraBed: s.isExtraBed, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
-              },
-            }
+            services: {
+              deleteMany: {},
+              create: services.map((s) => ({ serviceId: s.id, name: s.name, description: s.description, chargeType: s.chargeType, intervalDays: s.intervalDays, isExtraBed: s.isExtraBed, quantity: s.quantity, personsCovered: s.personsCovered, unitPrice: s.price })),
+            },
+          }
           : {}),
         ...(shouldRecomputeLines
           ? {
-              services: {
-                update: (existing.services ?? []).map((line) => {
-                  const maxPersons = persons;
-                  return {
-                    where: { id: line.id },
-                    data: {
-                      quantity:
-                        (line.chargeType ?? line.service.chargeType) === 'PACK'
-                          ? line.quantity
-                          : serviceQuantity(
-                              line.chargeType ?? line.service.chargeType,
-                              { persons, extraBeds, nights, roomCount: rooms.length },
-                              (line.chargeType ?? line.service.chargeType) === 'PER_PERSON'
-                                ? line.personsCovered == null
-                                  ? persons
-                                  : Math.min(line.personsCovered, maxPersons)
-                                : undefined,
-                              line.isExtraBed ?? line.service.isExtraBed,
-                              line.name != null ? line.intervalDays : line.service.intervalDays,
-                            ),
-                    },
-                  };
-                }),
-              },
-            }
+            services: {
+              update: (existing.services ?? []).map((line) => {
+                const maxPersons = persons;
+                return {
+                  where: { id: line.id },
+                  data: {
+                    quantity:
+                      (line.chargeType ?? line.service.chargeType) === 'PACK'
+                        ? line.quantity
+                        : serviceQuantity(
+                          line.chargeType ?? line.service.chargeType,
+                          { persons, extraBeds, nights, roomCount: rooms.length },
+                          (line.chargeType ?? line.service.chargeType) === 'PER_PERSON'
+                            ? line.personsCovered == null
+                              ? persons
+                              : Math.min(line.personsCovered, maxPersons)
+                            : undefined,
+                          line.isExtraBed ?? line.service.isExtraBed,
+                          line.name != null ? line.intervalDays : line.service.intervalDays,
+                        ),
+                  },
+                };
+              }),
+            },
+          }
           : {}),
       },
       include: FULL_INCLUDE,
     });
+
+    if (contextChanged || services !== undefined) {
+      const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { bookingDepositPercent: true } });
+      const discount = existing.discountType ? { type: existing.discountType, value: decToNum(existing.discountValue) } : null;
+      const lines = updated.services.map((line) => ({ quantity: line.quantity, unitPrice: decToNum(line.unitPrice) }));
+      const amounts = calculateReservationAmounts(rooms, nights, lines, company.bookingDepositPercent, undefined, discount);
+      const { discountAmount } = calculateDiscount(round2(roomSelectionsTotal(rooms, nights) + quoteStay(nights, 0, lines).servicesTotal), discount);
+      updated = await tx.reservation.update({ where: { id, companyId }, data: { ...amounts, discountAmount }, include: FULL_INCLUDE });
+    }
 
     return serializeReservation(updated);
   });
@@ -560,7 +608,7 @@ export async function getReservation(id: number) {
 
 export async function getPublicReservationByCode(code: string) {
   const reservation = await prisma.reservation.findFirst({
-    where: { code: code.trim().toUpperCase(), source: 'PUBLIC_LINK' },
+    where: { code: code.trim().toUpperCase(), source: { in: ['PUBLIC_LINK', 'STAFF'] } },
     include: { ...FULL_INCLUDE, company: { select: { name: true, configPage: true } } },
   });
   if (!reservation) throw notFound('Reserva', code);
@@ -663,11 +711,11 @@ export async function approveReservation(id: number) {
 
   return prisma.$transaction(async (tx) => {
     const link = reservation.bookingLink;
-    if (link && (reservation.payments?.length ?? 0) === 0) {
+    if (link && decToNum(reservation.depositRequired) > 0 && (reservation.payments?.length ?? 0) === 0) {
       await tx.payment.create({
         data: {
           reservationId: id,
-          amount: decToNum(link.deposit),
+          amount: decToNum(reservation.depositRequired),
           method: 'TRANSFER',
           reference: `FORM-${link.token.slice(0, 12).toUpperCase()}`,
         },

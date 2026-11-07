@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { Page, Reservation } from '../api/types';
+import type { AiSettings, Page, Reservation } from '../api/types';
 import { LoadState } from '../components/Feedback';
+import { FilterPanel } from '../components/FilterPanel';
 import { StatusBadge, RefundBadge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { ReservationForm } from '../components/ReservationForm';
+import { ReservationChat } from '../components/ReservationChat';
 import { ReservationDetail } from '../components/ReservationDetail';
 import { useApiError, PaginationBar } from '../components/pagination';
 import { dateShort, money } from '../lib/format';
@@ -31,6 +33,7 @@ const SOURCE_OPTIONS = [
 const POLL_MS = 30_000;
 
 export function ReservationsPage() {
+  const { data: aiSettings } = useApi<{ data: AiSettings }>('/ai/settings', { pollMs: POLL_MS });
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [source, setSource] = useState('');
@@ -50,6 +53,7 @@ export function ReservationsPage() {
   const { data, loading, error, reload } = useApi<Page<Reservation>>(`/reservations${query}`, { pollMs: POLL_MS });
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [selected, setSelected] = useState<Reservation | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const { error: apiError, handleError, clearError } = useApiError();
@@ -94,54 +98,53 @@ export function ReservationsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Reservas</h1>
           <p className="text-secondary mb-0">{data?.meta.total ?? 0} reservas encontradas</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => { clearError(); setCreateOpen(true); }}>
-          + Nueva reserva
-        </button>
+        <div className="page-actions">
+          {aiSettings?.data.reservationAssistantEnabled && <button type="button" className="btn btn-outline-primary" onClick={() => setChatOpen(true)}>Reservar con IA</button>}
+          <button type="button" className="btn btn-primary" onClick={() => { clearError(); setCreateOpen(true); }}>
+            + Nueva reserva
+          </button>
+        </div>
       </div>
 
-      <div className="card shadow-sm mb-4">
-        <div className="card-body py-3">
-          <div className="filter-row">
+      <FilterPanel onApply={applyFilters} activeCount={Object.values(appliedParams).filter(Boolean).length}>
             <input
               placeholder="Buscar por código, huésped o habitación…"
-              className="form-control"
-              style={{ minWidth: 220, flex: '1 1 auto' }}
+              className="form-control filter-search"
+              aria-label="Buscar reservas"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <select className="form-select" style={{ width: 160 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select className="form-select filter-select" aria-label="Estado de la reserva" value={status} onChange={(e) => setStatus(e.target.value)}>
               {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
-            <select className="form-select" style={{ width: 190 }} value={source} onChange={(e) => setSource(e.target.value)}>
+            <select className="form-select filter-select" aria-label="Origen de la reserva" value={source} onChange={(e) => setSource(e.target.value)}>
               {SOURCE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
-            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+            <label className="input-group mb-0 filter-date">
                 <span className="input-group-text">Desde</span>
                 <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </div>
-            <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+            </label>
+            <label className="input-group mb-0 filter-date">
                 <span className="input-group-text">Hasta</span>
                 <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-            <button type="button" className="btn btn-primary" onClick={applyFilters}>
+            </label>
+            <button type="submit" className="btn btn-primary">
               Filtrar
             </button>
-          </div>
-        </div>
-      </div>
+      </FilterPanel>
 
       <div className="card shadow-sm">
         <div className="card-body p-0">
@@ -149,7 +152,7 @@ export function ReservationsPage() {
           {reservations.length > 0 && (
             <>
               <div className="table-responsive">
-                <table className="table align-middle mb-0">
+                <table className="table align-middle mb-0 responsive-table">
                   <thead>
                     <tr>
                       <th>Código</th>
@@ -165,20 +168,20 @@ export function ReservationsPage() {
                   <tbody>
                     {reservations.map((r) => (
                       <tr key={r.id}>
-                        <td><strong>{r.code}</strong></td>
-                        <td>{r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? '—').join(', ') : r.room?.number ?? '—'}</td>
-                        <td>
+                        <td data-label="Código"><strong>{r.code}</strong></td>
+                        <td data-label="Habitación">{r.rooms?.length ? r.rooms.map((line) => line.room?.number ?? '—').join(', ') : r.room?.number ?? '—'}</td>
+                        <td data-label="Huésped">
                           {r.guest ? `${r.guest.lastName}, ${r.guest.firstName}` : '—'}
                         </td>
-                        <td>
+                        <td data-label="Período">
                           {dateShort(r.checkIn)} → {dateShort(r.checkOut)}
                         </td>
-                        <td className="text-end">{money(r.totals.total)}</td>
-                        <td className={`text-end ${r.totals.balance > 0 ? 'text-danger' : 'text-success'}`}>
+                        <td data-label="Total" className="text-end">{money(r.totals.total)}</td>
+                        <td data-label="Saldo" className={`text-end ${r.totals.balance > 0 ? 'text-danger' : 'text-success'}`}>
                           {money(r.totals.balance)}
                         </td>
-                        <td>
-                          <span className="d-inline-flex align-items-center gap-2">
+                        <td data-label="Estado">
+                          <span className="d-inline-flex align-items-center flex-wrap gap-2">
                             <StatusBadge status={r.status} />
                             <RefundBadge reservation={r} />
                             {r.source === 'PUBLIC_LINK' && (
@@ -191,7 +194,7 @@ export function ReservationsPage() {
                             )}
                           </span>
                         </td>
-                        <td className="text-end">
+                        <td data-label="Acciones" className="text-end table-actions">
                           <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openDetail(r.id)}>
                             Ver
                           </button>
@@ -209,6 +212,7 @@ export function ReservationsPage() {
         </div>
       </div>
 
+      {chatOpen && <ReservationChat onClose={() => setChatOpen(false)} onCreated={(reservation) => { handleChanged(reservation); setDetailId(reservation.id); }} />}
       <ReservationForm
         open={createOpen}
         onClose={() => {

@@ -14,6 +14,10 @@ interface AvailabilityChoiceInput {
   services: { serviceId: number; quantity?: number }[];
 }
 
+export function availableInventoryRooms<T extends { id: number; _count: { reservations: number; reservationRooms: number } }>(rooms: T[], selectedRoomId?: number): T[] {
+  return rooms.filter((room) => (selectedRoomId === undefined || room.id === selectedRoomId) && room._count.reservations === 0 && room._count.reservationRooms === 0);
+}
+
 export function quoteAvailabilityChoices(input: AvailabilityChoiceInput) {
   const availableRooms = input.selectedRoomId !== undefined ? input.rooms.filter((room) => room.id === input.selectedRoomId) : input.rooms;
   function quote(rooms: AvailableRoom[]) {

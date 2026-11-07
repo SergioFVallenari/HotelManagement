@@ -11,14 +11,22 @@ interface ModalProps {
   wide?: boolean;
   error?: string | null;
   onDismissError?: () => void;
+  preventClose?: boolean;
 }
 
-export function Modal({ open, title, onClose, children, wide, error, onDismissError }: ModalProps) {
+export function Modal({ open, title, onClose, children, wide, error, onDismissError, preventClose = false }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const openRef = useRef(open);
   const shownRef = useRef(false);
   const hideRequestedRef = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !preventClose) return;
+    const preventHide = (event: Event) => event.preventDefault();
+    el.addEventListener('hide.bs.modal', preventHide);
+    return () => el.removeEventListener('hide.bs.modal', preventHide);
+  }, [preventClose]);
   useEffect(() => {
     onCloseRef.current = onClose;
     openRef.current = open;
@@ -77,12 +85,12 @@ export function Modal({ open, title, onClose, children, wide, error, onDismissEr
   return (
     <div ref={ref} className="modal fade" tabIndex={-1} aria-hidden={!open}>
       <div
-        className={`modal-dialog modal-dialog-centered modal-dialog-scrollable ${wide ? 'modal-lg' : ''}`}
+        className={`modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down ${wide ? 'modal-lg' : ''}`}
       >
         <div className="modal-content">
           <div className="modal-header">
             <h5 className="modal-title">{title}</h5>
-            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Cerrar" />
+            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Cerrar" disabled={preventClose} />
           </div>
           <div className="modal-body">
             {error && <ErrorBanner message={error} onDismiss={onDismissError} />}

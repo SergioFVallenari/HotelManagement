@@ -7,7 +7,7 @@ const MAX_DAYS = 62;
 
 const dateKey = (d: Date): string => d.toISOString().slice(0, 10);
 
-export async function getCalendar(options: { from?: unknown; to?: unknown; companyId?: number; roomTypeId?: number; publicView?: boolean } = {}) {
+export async function getCalendar(options: { from?: unknown; to?: unknown; companyId?: number; roomTypeId?: number; publicView?: boolean; roomTypeName?: string } = {}) {
   const now = todayHotel();
   const from =
     options.from !== undefined
@@ -26,35 +26,37 @@ export async function getCalendar(options: { from?: unknown; to?: unknown; compa
   const dayDates: Date[] = [];
   for (let i = 0; i < totalDays; i++) dayDates.push(addDays(from, i));
 
-  const rooms = await prisma.room.findMany({
-    where: {
-      ...(options.companyId !== undefined ? { companyId: options.companyId } : {}),
-      ...(options.roomTypeId !== undefined ? { typeId: options.roomTypeId } : {}),
-      ...(options.publicView ? { isActive: true } : {}),
-    },
-    orderBy: [{ isActive: 'desc' }, { number: 'asc' }],
-    include: { type: true },
-  });
-
-  const reservations = await prisma.reservation.findMany({
-    where: {
-      ...(options.companyId !== undefined ? { companyId: options.companyId } : {}),
-      status: options.publicView ? { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] } : { not: 'CANCELLED' },
-      ...(options.publicView ? { OR: [{ roomId: { in: rooms.map((room) => room.id) } }, { rooms: { some: { roomId: { in: rooms.map((room) => room.id) } } } }] } : {}),
-      checkIn: { lte: to },
-      checkOut: { gte: from },
-    },
-    select: {
-      id: true,
-      code: true,
-      status: true,
-      checkIn: true,
-      checkOut: true,
-      roomId: true,
-      rooms: { select: { roomId: true } },
-      guest: options.publicView ? false : { select: { firstName: true, lastName: true } },
-    },
-  });
+  const roomWhere = {
+    ...(options.companyId !== undefined ? { companyId: options.companyId } : {}),
+    ...(options.roomTypeId !== undefined ? { typeId: options.roomTypeId } : {}),
+    ...(options.publicView ? { isActive: true } : {}),
+  };
+  const [rooms, reservations] = await Promise.all([
+    prisma.room.findMany({
+      where: roomWhere,
+      orderBy: [{ isActive: 'desc' }, { number: 'asc' }],
+      select: { id: true, number: true, name: true, capacity: true, maxExtraBeds: true, type: options.roomTypeName === undefined ? { select: { name: true } } : false },
+    }),
+    prisma.reservation.findMany({
+      where: {
+        ...(options.companyId !== undefined ? { companyId: options.companyId } : {}),
+        status: options.publicView ? { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] } : { not: 'CANCELLED' },
+        ...(options.publicView ? { OR: [{ room: roomWhere }, { rooms: { some: { room: roomWhere } } }] } : {}),
+        checkIn: { lte: to },
+        checkOut: { gte: from },
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        checkIn: true,
+        checkOut: true,
+        roomId: true,
+        rooms: { select: { roomId: true } },
+        guest: options.publicView ? false : { select: { firstName: true, lastName: true } },
+      },
+    }),
+  ]);
 
   const byRoom = new Map<number, typeof reservations>();
   for (const reserve of reservations) {
@@ -79,7 +81,7 @@ export async function getCalendar(options: { from?: unknown; to?: unknown; compa
       name: room.name,
       capacity: room.capacity,
       maxExtraBeds: room.maxExtraBeds,
-      typeName: room.type?.name ?? null,
+      typeName: options.roomTypeName ?? room.type?.name ?? null,
       cells,
     };
   });

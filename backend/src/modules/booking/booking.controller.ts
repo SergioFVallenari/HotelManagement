@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { parseIdParam } from '../../lib/pagination.js';
+import { assertDiscountPermission } from '../../lib/discount.js';
 import {
   cancelBookingLink,
   createBookingLink,
@@ -31,6 +32,7 @@ export async function listBookingLinksHandler(req: Request, res: Response): Prom
 
 export async function createBookingLinkHandler(req: Request, res: Response): Promise<void> {
   const input = createBookingLinkSchema.parse(req.body) as CreateBookingLinkInput;
+  assertDiscountPermission(input.discount, req.user?.role);
   const link = await createBookingLink(input);
   res.status(201).json({ data: link });
 }

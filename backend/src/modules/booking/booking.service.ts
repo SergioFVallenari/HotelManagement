@@ -6,6 +6,7 @@ import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
+import { calculateDiscount } from '../../lib/discount.js';
 import { assertValidRange, nightsBetween, parseDate, todayHotel } from '../../lib/date.js';
 import { computeBookingDeposit, quoteStay } from '../../lib/pricing.js';
 import { bookingRoomSnapshotsSchema } from './booking.schema.js';
@@ -20,8 +21,8 @@ import type {
 } from './booking.schema.js';
 import { publicPageConfigSchema } from '../companies/companies.schema.js';
 import { getBookingCapacity } from './booking.capacity.js';
-import { quoteAvailabilityChoices } from '../../lib/availabilityChoices.js';
-import { publicRoomTypeOptions } from '../../lib/bookingCapacity.js';
+import { availableInventoryRooms, quoteAvailabilityChoices } from '../../lib/availabilityChoices.js';
+import { publicRoomTypeOptions, summarizeRoomCapacity } from '../../lib/bookingCapacity.js';
 import { roomSelectionsTotal, type RoomSnapshot } from '../../lib/reservationRooms.js';
 import { loadReservationRooms, roomOverlapWhere } from '../reservations/reservationRooms.service.js';
 import { generateBookingToken } from './booking.token.js';
@@ -54,13 +55,16 @@ export async function getPublicBookingPageConfig(slug: string) {
     select: { id: true, name: true, whatsapp: true, phone: true, configPage: true },
   });
   if (!company) throw notFound('No encontramos este alojamiento');
-  const capacity = await getBookingCapacity(company.id, company.configPage);
   const config = publicPageConfigSchema.safeParse(company.configPage);
-  const types = await prisma.roomType.findMany({
+  const typesPromise = prisma.roomType.findMany({
     where: { companyId: company.id, rooms: { some: { companyId: company.id, isActive: true } } },
     select: { id: true, name: true, rooms: { where: { companyId: company.id, isActive: true }, select: { capacity: true, maxExtraBeds: true } } },
     orderBy: { name: 'asc' },
   });
+  const [types, capacity] = await Promise.all([
+    typesPromise,
+    getBookingCapacity(company.id, company.configPage, undefined, typesPromise.then((types) => summarizeRoomCapacity(types.flatMap((type) => type.rooms)))),
+  ]);
   return {
     hotel: {
       ...capacity,
@@ -76,9 +80,9 @@ export async function getPublicBookingPageConfig(slug: string) {
 export async function getPublicCalendar(slug: string, query: { from: string; to: string; roomTypeId: number }) {
   const company = await prisma.company.findUnique({ where: { bookingSlug: slug.toLowerCase() }, select: { id: true } });
   if (!company) throw notFound('No encontramos este alojamiento');
-  const type = await prisma.roomType.findFirst({ where: { id: query.roomTypeId, companyId: company.id }, select: { id: true } });
+  const type = await prisma.roomType.findFirst({ where: { id: query.roomTypeId, companyId: company.id }, select: { name: true } });
   if (!type) throw badRequest('El tipo de habitación seleccionado no pertenece a este alojamiento');
-  const calendar = await getCalendar({ ...query, companyId: company.id, publicView: true });
+  const calendar = await getCalendar({ ...query, companyId: company.id, publicView: true, roomTypeName: type.name });
   return publicCalendarData(calendar);
 }
 
@@ -89,17 +93,35 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
   });
   if (!company) throw notFound('No encontramos este alojamiento');
 
-  const selectedRoomType = query.roomTypeId !== undefined ? await prisma.roomType.findFirst({
-    where: { id: query.roomTypeId, companyId: company.id },
-    select: { name: true },
-  }) : null;
-  const capacity = await getBookingCapacity(company.id, company.configPage, query.roomTypeId);
+  const checkIn = parseDate(query.checkIn, 'checkIn');
+  const checkOut = parseDate(query.checkOut, 'checkOut');
+  assertValidRange(checkIn, checkOut);
+  if (checkIn < todayHotel()) throw badRequest('La fecha de entrada no puede ser anterior a hoy');
+  const nights = nightsBetween(checkIn, checkOut);
+  if (nights > 30) throw badRequest('La estadía no puede superar las 30 noches');
+
+  const overlap: Prisma.ReservationWhereInput = { companyId: company.id, status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } };
+  const inventoryPromise = prisma.room.findMany({
+    where: { companyId: company.id, isActive: true, ...(query.roomTypeId !== undefined ? { typeId: query.roomTypeId } : {}) },
+    select: {
+      id: true, number: true, name: true, typeId: true, capacity: true, maxExtraBeds: true, price: true, pricingMode: true, amenities: true,
+      _count: { select: { reservations: { where: overlap }, reservationRooms: { where: { reservation: overlap } } } },
+    },
+    orderBy: { id: 'asc' },
+  });
+  const [inventory, types, capacity] = await Promise.all([
+    inventoryPromise,
+    prisma.roomType.findMany({
+      where: { companyId: company.id, ...(query.roomTypeId !== undefined ? { id: query.roomTypeId } : {}) },
+      select: { id: true, name: true },
+    }),
+    getBookingCapacity(company.id, company.configPage, query.roomTypeId, inventoryPromise.then(summarizeRoomCapacity)),
+  ]);
+  const typeNames = new Map(types.map((type) => [type.id, type.name]));
+  const selectedRoomType = types.find((type) => type.id === query.roomTypeId);
   if (query.roomTypeId !== undefined && (!selectedRoomType || capacity.roomCount === 0)) throw badRequest('El tipo de habitación seleccionado no está habilitado para este alojamiento');
   const service = query.includeExtraBeds ? capacity.publicExtraBedService ?? undefined : undefined;
-  const selectedRoom = query.roomId !== undefined ? await prisma.room.findFirst({
-    where: { id: query.roomId, companyId: company.id, isActive: true, ...(query.roomTypeId !== undefined ? { typeId: query.roomTypeId } : {}) },
-    select: { id: true, number: true, name: true, capacity: true, maxExtraBeds: true, type: { select: { name: true } } },
-  }) : null;
+  const selectedRoom = query.roomId !== undefined ? inventory.find((room) => room.id === query.roomId) : null;
   if (query.roomId !== undefined && !selectedRoom) throw badRequest('La habitación seleccionada no está habilitada para este alojamiento y tipo');
   const hotelLimit = service ? capacity.maxAvailabilityPersonsWithExtraBeds : capacity.maxAvailabilityPersons;
   const maxAvailabilityPersons = selectedRoom ? Math.min(hotelLimit, selectedRoom.capacity + (service ? selectedRoom.maxExtraBeds : 0)) : hotelLimit;
@@ -110,37 +132,13 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
     throw badRequest(`La consulta admite hasta ${maxAvailabilityPersons} personas.`);
   }
 
-  const checkIn = parseDate(query.checkIn, 'checkIn');
-  const checkOut = parseDate(query.checkOut, 'checkOut');
-  assertValidRange(checkIn, checkOut);
-  if (checkIn < todayHotel()) throw badRequest('La fecha de entrada no puede ser anterior a hoy');
-  const nights = nightsBetween(checkIn, checkOut);
-  if (nights > 30) throw badRequest('La estadía no puede superar las 30 noches');
-
-  const rooms = await prisma.room.findMany({
-    where: {
-      companyId: company.id,
-      isActive: true,
-      ...(query.roomId !== undefined ? { id: query.roomId } : {}),
-      ...(query.roomTypeId !== undefined ? { typeId: query.roomTypeId } : {}),
-      reservations: {
-        none: {
-          status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] },
-          checkIn: { lt: checkOut },
-          checkOut: { gt: checkIn },
-        },
-      },
-      reservationRooms: { none: { reservation: { companyId: company.id, status: { in: ['PENDING', 'RESERVED', 'CHECKED_IN'] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } } } },
-    },
-    select: { id: true, typeId: true, capacity: true, maxExtraBeds: true, price: true, pricingMode: true, type: { select: { name: true } }, amenities: true },
-    orderBy: { id: 'asc' },
-  });
+  const rooms = availableInventoryRooms(inventory, query.roomId);
 
   const choices = quoteAvailabilityChoices({
     rooms: rooms.map((room) => ({
       id: room.id,
       typeId: room.typeId,
-      roomType: room.type.name,
+      roomType: typeNames.get(room.typeId)!,
       capacity: room.capacity,
       maxExtraBeds: room.maxExtraBeds,
       price: decToNum(room.price),
@@ -166,7 +164,7 @@ export async function getPublicAvailability(slug: string, query: PublicAvailabil
     },
     stay: {
       checkIn: query.checkIn, checkOut: query.checkOut, nights, persons: query.persons,
-      includesExtraBeds: service !== undefined, roomType: selectedRoom?.type.name ?? selectedRoomType?.name ?? null,
+      includesExtraBeds: service !== undefined, roomType: (selectedRoom ? typeNames.get(selectedRoom.typeId) : selectedRoomType?.name) ?? null,
       ...(selectedRoom ? { room: { id: selectedRoom.id, number: selectedRoom.number, name: selectedRoom.name, capacity: selectedRoom.capacity, maxExtraBeds: selectedRoom.maxExtraBeds } } : {}),
     },
     availableRoomCount: rooms.length,
@@ -188,6 +186,9 @@ interface BookingLinkRow {
   services: unknown;
   rooms?: unknown;
   total: unknown;
+  discountType?: 'PERCENTAGE' | 'FIXED' | null;
+  discountValue?: unknown;
+  discountAmount?: unknown;
   deposit: unknown;
   expiresAt: Date | null;
   createdAt: Date;
@@ -252,6 +253,7 @@ export function serializeBookingLink(row: BookingLinkRow) {
         nights,
         total,
         deposit,
+        discountAmount: decToNum(row.discountAmount),
         url,
         services: lines,
       })
@@ -259,6 +261,7 @@ export function serializeBookingLink(row: BookingLinkRow) {
 
   return {
     id: row.id,
+    discount: row.discountType ? { type: row.discountType, value: decToNum(row.discountValue) } : null,
     token: row.token,
     url,
     status: row.status,
@@ -281,7 +284,9 @@ export function serializeBookingLink(row: BookingLinkRow) {
       : null,
     services: lines,
     totals: {
-      roomTotal: round2(total - servicesTotal),
+      roomTotal: round2(total + decToNum(row.discountAmount) - servicesTotal),
+      subtotal: round2(total + decToNum(row.discountAmount)),
+      discountAmount: decToNum(row.discountAmount),
       servicesTotal,
       total,
       deposit,
@@ -308,6 +313,7 @@ export function serializePublicQuote(row: BookingLinkRow) {
   const servicesTotal = servicesTotalOf(lines);
 
   return {
+    discount: row.discountType ? { type: row.discountType, value: decToNum(row.discountValue) } : null,
     hotel: {
       name: row.company?.name ?? 'Hotel',
       whatsapp: row.company?.whatsapp ?? null,
@@ -335,7 +341,9 @@ export function serializePublicQuote(row: BookingLinkRow) {
       lineTotal: l.lineTotal,
     })),
     totals: {
-      roomTotal: round2(total - servicesTotal),
+      roomTotal: round2(total + decToNum(row.discountAmount) - servicesTotal),
+      subtotal: round2(total + decToNum(row.discountAmount)),
+      discountAmount: decToNum(row.discountAmount),
       servicesTotal,
       total,
       deposit,
@@ -386,7 +394,7 @@ export async function createBookingLink(input: CreateBookingLinkInput) {
   const roomPrice = rooms[0]!.roomPrice;
   const roomPricingMode = rooms[0]!.roomPricingMode;
   const { servicesTotal } = quoteStay(nights, 0, lines.map((l) => ({ quantity: l.quantity, unitPrice: l.unitPrice })));
-  const total = round2(roomSelectionsTotal(rooms, nights) + servicesTotal);
+  const { total, discountAmount } = calculateDiscount(round2(roomSelectionsTotal(rooms, nights) + servicesTotal), input.discount);
 
   const company = await prisma.company.findUnique({
     where: { id: companyId },
@@ -397,7 +405,7 @@ export async function createBookingLink(input: CreateBookingLinkInput) {
     input.deposit != null
       ? round2(Math.min(round2(input.deposit), total))
       : computeBookingDeposit(total, percent);
-  if (deposit <= 0) {
+  if (deposit <= 0 && total > 0) {
     throw badRequest(
       'El anticipo no puede ser 0: configurá el porcentaje de anticipo en Ajustes o indicá un monto para esta solicitud',
     );
@@ -418,6 +426,9 @@ export async function createBookingLink(input: CreateBookingLinkInput) {
       roomPricingMode,
       services: lines as unknown as Prisma.InputJsonValue,
       total,
+      discountType: input.discount?.type ?? null,
+      discountValue: input.discount?.value ?? 0,
+      discountAmount,
       deposit,
       expiresAt: new Date(Date.now() + ttlDays * 86_400_000),
     },
@@ -581,6 +592,7 @@ export async function submitBooking(token: string, guest: PublicBookingInput) {
           checkIn: toIsoDate(row.checkIn),
           checkOut: toIsoDate(row.checkOut),
           persons: row.persons,
+          ...(row.discountType ? { discount: { type: row.discountType, value: decToNum(row.discountValue) } } : {}),
           extraBeds: row.extraBeds,
           services: lines.map((l) => ({
             serviceId: l.serviceId,
@@ -598,6 +610,8 @@ export async function submitBooking(token: string, guest: PublicBookingInput) {
           source: 'PUBLIC_LINK',
           skipPaymentLink: true,
           bookingLinkId: row.id,
+          totalAmount: decToNum(row.total),
+          depositRequired: deposit,
           rooms: bookingRooms(row),
           serviceLines: lines.map((line) => ({ serviceId: line.serviceId, name: line.name, description: line.description ?? null, chargeType: line.chargeType as ServiceChargeType, intervalDays: line.intervalDays ?? null, isExtraBed: line.isExtraBed, quantity: line.quantity, personsCovered: line.personsCovered, unitPrice: line.unitPrice })),
           roomPrice: decToNum(row.roomPrice ?? row.room?.price),

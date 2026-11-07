@@ -88,8 +88,20 @@ export function Layout() {
       localStorage.setItem(THEME_KEY, theme);
     } catch {}
   }, [theme]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawerOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [drawerOpen]);
   const layoutClass = `${collapsed ? 'sidebar-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''}`.trim();
   function toggleSidebar() {
+    if (window.matchMedia('(max-width: 899px)').matches) {
+      setDrawerOpen((value) => !value);
+      return;
+    }
     setCollapsed((value) => {
       const next = !value;
       try {
@@ -99,13 +111,12 @@ export function Layout() {
       }
       return next;
     });
-    setDrawerOpen((value) => !value);
   }
 
   return (
     <div className={`layout crm-theme ${layoutClass}`} data-bs-theme={theme}>
       <div className="sidebar-backdrop" onClick={() => setDrawerOpen(false)} />
-      <aside className="sidebar">
+      <aside id="main-sidebar" className="sidebar" aria-label="Menú principal">
         <div className="sidebar-brand">
           <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
           <div>
@@ -144,10 +155,21 @@ export function Layout() {
           <div className="topbar-left">
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm sidebar-toggle"
+              className="btn btn-outline-secondary btn-sm sidebar-toggle sidebar-toggle-desktop"
               onClick={toggleSidebar}
-              aria-label={drawerOpen || collapsed ? 'Mostrar menú' : 'Ocultar menú'}
-              aria-expanded={drawerOpen || !collapsed}
+              aria-label={collapsed ? 'Expandir menú' : 'Contraer menú'}
+              aria-expanded={!collapsed}
+              aria-controls="main-sidebar"
+            >
+              <IconMenu2 size={18} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm sidebar-toggle sidebar-toggle-mobile"
+              onClick={toggleSidebar}
+              aria-label={drawerOpen ? 'Ocultar menú' : 'Mostrar menú'}
+              aria-expanded={drawerOpen}
+              aria-controls="main-sidebar"
             >
               <IconMenu2 size={18} />
             </button>

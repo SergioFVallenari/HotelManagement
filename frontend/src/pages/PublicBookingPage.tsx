@@ -295,6 +295,10 @@ export function PublicBookingPage() {
                   ))}
                 </>
               )}
+              {(quote.totals.discountAmount ?? 0) > 0 && <div>
+                <span>Descuento{quote.discount?.type === 'PERCENTAGE' ? ` (${quote.discount.value}%)` : ''}</span>
+                <strong className="text-success">−{money(quote.totals.discountAmount)}</strong>
+              </div>}
               <div>
                 <span>Total de la estadía</span>
                 <strong>{money(quote.totals.total)}</strong>

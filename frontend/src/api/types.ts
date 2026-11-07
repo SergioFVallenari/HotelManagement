@@ -4,6 +4,15 @@ export interface RoomType {
   _count?: { rooms: number };
 }
 
+export interface NotificationRecipient {
+  id: number;
+  name: string;
+  email: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Room {
   id: number;
   number: string;
@@ -23,8 +32,8 @@ export interface Guest {
   id: number;
   firstName: string;
   lastName: string;
-  phone: string;
-  email: string;
+  phone: string | null;
+  email: string | null;
   _count?: { reservations: number };
 }
 
@@ -67,6 +76,8 @@ export interface Payment {
 }
 
 export interface ReservationTotals {
+  subtotal?: number;
+  discountAmount?: number;
   nights: number;
   roomPrice: number;
   roomTotal: number;
@@ -78,6 +89,7 @@ export interface ReservationTotals {
 
 export type ReservationSource = 'STAFF' | 'PUBLIC_LINK';
 export type BookingLinkStatus = 'OPEN' | 'COMPLETED' | 'CANCELLED';
+export type Discount = { type: 'PERCENTAGE' | 'FIXED'; value: number };
 
 export interface ReservationReceipt {
   id: number;
@@ -89,7 +101,10 @@ export interface ReservationReceipt {
 }
 
 export interface Reservation {
+  discount?: Discount | null;
   id: number;
+  totalAmount: number;
+  depositRequired: number;
   code: string;
   roomId: number;
   rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; total: number; room: Reservation['room'] }[];
@@ -140,6 +155,7 @@ export interface BookingLinkLine {
 }
 
 export interface BookingLink {
+  discount?: Discount | null;
   id: number;
   token: string;
   url: string;
@@ -152,7 +168,7 @@ export interface BookingLink {
   rooms?: { roomId: number; persons: number; extraBeds: number; roomPrice: number; roomPricingMode: 'PER_NIGHT' | 'PER_PERSON'; number: string; typeName: string; capacity: number; amenities?: string[] }[];
   room: { id: number; number: string; typeName: string | null; capacity: number; price: number; pricingMode: 'PER_NIGHT' | 'PER_PERSON'; label: string; amenities?: string[] } | null;
   services: BookingLinkLine[];
-  totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
+  totals: { roomTotal: number; servicesTotal: number; subtotal?: number; discountAmount?: number; total: number; deposit: number; balance: number };
   roomPricingMode?: 'PER_NIGHT' | 'PER_PERSON';
   expiresAt: string | null;
   createdAt: string;
@@ -162,6 +178,7 @@ export interface BookingLink {
 }
 
 export interface PublicBookingQuote {
+  discount?: Discount | null;
   hotel: { name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; slug: string };
   stay: {
     checkIn: string;
@@ -175,7 +192,7 @@ export interface PublicBookingQuote {
     roomPricingMode: 'PER_NIGHT' | 'PER_PERSON';
   };
   services: { name: string; description?: string | null; intervalDays?: number | null; chargeType?: ServiceChargeType; quantity: number; unitPrice: number; lineTotal: number }[];
-  totals: { roomTotal: number; servicesTotal: number; total: number; deposit: number; balance: number };
+  totals: { roomTotal: number; servicesTotal: number; subtotal?: number; discountAmount?: number; total: number; deposit: number; balance: number };
   expiresAt: string | null;
   expired: boolean;
 }
@@ -412,6 +429,7 @@ export interface AiConfig {
 }
 
 export interface AiSettings {
+  reservationAssistantEnabled: boolean;
   enabled: boolean;
   autoReply: boolean;
   instructions: string | null;

@@ -1,13 +1,13 @@
 import { z } from 'zod';
+import { createGuestSchema } from '../guests/guests.schema.js';
 
 export const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (se espera YYYY-MM-DD)');
 
-export const guestInputSchema = z.object({
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  phone: z.string().min(3).max(30),
-  email: z.string().email().max(200),
-});
+export const guestInputSchema = createGuestSchema;
+export const discountSchema = z.object({
+  type: z.enum(['PERCENTAGE', 'FIXED']),
+  value: z.number().nonnegative().max(99999999.99).refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.00001, 'Usá como máximo dos decimales'),
+}).refine((discount) => discount.type !== 'PERCENTAGE' || discount.value <= 100, 'El porcentaje no puede superar el 100%');
 
 export const serviceInputSchema = z.object({
   serviceId: z.number().int().positive(),
@@ -46,6 +46,7 @@ export const createReservationSchema = z
     notes: z.string().max(500).optional().nullable(),
     generatePaymentLink: z.boolean().optional(),
     payment: depositInputSchema.optional(),
+    discount: discountSchema.optional(),
   })
   .refine((data) => data.roomId !== undefined || data.rooms !== undefined, { message: 'Seleccioná al menos una habitación', path: ['rooms'] })
   .refine((data) => data.guestId !== undefined || data.guest !== undefined, {

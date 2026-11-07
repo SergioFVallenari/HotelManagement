@@ -30,8 +30,8 @@ const registerRate = rateLimiter(5, 15 * 60 * 1000);
 
 router.post('/login', rateLimiter(5, 15 * 60 * 1000), loginForCompanies);
 router.post('/login/company', rateLimiter(5, 15 * 60 * 1000), login);
-router.post('/register', registerKeyGuard, register);
-router.post('/resend-confirmation', registerKeyGuard, resend);
+router.post('/register', registerRate, registerKeyGuard, register);
+router.post('/resend-confirmation', registerRate, registerKeyGuard, resend);
 router.post('/switch-company', requireAuth, requireOwner, switchCompany);
 router.post('/logout', logout);
 router.get('/me', requireAuth, me);

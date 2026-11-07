@@ -35,7 +35,7 @@ async function postOnce(url: string, body: unknown): Promise<{ ok: boolean; stat
 // Devuelve el texto crudo de la respuesta (JSON con {action, reply}); el parse
 // y los fallbacks viven en ai.reply.ts. Hasta 3 intentos con backoff corto
 // ante 429/503: la free tier de Gemini tiene picos de demanda de segundos.
-export async function generateJson(input: { systemInstruction: string; userTurns: AiTurn[] }): Promise<string> {
+export async function generateJson(input: { systemInstruction: string; userTurns: AiTurn[]; responseSchema?: Record<string, unknown> }): Promise<string> {
   if (!env.ai.geminiApiKey) {
     throw new AppError(503, 'AI_NOT_CONFIGURED', 'El asistente de IA no está configurado');
   }
@@ -49,7 +49,7 @@ export async function generateJson(input: { systemInstruction: string; userTurns
     })),
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
+      responseSchema: input.responseSchema ?? RESPONSE_SCHEMA,
     },
   };
 

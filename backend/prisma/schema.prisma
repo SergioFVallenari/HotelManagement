@@ -8,41 +8,43 @@ datasource db {
 }
 
 model Company {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  bookingSlug String? @unique
-  createdById Int?
+  id                     Int                            @id @default(autoincrement())
+  name                   String                         @unique
+  bookingSlug            String?                        @unique
+  createdById            Int?
   // Anticipo que se cobra de las reservas que llegan por el formulario de
   // WhatsApp: porcentaje del total de la estadia (se redondea a multiplos de
   // $10.000). 0 = el hotel no pide anticipo.
-  bookingDepositPercent Int @default(20)
-  whatsapp String?
-  phone    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  members     UserCompany[]
-  roomTypes   RoomType[]
-  rooms       Room[]
-  guests      Guest[]
-  services    Service[]
-  reservations Reservation[]
-  mpAccount   CompanyMpAccount?
-  channelAccounts      ChannelAccount[]
-  channelConversations ChannelConversation[]
-  aiSetting   CompanyAiSetting?
-  bookingLinks BookingLink[]
-  bookingReceipts ReservationReceipt[]
-  configPage Json @default("{}")
+  bookingDepositPercent  Int                            @default(20)
+  whatsapp               String?
+  phone                  String?
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  members                UserCompany[]
+  roomTypes              RoomType[]
+  rooms                  Room[]
+  guests                 Guest[]
+  services               Service[]
+  reservations           Reservation[]
+  mpAccount              CompanyMpAccount?
+  channelAccounts        ChannelAccount[]
+  channelConversations   ChannelConversation[]
+  aiSetting              CompanyAiSetting?
+  bookingLinks           BookingLink[]
+  bookingReceipts        ReservationReceipt[]
+  configPage             Json                           @default("{}")
+  notificationRecipients CompanyNotificationRecipient[]
 }
 
 model CompanyAiSetting {
-  companyId    Int      @id
-  enabled      Boolean  @default(false)
-  autoReply    Boolean  @default(true)
-  instructions String?  @db.Text
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId                   Int      @id
+  reservationAssistantEnabled Boolean  @default(false)
+  enabled                     Boolean  @default(false)
+  autoReply                   Boolean  @default(true)
+  instructions                String?  @db.Text
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  company                     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model User {
@@ -88,35 +90,35 @@ model UserType {
 }
 
 model RoomType {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   name      String
   companyId Int
   rooms     Room[]
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@unique([companyId, name])
   @@index([companyId])
 }
 
 model Room {
-  id           Int           @id @default(autoincrement())
-  number       String
-  name         String?
-  typeId       Int
-  companyId    Int
-  capacity     Int           @default(2)
-  maxExtraBeds Int           @default(0)
-  price        Decimal       @db.Decimal(10, 2)
-  pricingMode  RoomPricingMode @default(PER_NIGHT)
-  amenities    String[]
-  isActive     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  type         RoomType      @relation(fields: [typeId], references: [id])
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  reservations Reservation[]
+  id               Int               @id @default(autoincrement())
+  number           String
+  name             String?
+  typeId           Int
+  companyId        Int
+  capacity         Int               @default(2)
+  maxExtraBeds     Int               @default(0)
+  price            Decimal           @db.Decimal(10, 2)
+  pricingMode      RoomPricingMode   @default(PER_NIGHT)
+  amenities        String[]
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  type             RoomType          @relation(fields: [typeId], references: [id])
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  reservations     Reservation[]
   reservationRooms ReservationRoom[]
-  bookingLinks BookingLink[]
+  bookingLinks     BookingLink[]
 
   @@unique([companyId, number])
   @@index([typeId])
@@ -128,13 +130,12 @@ enum RoomPricingMode {
   PER_PERSON
 }
 
-
 model Guest {
   id           Int           @id @default(autoincrement())
   firstName    String
   lastName     String
-  phone        String
-  email        String
+  phone        String?
+  email        String?
   companyId    Int
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -186,42 +187,52 @@ enum ReservationSource {
   PUBLIC_LINK
 }
 
-model Reservation {
-  id           Int                @id @default(autoincrement())
-  code         String             @unique
-  roomId       Int
-  guestId      Int
-  companyId    Int
-  checkIn      DateTime           @db.Date
-  checkOut     DateTime           @db.Date
-  persons      Int                @default(1)
-  extraBeds    Int                @default(0)
-  roomPrice    Decimal?           @db.Decimal(10, 2)
-  roomPricingMode RoomPricingMode?
-  status       ReservationStatus  @default(RESERVED)
-  source       ReservationSource  @default(STAFF)
-  checkedInAt  DateTime?
-  checkedOutAt DateTime?
-  cancelledAt  DateTime?
-  refundEligible Boolean          @default(false)
-  refundAmount   Decimal?         @db.Decimal(10, 2)
-  refunded       Boolean          @default(false)
-  refundedAt     DateTime?
-  mpOrderId      String?            @unique
-  mpCheckoutUrl  String?
-  mpExpectedAmount Decimal?         @db.Decimal(10, 2)
-  notes        String?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  room         Room               @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  guest        Guest              @relation(fields: [guestId], references: [id], onDelete: Restrict)
-  company      Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  payments     Payment[]
-  services     ReservationService[]
-  receipt      ReservationReceipt?
-  bookingLink  BookingLink?
-  rooms        ReservationRoom[]
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
 
+model Reservation {
+  id               Int                  @id @default(autoincrement())
+  code             String               @unique
+  roomId           Int
+  guestId          Int
+  companyId        Int
+  checkIn          DateTime             @db.Date
+  checkOut         DateTime             @db.Date
+  persons          Int                  @default(1)
+  extraBeds        Int                  @default(0)
+  roomPrice        Decimal?             @db.Decimal(10, 2)
+  roomPricingMode  RoomPricingMode?
+  status           ReservationStatus    @default(RESERVED)
+  source           ReservationSource    @default(STAFF)
+  checkedInAt      DateTime?
+  checkedOutAt     DateTime?
+  cancelledAt      DateTime?
+  refundEligible   Boolean              @default(false)
+  refundAmount     Decimal?             @db.Decimal(10, 2)
+  refunded         Boolean              @default(false)
+  refundedAt       DateTime?
+  mpOrderId        String?              @unique
+  mpCheckoutUrl    String?
+  mpExpectedAmount Decimal?             @db.Decimal(10, 2)
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  room             Room                 @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  guest            Guest                @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  payments         Payment[]
+  services         ReservationService[]
+  receipt          ReservationReceipt?
+  bookingLink      BookingLink?
+  rooms            ReservationRoom[]
+  totalAmount     Decimal? @db.Decimal(10, 2)
+  discountType    DiscountType?
+  discountValue   Decimal @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal @default(0) @db.Decimal(10, 2)
+  depositRequired Decimal? @db.Decimal(10, 2)
+  
   @@index([companyId, code])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
@@ -255,30 +266,33 @@ enum BookingLinkStatus {
 }
 
 model BookingLink {
-  id            Int               @id @default(autoincrement())
-  token         String            @unique
-  companyId     Int
-  roomId        Int
-  checkIn       DateTime          @db.Date
-  checkOut      DateTime          @db.Date
-  persons       Int               @default(1)
-  extraBeds     Int               @default(0)
-  roomPrice     Decimal?          @db.Decimal(10, 2)
+  id              Int               @id @default(autoincrement())
+  token           String            @unique
+  companyId       Int
+  roomId          Int
+  checkIn         DateTime          @db.Date
+  checkOut        DateTime          @db.Date
+  persons         Int               @default(1)
+  extraBeds       Int               @default(0)
+  roomPrice       Decimal?          @db.Decimal(10, 2)
   roomPricingMode RoomPricingMode?
   // Snapshot de los servicios cotizados: { serviceId, name, quantity,
   // personsCovered, unitPrice, lineTotal }.
-  services      Json              @default("[]")
-  rooms         Json              @default("[]")
-  total         Decimal           @db.Decimal(10, 2)
-  deposit       Decimal           @db.Decimal(10, 2)
-  status        BookingLinkStatus @default(OPEN)
-  reservationId Int?              @unique
-  expiresAt     DateTime?
-  createdAt     DateTime          @default(now())
-  completedAt   DateTime?
-  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  room          Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  reservation   Reservation?      @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  services        Json              @default("[]")
+  rooms           Json              @default("[]")
+  total           Decimal           @db.Decimal(10, 2)
+  discountType    DiscountType?
+  discountValue   Decimal @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal @default(0) @db.Decimal(10, 2)
+  deposit         Decimal           @db.Decimal(10, 2)
+  status          BookingLinkStatus @default(OPEN)
+  reservationId   Int?              @unique
+  expiresAt       DateTime?
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  room            Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  reservation     Reservation?      @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
   @@index([companyId, status])
   @@index([companyId, createdAt])
@@ -305,19 +319,19 @@ model ReservationReceipt {
 }
 
 model ReservationService {
-  id            Int         @id @default(autoincrement())
-  reservationId Int
-  serviceId     Int
-  name          String?
-  description   String?     @db.Text
-  chargeType    ServiceChargeType?
-  intervalDays  Int?
-  isExtraBed    Boolean?
-  quantity      Int         @default(1)
+  id             Int                @id @default(autoincrement())
+  reservationId  Int
+  serviceId      Int
+  name           String?
+  description    String?            @db.Text
+  chargeType     ServiceChargeType?
+  intervalDays   Int?
+  isExtraBed     Boolean?
+  quantity       Int                @default(1)
   personsCovered Int?
-  unitPrice     Decimal     @db.Decimal(10, 2)
-  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  service       Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  unitPrice      Decimal            @db.Decimal(10, 2)
+  reservation    Reservation        @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  service        Service            @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
   @@unique([reservationId, serviceId])
 }
@@ -330,16 +344,16 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id            Int         @id @default(autoincrement())
+  id            Int           @id @default(autoincrement())
   reservationId Int
-  amount        Decimal     @db.Decimal(10, 2)
+  amount        Decimal       @db.Decimal(10, 2)
   method        PaymentMethod
-  paidAt        DateTime    @default(now())
+  paidAt        DateTime      @default(now())
   reference     String?
-  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservation   Reservation   @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
-  @@index([reservationId])
   @@unique([reference])
+  @@index([reservationId])
 }
 
 model CompanyMpAccount {
@@ -370,25 +384,25 @@ enum ChannelAccountStatus {
 }
 
 model ChannelAccount {
-  id                String               @id @default(cuid())
+  id                String                @id @default(cuid())
   companyId         Int
-  company           Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   channel           ChannelType
   externalAccountId String
   handle            String?
   displayName       String?
-  accessTokenEnc    String?              @db.Text
+  accessTokenEnc    String?               @db.Text
   accessTokenIv     String?
-  refreshTokenEnc   String?              @db.Text
+  refreshTokenEnc   String?               @db.Text
   refreshTokenIv    String?
   tokenExpiresAt    DateTime?
   scopes            String?
-  status            ChannelAccountStatus @default(ACTIVE)
+  status            ChannelAccountStatus  @default(ACTIVE)
   metadata          Json?
-  connectedAt       DateTime             @default(now())
+  connectedAt       DateTime              @default(now())
   lastRefreshedAt   DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
   conversations     ChannelConversation[]
 
   @@unique([companyId, channel])
@@ -437,10 +451,10 @@ model ChannelConversation {
   lastMessageAt      DateTime?
   lastMessagePreview String?
   lastInboundAt      DateTime?
-  unreadCount        Int                @default(0)
+  unreadCount        Int              @default(0)
   metadata           Json?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
   messages           ChannelMessage[]
 
   @@unique([accountId, externalThreadId])
@@ -449,21 +463,94 @@ model ChannelConversation {
 }
 
 model ChannelMessage {
-  id                String                  @id @default(cuid())
+  id                String               @id @default(cuid())
   companyId         Int
   conversationId    String
-  conversation      ChannelConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  externalMessageId String                  @unique
+  conversation      ChannelConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  externalMessageId String               @unique
   direction         ChannelDirection
-  contentType       ChannelContentType      @default(TEXT)
-  text              String?                 @db.Text
+  contentType       ChannelContentType   @default(TEXT)
+  text              String?              @db.Text
   attachments       Json?
   replyToExternalId String?
-  status            ChannelMessageStatus    @default(RECEIVED)
+  status            ChannelMessageStatus @default(RECEIVED)
   error             String?
   sentAt            DateTime
-  createdAt         DateTime                @default(now())
+  createdAt         DateTime             @default(now())
 
   @@index([conversationId, sentAt])
   @@index([companyId, sentAt])
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+enum NotificationEvent {
+  RESERVATION_PENDING
+  RESERVATION_CONFIRMED
+  RESERVATION_CANCELLED
+}
+
+model NotificationOutbox {
+  id            String             @id @default(uuid())
+  companyId     Int
+  reservationId Int
+  event         NotificationEvent
+  status        NotificationStatus @default(PENDING)
+
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  sentAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deliveries NotificationDelivery[]
+
+  @@unique([reservationId, event])
+  @@index([status, nextAttemptAt])
+  @@index([companyId])
+}
+
+model CompanyNotificationRecipient {
+  id        Int     @id @default(autoincrement())
+  companyId Int
+  name      String
+  email     String
+  enabled   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, email])
+  @@index([companyId, enabled])
+}
+
+model NotificationDelivery {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String
+  recipientEmail String
+  status         NotificationStatus @default(PENDING)
+  attempts       Int                @default(0)
+  nextAttemptAt  DateTime           @default(now())
+  lockedUntil    DateTime?
+  claimToken     String?
+  lastError      String?
+  providerId     String?
+  sentAt         DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now()) @updatedAt
+  
+  notification   NotificationOutbox @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, recipientEmail])
+  @@index([status, nextAttemptAt])
+  @@index([status, lockedUntil])
 }

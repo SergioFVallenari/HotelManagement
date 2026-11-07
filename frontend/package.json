@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "tsc --noEmit -p tsconfig.test.json && node --experimental-strip-types --test tests/request.test.ts tests/availability-share.test.ts tests/availability-calendar.test.ts",
+    "test": "tsc --noEmit -p tsconfig.test.json && node --experimental-strip-types --test tests/request.test.ts tests/availability-share.test.ts tests/availability-calendar.test.ts tests/voice-input.test.ts tests/security-headers.test.ts tests/pagination.test.ts",
     "dev": "vite",
     "dev:demo": "vite --mode demo --port 5174",
     "build:demo": "tsc -b && vite build --mode demo --outDir dist-demo",

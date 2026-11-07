@@ -3,10 +3,30 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openApiDocument, publicOperations } from '../src/docs/openapi.js';
+import { requiresCsrfHeader } from '../src/lib/requestSecurity.js';
 
 const SRC = join('src');
 
 type Json = Record<string, unknown>;
+
+test('la spec documenta la cabecera CSRF y el 403 solo en las escrituras protegidas', () => {
+  for (const [path, methods] of Object.entries(openApiDocument.paths)) {
+    for (const [method, value] of Object.entries(methods)) {
+      const operation = value as Json;
+      const parameters = (operation.parameters ?? []) as Json[];
+      const csrf = parameters.find((parameter) => parameter.in === 'header' && parameter.name === 'X-GH-CSRF');
+      if (requiresCsrfHeader(method, path)) {
+        assert.ok(csrf, `${method} ${path}`);
+        assert.equal(csrf.required, true);
+        assert.deepEqual(csrf.schema, { type: 'string', const: '1' });
+        const forbidden = (operation.responses as Record<string, Json>)['403'];
+        assert.match(String(forbidden?.description), /SOLICITUD_NO_PERMITIDA/);
+      } else {
+        assert.equal(csrf, undefined, `${method} ${path}`);
+      }
+    }
+  }
+});
 
 function collectRouteOperations(): Set<string> {
   const appSource = readFileSync(join(SRC, 'app.ts'), 'utf8');

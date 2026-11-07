@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { availabilityPersonsLimit, publicAvailabilityLimits, publicRoomTypeOptions } from '../src/lib/bookingCapacity.js';
+import { availabilityPersonsLimit, publicAvailabilityLimits, publicRoomTypeOptions, summarizeRoomCapacity } from '../src/lib/bookingCapacity.js';
+
+test('reutiliza el inventario completo para capacidad aunque algunas habitaciones estén ocupadas', () => {
+  assert.deepEqual(summarizeRoomCapacity([
+    { capacity: 2, maxExtraBeds: 1 },
+    { capacity: 4, maxExtraBeds: 0 },
+  ]), { roomCount: 2, capacity: 6, extraBeds: 1 });
+  assert.deepEqual(summarizeRoomCapacity([]), { roomCount: 0, capacity: 0, extraBeds: 0 });
+});
 
 test('sin límite configurado se usa toda la capacidad del hotel', () => {
   assert.equal(availabilityPersonsLimit(32), 32);

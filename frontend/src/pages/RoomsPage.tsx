@@ -9,6 +9,7 @@ import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useApiError } from '../components/pagination';
 import { DataTable } from '../components/DataTable';
+import { FilterPanel } from '../components/FilterPanel';
 import type { Column } from '../components/DataTable';
 import { dateShort, money, today, addDays } from '../lib/format';
 
@@ -163,20 +164,13 @@ export function RoomsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Habitaciones</h1>
           <p className="text-secondary mb-0">{data?.meta.total ?? 0} habitaciones registradas</p>
         </div>
-        <div className="d-flex gap-2 flex-wrap">
-          <input
-            placeholder="Buscar por número o nombre…"
-            className="form-control"
-            style={{ width: 220 }}
-            value={search}
-            onChange={(e) => applySearch(e.target.value)}
-          />
-          <button type="button" className={`btn ${availOpen ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setAvailOpen((v) => !v)}>
+        <div className="page-actions">
+          <button type="button" className={`btn ${availOpen ? 'btn-primary' : 'btn-outline-primary'}`} aria-expanded={availOpen} aria-controls="room-availability" onClick={() => setAvailOpen((v) => !v)}>
             Disponibilidad
           </button>
           {isAdmin && (
@@ -187,20 +181,30 @@ export function RoomsPage() {
         </div>
       </div>
 
+      <FilterPanel activeCount={query ? 1 : 0}>
+        <input
+          placeholder="Buscar por número o nombre…"
+          className="form-control filter-search"
+          aria-label="Buscar habitaciones"
+          value={search}
+          onChange={(e) => applySearch(e.target.value)}
+        />
+      </FilterPanel>
+
       {availOpen && (
-        <div className="card shadow-sm mb-4">
+        <div id="room-availability" className="card shadow-sm mb-4">
           <div className="card-body">
             <h3 className="h6 mb-3">Consultar disponibilidad por rango</h3>
             <div className="filter-row">
-              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+              <label className="input-group mb-0 filter-date">
                 <span className="input-group-text">Check-in</span>
                 <input type="date" className="form-control" value={availDates.checkIn} onChange={(e) => setAvailDates({ ...availDates, checkIn: e.target.value })} />
-              </div>
-              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+              </label>
+              <label className="input-group mb-0 filter-date">
                 <span className="input-group-text">Check-out</span>
                 <input type="date" className="form-control" value={availDates.checkOut} onChange={(e) => setAvailDates({ ...availDates, checkOut: e.target.value })} />
-              </div>
-              <div className="input-group mb-0" style={{ width: 'auto', flex: '0 1 auto' }}>
+              </label>
+              <label className="input-group mb-0 filter-select">
                 <span className="input-group-text">Tipo</span>
                 <select className="form-select" value={availTypeId} onChange={(e) => setAvailTypeId(e.target.value)}>
                   <option value="">Todos</option>
@@ -210,7 +214,7 @@ export function RoomsPage() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
               <button type="button" className="btn btn-primary" onClick={checkAvailability} disabled={availLoading}>
                 {availLoading ? 'Buscando…' : 'Consultar'}
               </button>
@@ -222,7 +226,7 @@ export function RoomsPage() {
               </p>
             )}
             {availResult && (
-              <table className="table table-sm align-middle mt-3 mb-0">
+              <div className="table-responsive"><table className="table table-sm align-middle mt-3 mb-0 responsive-table">
                 <thead>
                   <tr>
                     <th>N°</th>
@@ -235,15 +239,15 @@ export function RoomsPage() {
                 <tbody>
                   {availResult.map((room) => (
                     <tr key={room.id}>
-                      <td>{room.number}</td>
-                      <td>{room.type?.name}</td>
-                      <td>{room.capacity}</td>
-                      <td>{money(room.price)} / {room.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</td>
-                      <td className="text-secondary">{room.amenities.join(' · ')}</td>
+                      <td data-label="N°">{room.number}</td>
+                      <td data-label="Tipo">{room.type?.name}</td>
+                      <td data-label="Capacidad">{room.capacity}</td>
+                      <td data-label="Precio">{money(room.price)} / {room.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</td>
+                      <td data-label="Amenities" className="text-secondary">{room.amenities.join(' · ')}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
         </div>

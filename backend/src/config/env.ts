@@ -42,6 +42,7 @@ export const env = {
   },
   port: Number(process.env.PORT ?? 3000),
   nodeEnv,
+  performanceDiagnostics: process.env.PERFORMANCE_DIAGNOSTICS === 'true',
   isProduction: nodeEnv === 'production',
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS, nodeEnv),
   frontendUrl,

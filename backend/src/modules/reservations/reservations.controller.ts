@@ -18,6 +18,7 @@ import type { CreateReservationInput, UpdateReservationInput } from './reservati
 import { createReservationSchema, updateReservationSchema } from './reservations.schema.js';
 import { getReservationReceipt } from '../booking/booking.service.js';
 import { rejectReservationSchema } from '../booking/booking.schema.js';
+import { assertDiscountPermission } from '../../lib/discount.js';
 
 const listInclude = {
   rooms: { include: { room: { include: { type: true } } }, orderBy: { id: 'asc' } },
@@ -89,6 +90,7 @@ export async function listReservations(req: Request, res: Response): Promise<voi
 
 export async function createReservationHandler(req: Request, res: Response): Promise<void> {
   const input = createReservationSchema.parse(req.body) as CreateReservationInput;
+  assertDiscountPermission(input.discount, req.user?.role);
   const reservation = await createReservation(input);
   res.status(201).json({ data: reservation });
 }

@@ -20,16 +20,22 @@ import channelsRoutes from './modules/channels/channels.routes.js';
 import aiRoutes from './modules/ai/ai.routes.js';
 import realtimeRoutes from './modules/realtime/realtime.routes.js';
 import userRoutes from './modules/users/users.routes.js';
+import recipientRoutes from './modules/recipients/recipients.routes.js';
 import docsRoutes from './docs/docs.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { writeRateLimiter } from './middleware/rateLimiter.js';
 import { env } from './config/env.js';
+import { performanceDiagnostics } from './middleware/performance.js';
+import { csrfProtection, securityHeaders } from './middleware/requestSecurity.js';
 
 export function createApp(): express.Express {
   const app = express();
+  app.disable('x-powered-by');
+  app.use(securityHeaders(env.isProduction));
   // Detrás de Lambda Web Adapter el peer es loopback; sin esto req.ip es
   // 127.0.0.1 para todos y el rate limit tendría un único bucket global.
   app.set('trust proxy', 'loopback');
+  app.use(performanceDiagnostics(env.performanceDiagnostics));
   app.use(cors({
     origin: env.corsOrigins,
     credentials: true,
@@ -38,6 +44,7 @@ export function createApp(): express.Express {
     maxAge: 600,
   }));
   app.use(cookieParser());
+  app.use(csrfProtection(env.corsOrigins));
   // Guardamos el cuerpo crudo para verificar la firma de los webhooks (HMAC).
   app.use(
     express.json({
@@ -75,6 +82,7 @@ export function createApp(): express.Express {
   app.use('/api', aiRoutes);
   app.use('/api/realtime', realtimeRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/recipients', recipientRoutes);
 
 
   app.use(notFoundHandler);

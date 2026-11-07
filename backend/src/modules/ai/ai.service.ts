@@ -13,6 +13,7 @@ import type { ChannelDirection } from '../../generated/prisma/enums.js';
 const HISTORY_LIMIT = 20;
 
 export interface AiSettingsData {
+  reservationAssistantEnabled: boolean;
   enabled: boolean;
   autoReply: boolean;
   instructions: string | null;
@@ -25,6 +26,7 @@ export function getAiConfig() {
 async function loadSettings(companyId: number): Promise<AiSettingsData> {
   const row = await prisma.companyAiSetting.findUnique({ where: { companyId } });
   return {
+    reservationAssistantEnabled: row?.reservationAssistantEnabled ?? false,
     enabled: row?.enabled ?? false,
     autoReply: row?.autoReply ?? true,
     instructions: row?.instructions ?? null,
@@ -35,13 +37,13 @@ export async function getAiSettings(companyId: number): Promise<AiSettingsData> 
   return loadSettings(companyId);
 }
 
-export async function updateAiSettings(companyId: number, input: AiSettingsData): Promise<AiSettingsData> {
+export async function updateAiSettings(companyId: number, input: Omit<AiSettingsData, 'reservationAssistantEnabled'> & { reservationAssistantEnabled?: boolean }): Promise<AiSettingsData> {
   const row = await prisma.companyAiSetting.upsert({
     where: { companyId },
     create: { companyId, ...input },
     update: { ...input },
   });
-  return { enabled: row.enabled, autoReply: row.autoReply, instructions: row.instructions };
+  return { reservationAssistantEnabled: row.reservationAssistantEnabled, enabled: row.enabled, autoReply: row.autoReply, instructions: row.instructions };
 }
 
 async function buildAiContext(conversationId: string) {

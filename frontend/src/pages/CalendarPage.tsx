@@ -151,13 +151,13 @@ export function CalendarPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Calendario de disponibilidad</h1>
           <p className="text-secondary mb-0">Ocupación por habitación y día del mes</p>
         </div>
-        <div className="btn-toolbar gap-2" role="group" aria-label="Navegación del mes">
-          <div className="input-group" style={{ width: 'auto' }}>
+        <div className="btn-toolbar gap-2 calendar-navigation" role="group" aria-label="Navegación del mes">
+          <div className="input-group calendar-month-picker">
             <button type="button" className="btn btn-outline-secondary" onClick={() => changeMonth(-1)} aria-label="Mes anterior">
               ‹
             </button>

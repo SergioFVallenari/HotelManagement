@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { bookingRoomSnapshotsSchema } from '../modules/booking/booking.schema.js';
+import { discountSchema } from '../modules/reservations/reservations.schema.js';
 
 const dateTime = () => z.string().describe('Fecha y hora ISO 8601 en UTC (p. ej. 2026-10-07T14:30:00.000Z)');
 const dateOnly = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD').describe('Fecha YYYY-MM-DD');
@@ -101,8 +102,8 @@ export const guestSchema = z.object({
   id: z.number().int(),
   firstName: z.string(),
   lastName: z.string(),
-  phone: z.string(),
-  email: z.string(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
   companyId: z.number().int(),
   createdAt: dateTime(),
   updatedAt: dateTime(),
@@ -192,8 +193,8 @@ export const reservationGuestSchema = z
     id: z.number().int(),
     firstName: z.string(),
     lastName: z.string(),
-    phone: z.string(),
-    email: z.string(),
+    phone: z.string().nullable(),
+    email: z.string().nullable(),
   })
   .nullable();
 
@@ -214,6 +215,8 @@ export const reservationServicesSchema = z.array(
 );
 
 export const reservationTotalsSchema = z.object({
+  subtotal: money(),
+  discountAmount: money(),
   nights: z.number().int(),
   roomPrice: money(),
   roomTotal: money(),
@@ -238,7 +241,10 @@ export const reservationReceiptSchema = z
   .nullable();
 
 export const reservationSchema = z.object({
+  discount: discountSchema.nullable(),
   id: z.number().int(),
+  totalAmount: money(),
+  depositRequired: money(),
   code: z.string(),
   roomId: z.number().int(),
   rooms: z.array(z.object({ roomId: z.number().int(), persons: z.number().int(), extraBeds: z.number().int(), roomPrice: money(), roomPricingMode: z.enum(['PER_NIGHT', 'PER_PERSON']), total: money(), room: reservationRoomSchema })),
@@ -291,6 +297,7 @@ export const bookingLinkLineSchema = z.object({
 });
 
 export const bookingLinkSchema = z.object({
+  discount: discountSchema.nullable(),
   rooms: bookingRoomSnapshotsSchema,
   id: z.number().int(),
   token: z.string().describe('Token opaco del link publico (/reserva/<token>)'),
@@ -313,6 +320,8 @@ export const bookingLinkSchema = z.object({
     .nullable(),
   services: z.array(bookingLinkLineSchema),
   totals: z.object({
+    subtotal: money(),
+    discountAmount: money(),
     roomTotal: money(),
     servicesTotal: money(),
     total: money(),
@@ -331,6 +340,7 @@ export const bookingLinkSchema = z.object({
 });
 
 export const publicBookingQuoteSchema = z.object({
+  discount: discountSchema.nullable(),
   hotel: z.object({
     name: z.string(),
     whatsapp: z.string().nullable(),
@@ -366,6 +376,8 @@ export const publicBookingQuoteSchema = z.object({
     }),
   ),
   totals: z.object({
+    subtotal: money(),
+    discountAmount: money(),
     roomTotal: money(),
     servicesTotal: money(),
     total: money(),

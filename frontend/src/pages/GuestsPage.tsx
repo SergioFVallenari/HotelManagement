@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FilterPanel } from '../components/FilterPanel';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
@@ -20,8 +21,8 @@ const GUESTS_COLUMNS: Column<Guest>[] = [
       </strong>
     ),
   },
-  { header: 'Email', render: (g) => g.email },
-  { header: 'Teléfono', render: (g) => g.phone },
+  { header: 'Email', render: (g) => g.email ?? '—' },
+  { header: 'Teléfono', render: (g) => g.phone ?? '—' },
   { header: 'Reservas', align: 'end', render: (g) => g._count?.reservations ?? 0 },
 ];
 
@@ -77,7 +78,7 @@ export function GuestsPage() {
 
   function openEdit(guest: Guest) {
     setEditing(guest);
-    setForm({ firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone, email: guest.email });
+    setForm({ firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone ?? '', email: guest.email ?? '' });
     clearError();
     setOpen(true);
   }
@@ -86,7 +87,7 @@ export function GuestsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), email: form.email.trim() };
+      const body = { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim() || null, email: form.email.trim() || null };
       if (editing) await api(`/guests/${editing.id}`, { method: 'PUT', body });
       else await api('/guests', { method: 'POST', body });
       setOpen(false);
@@ -116,7 +117,7 @@ export function GuestsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Huéspedes</h1>
           <p className="text-secondary mb-0">{data?.meta.total ?? 0} huéspedes registrados</p>
@@ -126,22 +127,18 @@ export function GuestsPage() {
         </button>
       </div>
 
-      <div className="card shadow-sm mb-4">
-        <div className="card-body py-3">
-          <div className="filter-row">
+      <FilterPanel onApply={applySearch} activeCount={appliedQuery.search ? 1 : 0}>
             <input
               placeholder="Buscar por nombre, apellido, email o teléfono…"
-              className="form-control"
-              style={{ minWidth: 260, flex: '1 1 auto' }}
+              className="form-control filter-search"
+              aria-label="Buscar huéspedes"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button type="button" className="btn btn-primary" onClick={applySearch}>
+            <button type="submit" className="btn btn-primary">
               Buscar
             </button>
-          </div>
-        </div>
-      </div>
+      </FilterPanel>
 
       <DataTable<Guest>
         columns={GUESTS_COLUMNS}
@@ -185,12 +182,12 @@ export function GuestsPage() {
               <input className="form-control" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
             </div>
             <div className="col-sm-6">
-              <label className="form-label">Teléfono *</label>
-              <input className="form-control" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+              <label className="form-label">Teléfono (opcional)</label>
+              <input type="tel" className="form-control" minLength={3} maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div className="col-sm-6">
-              <label className="form-label">Email *</label>
-              <input type="email" className="form-control" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+              <label className="form-label">Email (opcional)</label>
+              <input type="email" className="form-control" maxLength={200} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
           </div>
           <div className="modal-actions">
@@ -233,9 +230,9 @@ export function GuestsPage() {
                 <h3 className="h6">Contacto</h3>
                 <dl className="detail-list">
                   <dt>Teléfono</dt>
-                  <dd>{detail.phone}</dd>
+                  <dd>{detail.phone ?? '—'}</dd>
                   <dt>Email</dt>
-                  <dd>{detail.email}</dd>
+                  <dd>{detail.email ?? '—'}</dd>
                 </dl>
               </div>
               <div className="col-md-8">
