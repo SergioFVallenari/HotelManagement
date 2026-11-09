@@ -1,0 +1,25 @@
+{
+  "Name": "gestion-hotel-frontend-security-report-only",
+  "Comment": "Frontend SPA: cabeceras de seguridad y CSP inicial en modo de reporte",
+  "SecurityHeadersConfig": {
+    "StrictTransportSecurity": {
+      "Override": true,
+      "AccessControlMaxAgeSec": 31536000,
+      "IncludeSubdomains": false,
+      "Preload": false
+    },
+    "ContentTypeOptions": { "Override": true },
+    "FrameOptions": { "Override": true, "FrameOption": "SAMEORIGIN" },
+    "ReferrerPolicy": { "Override": true, "ReferrerPolicy": "strict-origin-when-cross-origin" }
+  },
+  "CustomHeadersConfig": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Header": "Content-Security-Policy-Report-Only",
+        "Value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.cdninstagram.com https://*.fbcdn.net; font-src 'self' data:; connect-src 'self' https://6rpyewmzupirfb545vbhak666a0vhuwm.lambda-url.us-east-2.on.aws https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: https://*.supabase.co https://*.cdninstagram.com https://*.fbcdn.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
+        "Override": true
+      }
+    ]
+  }
+}

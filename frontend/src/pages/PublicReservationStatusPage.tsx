@@ -103,7 +103,7 @@ export function PublicReservationStatusPage() {
             <dt>Saldo pendiente</dt><dd>{money(reservation.balance)}</dd>
           </dl>
         </div>}
-        <a className="d-block text-center mt-3" href="/">Volver al inicio</a>
+        {/* <a className="d-block text-center mt-3" href="/">Volver al inicio</a> */}
       </section>
     </main>
   );

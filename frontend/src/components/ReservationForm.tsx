@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { guestContactSchema, validateContact } from '../lib/contactValidation';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import { DEMO_MODE } from '../demo/config';
@@ -314,8 +315,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         body.guest = {
           firstName: newGuest.firstName.trim(),
           lastName: newGuest.lastName.trim(),
-          phone: newGuest.phone.trim() || null,
-          email: newGuest.email.trim() || null,
+          ...validateContact(guestContactSchema, newGuest),
         };
       }
 

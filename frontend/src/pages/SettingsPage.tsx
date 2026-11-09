@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { hotelContactSchema, validateContact } from '../lib/contactValidation';
 import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { App } from '@capacitor/app';
@@ -665,11 +666,11 @@ function BookingSettingsSection() {
     setSaving(true);
     clearError();
     try {
+      const contact = validateContact(hotelContactSchema, form);
       const result = await api<{ data: CompanySettings }>('/companies/current', {
         method: 'PATCH',
         body: {
-          whatsapp: form.whatsapp.trim() || null,
-          phone: form.phone.trim() || null,
+          ...contact,
           bookingDepositPercent: Number(form.bookingDepositPercent),
           bookingSlug: form.bookingSlug.trim() || null,
           configPage: {

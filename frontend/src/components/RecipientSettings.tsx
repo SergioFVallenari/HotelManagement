@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { emailSchema, validateContact } from '../lib/contactValidation';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useApi } from '../api/useApi';
@@ -26,7 +27,8 @@ export function RecipientSettings() {
     setSaving(true);
     setApiError(null);
     try {
-      await api('/recipients', { method: 'POST', body: draft });
+      const email = validateContact(emailSchema, draft.email);
+      await api('/recipients', { method: 'POST', body: { ...draft, email } });
       setDraft(EMPTY_RECIPIENT);
       await refresh();
       setToast('Destinatario agregado.');
@@ -57,7 +59,8 @@ export function RecipientSettings() {
     setSaving(true);
     setApiError(null);
     try {
-      await api(`/recipients/${editing.id}`, { method: 'PATCH', body: { name: editing.name, email: editing.email, enabled: editing.enabled } });
+      const email = validateContact(emailSchema, editing.email);
+      await api(`/recipients/${editing.id}`, { method: 'PATCH', body: { name: editing.name, email, enabled: editing.enabled } });
       await refresh();
       setEditing(null);
       setToast('Destinatario actualizado.');

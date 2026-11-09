@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { emailSchema, validateContact } from '../lib/contactValidation';
 import type { FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
@@ -89,7 +90,7 @@ export function UsersPage() {
         body: {
           username: form.username.trim(),
           password: form.password,
-          email: form.email.trim(),
+          email: validateContact(emailSchema, form.email),
           role: form.role,
           isActive: form.isActive,
           ...(form.name.trim() ? { name: form.name.trim() } : {}),

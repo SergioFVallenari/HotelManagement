@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { guestEmailSchema } from '../guests/guests.schema.js';
 import { dateStringSchema, serviceInputSchema, roomSelectionsSchema, discountSchema } from '../reservations/reservations.schema.js';
 
 // Solicitud de reserva que prepara la recepcion y comparte por WhatsApp.
@@ -76,7 +77,7 @@ export const publicBookingSchema = z.object({
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(3).max(30),
-  email: z.string().trim().email().max(200),
+  email: guestEmailSchema,
   notes: z.string().trim().max(500).optional().nullable(),
   // Referencia de la transferencia (la escribe el huesped).
   externalRef: z.string().trim().max(100).optional().nullable(),

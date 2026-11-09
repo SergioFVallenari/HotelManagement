@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { guestContactSchema, validateContact } from '../lib/contactValidation';
 import { FilterPanel } from '../components/FilterPanel';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
@@ -87,7 +88,8 @@ export function GuestsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim() || null, email: form.email.trim() || null };
+      const contact = validateContact(guestContactSchema, form);
+      const body = { firstName: form.firstName.trim(), lastName: form.lastName.trim(), ...contact };
       if (editing) await api(`/guests/${editing.id}`, { method: 'PUT', body });
       else await api('/guests', { method: 'POST', body });
       setOpen(false);

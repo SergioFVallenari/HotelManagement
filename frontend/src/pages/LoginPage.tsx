@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { emailSchema, validateContact } from '../lib/contactValidation';
 import type { FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { IconBuildingSkyscraper } from '@tabler/icons-react';
@@ -25,13 +26,13 @@ export function LoginPage() {
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
 
-  const emailOk = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
   const allowRegister = import.meta.env.VITE_ALLOW_REGISTER === 'true' || import.meta.env.VITE_ALLOW_REGISTER === '1';
 
   if (user) return <Navigate to="/" replace />;
 
   function validateDatos(): string | null {
-    if (!emailOk(newEmail)) return 'Ingresá un email válido.';
+    const emailResult = emailSchema.safeParse(newEmail);
+    if (!emailResult.success) return emailResult.error.issues[0].message;
     if (!newHotel.trim()) return 'Ingresá el nombre de tu hotel.';
     if (newUsername.trim().length < 3) return 'El usuario debe tener al menos 3 caracteres.';
     if (newPassword.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
@@ -44,7 +45,7 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email, password);
+      await login(validateContact(emailSchema, email), password);
       navigate('/login/company', { replace: true });
     } catch (err) {
       setError((err as Error).message);
@@ -66,7 +67,7 @@ export function LoginPage() {
       await api('/auth/register', {
         method: 'POST',
         body: {
-          email: newEmail.trim(),
+          email: validateContact(emailSchema, newEmail),
           username: newUsername.trim(),
           password: newPassword,
           hotelName: newHotel.trim(),
@@ -93,7 +94,7 @@ export function LoginPage() {
     setResent(false);
     setResending(true);
     try {
-      await api('/auth/resend-confirmation', { method: 'POST', body: { email: newEmail.trim() } });
+      await api('/auth/resend-confirmation', { method: 'POST', body: { email: validateContact(emailSchema, newEmail) } });
       setResent(true);
     } catch (err) {
       setCreateError((err as Error).message);
