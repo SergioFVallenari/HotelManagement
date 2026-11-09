@@ -4,8 +4,10 @@ import { createPerformanceTrace, finishPerformanceTrace, withPerformanceTrace } 
 
 export function performanceDiagnostics(enabled: boolean): RequestHandler {
   return (req, res, next) => {
-    if (!enabled || req.method !== 'GET') return next();
-    const endpoint = req.path === '/api/calendar' || req.path === '/api/calendar/' ? '/api/calendar'
+    if (!enabled) return next();
+    const endpoint = req.method === 'POST' && /^\/api\/reservations\/\d+\/approve\/?$/.test(req.path) ? '/api/reservations/:id/approve'
+      : req.method !== 'GET' ? null
+      : req.path === '/api/calendar' || req.path === '/api/calendar/' ? '/api/calendar'
       : /^\/api\/public\/availability\/[^/]+\/?$/.test(req.path) ? '/api/public/availability/:slug'
       : /^\/api\/public\/availability\/[^/]+\/config\/?$/.test(req.path) ? '/api/public/availability/:slug/config'
       : /^\/api\/public\/availability\/[^/]+\/calendar\/?$/.test(req.path) ? '/api/public/availability/:slug/calendar'

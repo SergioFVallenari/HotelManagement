@@ -703,32 +703,83 @@ export async function markRefunded(id: number) {
 // (antes de verificar el comprobante el pago no existe: si la reserva se
 // rechaza, los ingresos del hotel no se ven afectados).
 export async function approveReservation(id: number) {
-  const reservation = await prisma.reservation.findUnique({ where: { id }, include: FULL_INCLUDE });
-  if (!reservation) throw notFound('Reserva', id);
-  if (reservation.status !== 'PENDING') {
-    throw conflict('INVALID_STATE', 'Solo una reserva PENDING puede aprobarse');
+  const reservation = await prisma.reservation.findUnique({
+    relationLoadStrategy: 'join',
+    where: { id },
+    select: {
+      status: true,
+      depositRequired: true,
+      bookingLink: { select: { token: true } },
+      payments: { select: { id: true }, take: 1 },
+    },
+  });
+
+  if (!reservation) {
+    throw notFound("Reserva", id);
   }
 
-  return prisma.$transaction(async (tx) => {
-    const link = reservation.bookingLink;
-    if (link && decToNum(reservation.depositRequired) > 0 && (reservation.payments?.length ?? 0) === 0) {
-      await tx.payment.create({
+  if (reservation.status !== "PENDING") {
+    throw conflict(
+      "INVALID_STATE",
+      "Solo una reserva PENDING puede aprobarse"
+    );
+  }
+
+  const updated = await prisma.$transaction(
+    async (tx) => {
+      const link = reservation.bookingLink;
+
+      if (
+        link &&
+        decToNum(reservation.depositRequired) > 0 &&
+        (reservation.payments?.length ?? 0) === 0
+      ) {
+        await tx.payment.create({
+          data: {
+            reservationId: id,
+            amount: decToNum(reservation.depositRequired),
+            method: "TRANSFER",
+            reference: `FORM-${link.token.slice(0, 12).toUpperCase()}`,
+          },
+        });
+      }
+
+      const result = await tx.reservation.update({
+        where: {
+          id,
+          status: "PENDING",
+        },
         data: {
-          reservationId: id,
-          amount: decToNum(reservation.depositRequired),
-          method: 'TRANSFER',
-          reference: `FORM-${link.token.slice(0, 12).toUpperCase()}`,
+          status: "RESERVED",
         },
       });
-    }
 
-    const updated = await tx.reservation.update({
-      where: { id },
-      data: { status: 'RESERVED' },
-      include: FULL_INCLUDE,
-    });
-    return serializeReservation(updated);
+      await tx.notificationOutbox.create({
+        data: {
+          companyId: result.companyId,
+          reservationId: result.id,
+          event: "RESERVATION_CONFIRMED",
+        },
+      });
+
+      return result;
+    },
+    {
+      maxWait: 10000,
+      timeout: 15000,
+    }
+  );
+
+  // Recuperar la reserva completa fuera de la transacción
+  const completeReservation = await prisma.reservation.findUniqueOrThrow({
+    relationLoadStrategy: 'join',
+    where: {
+      id: updated.id,
+    },
+    include: FULL_INCLUDE,
   });
+
+  return serializeReservation(completeReservation);
 }
 
 // Rechazo del comprobante: la reserva se cancela y queda el motivo en las notas.
