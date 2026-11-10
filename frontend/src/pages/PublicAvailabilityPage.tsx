@@ -27,11 +27,13 @@ export function PublicAvailabilityPage() {
   const [result, setResult] = useState<PublicAvailability | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<'calendar' | 'details'>('calendar');
+  const [step, setStep] = useState<'calendar' | 'details' | 'quote'>('calendar');
   const detailsHeading = useRef<HTMLHeadingElement>(null);
+  const quoteHeading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (step === 'details') detailsHeading.current?.focus();
+    if (step === 'quote') quoteHeading.current?.focus();
   }, [step]);
 
   useEffect(() => {
@@ -91,6 +93,7 @@ export function PublicAvailabilityPage() {
         `/public/availability/${encodeURIComponent(bookingSlug)}${query}`,
       );
       setResult(response.data);
+      setStep('quote');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo consultar la disponibilidad. Probá de nuevo.');
     } finally {
@@ -114,19 +117,23 @@ export function PublicAvailabilityPage() {
   }
 
   return (
-    <div className="login-screen booking-screen public-booking-theme align-items-center" style={themeStyle}>
-      <main className="booking-card">
-        <div className="login-brand">
-          <h1>{pageConfig?.hotel.name ?? result?.hotel.name ?? 'Consultar disponibilidad'}</h1>
-          <p className="text-secondary mb-0">Elegí tus fechas y después completá tu estadía</p>
+    <div className="availability-screen public-booking-theme" style={themeStyle}>
+      <header className="availability-header">
+        <span className="availability-brand-icon" aria-hidden="true">{pageConfig.hotel.name.trim().charAt(0).toUpperCase()}</span>
+        <div><strong>{pageConfig.hotel.name}</strong>{pageConfig.hotel.slogan && <span>{pageConfig.hotel.slogan}</span>}</div>
+        {(pageConfig.hotel.whatsapp || pageConfig.hotel.phone) && <a className="availability-help" href={pageConfig.hotel.whatsapp ? `https://wa.me/${pageConfig.hotel.whatsapp.replace(/\D/g, '')}` : `tel:${pageConfig.hotel.phone?.replace(/\D/g, '')}`} target={pageConfig.hotel.whatsapp ? '_blank' : undefined} rel="noreferrer">Ayuda</a>}
+      </header>
+      <main className="booking-card availability-card">
+        <div className="availability-heading">
+          <span className="availability-eyebrow">Reservá tu estadía</span>
+          <h1>{step === 'calendar' ? 'Encontrá tu próxima escapada' : step === 'details' ? 'Personalizá tu estadía' : 'Revisá tu cotización'}</h1>
+          <p>{step === 'calendar' ? 'Elegí tu habitación y las fechas para consultar disponibilidad.' : step === 'details' ? 'Indicá cuántas personas viajan y agregá servicios si lo necesitás.' : 'Este es el resumen estimado de tu estadía antes de consultar.'}</p>
         </div>
 
-        <ol className="list-unstyled d-flex flex-wrap gap-3 small mb-4" aria-label="Pasos de la consulta">
-          <li className={step === 'calendar' ? 'fw-semibold text-primary' : 'text-secondary'} aria-current={step === 'calendar' ? 'step' : undefined}>1. Habitación y fechas</li>
-          <li className={step === 'details' ? 'fw-semibold text-primary' : 'text-secondary'} aria-current={step === 'details' ? 'step' : undefined}>2. Personas y servicios</li>
+        <ol className="availability-steps" aria-label="Pasos de la consulta">
+          {(['calendar', 'details', 'quote'] as const).map((item, index) => <li key={item} className={step === item ? 'is-active' : ''} aria-current={step === item ? 'step' : undefined}><span>{String(index + 1).padStart(2, '0')}</span>{['Habitación y fechas', 'Personas y servicios', 'Cotización'][index]}</li>)}
         </ol>
         <div hidden={step !== 'calendar'}>
-          <h2 className="h5">Elegí tu habitación y las fechas</h2>
           <PublicAvailabilityCalendar key={`${bookingSlug}:${roomTypeId}`} slug={bookingSlug} roomTypeId={roomTypeId} roomTypes={roomTypes} onTypeChange={changeRoomType} onSelect={(entry, exit, room) => {
             setCheckIn(entry);
             setCheckOut(exit);
@@ -139,14 +146,14 @@ export function PublicAvailabilityPage() {
           }} />
         </div>
         <div hidden={step !== 'details'}>
-        <h2 className="h5" ref={detailsHeading} tabIndex={-1}>Personas y servicios extra</h2>
-        <div className="card shadow-sm mb-4"><div className="card-body">
+        <h2 className="visually-hidden" ref={detailsHeading} tabIndex={-1}>Personas y servicios extra</h2>
+        <div className="card shadow-sm mb-4 availability-stay-card"><div className="card-body">
           <p className="fw-semibold mb-1">Habitación {selectedRoom?.number}{selectedRoom?.name ? ` · ${selectedRoom.name}` : ''}</p>
           <p className="small mb-1">{selectedRoom?.typeName} · Capacidad base: {selectedRoom?.capacity} personas{extraBedsEnabled ? ` · Hasta ${selectedRoom.maxExtraBeds} cama(s) extra` : ''}</p>
           <p className="small mb-2">Entrada: <strong>{dateShort(checkIn)}</strong> · Salida: <strong>{dateShort(checkOut)}</strong></p>
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={loading} onClick={() => { setStep('calendar'); setResult(null); setError(null); }}>Modificar habitación o fechas</button>
         </div></div>
-        <p className="small text-secondary">Indicá cuántas personas se alojan y, si querés, agregá servicios extra para calcular el total.</p>
+        <p className="small text-secondary availability-details-intro">Indicá cuántas personas se alojan y, si querés, agregá servicios extra para calcular el total.</p>
         <form onSubmit={search}>
           <fieldset disabled={loading}>
             <div className="row g-3">
@@ -167,7 +174,7 @@ export function PublicAvailabilityPage() {
               </div>
             </div>
             {extraBedsEnabled && (
-              <div className="form-check mt-3">
+              <div className="form-check mt-3 availability-extra-beds">
                 <input id="availability-extra-beds" className="form-check-input" type="checkbox" checked={includeExtraBeds} onChange={(event) => {
                   const checked = event.target.checked;
                   setIncludeExtraBeds(checked);
@@ -186,7 +193,7 @@ export function PublicAvailabilityPage() {
                 <p className="small text-secondary">Agregalos a tu consulta. El precio se incluirá en el total de tu estadía.</p>
                 {pageConfig.hotel.publicServices.map((service) => {
                   const selected = selectedServices.find((line) => line.serviceId === service.id);
-                  return <div className="mb-3" key={service.id}>
+                  return <div className="mb-3 availability-service" key={service.id}>
                     <div className="form-check">
                       <input id={`availability-service-${service.id}`} className="form-check-input" type="checkbox" checked={!!selected} onChange={(event) => {
                         setSelectedServices((current) => event.target.checked ? [...current, { serviceId: service.id, ...(service.chargeType === 'PACK' ? { quantity: 1 } : {}) }] : current.filter((line) => line.serviceId !== service.id));
@@ -207,6 +214,10 @@ export function PublicAvailabilityPage() {
                 })}
               </fieldset>
             )}
+            <div className="availability-details-selection" aria-live="polite">
+              <span>Tu selección</span>
+              <strong>{persons} {persons === 1 ? 'persona' : 'personas'}{selectedServices.length ? ` · ${selectedServices.length} ${selectedServices.length === 1 ? 'servicio seleccionado' : 'servicios seleccionados'}` : ''}{includeExtraBeds ? ' · camas extra si hacen falta' : ''}</strong>
+            </div>
             {error && <div className="mt-3"><ErrorBanner message={error} onDismiss={() => setError(null)} /></div>}
             <button type="submit" className="btn btn-primary w-100 mt-4" disabled={loading || maxPersons === 0}>
               {loading ? 'Cotizando…' : 'Ver cotización de esta habitación'}
@@ -215,56 +226,32 @@ export function PublicAvailabilityPage() {
         </form>
 
         {loading && <div className="mt-4"><Spinner /></div>}
-        {result && quote && !loading && (
-          <section className="mt-4" aria-live="polite">
-            <div className="card shadow-sm mb-3">
-              <div className="card-body">
-                <h2 className="h5 mb-1">Tu consulta · Habitación {quote.stay.room?.number}{quote.stay.room?.name ? ` · ${quote.stay.room.name}` : ''}</h2>
-                <p className="small text-secondary mb-0">{dateShort(result.stay.checkIn)} → {dateShort(result.stay.checkOut)} · {result.stay.nights} {result.stay.nights === 1 ? 'noche' : 'noches'} · {result.stay.persons} {result.stay.persons === 1 ? 'persona' : 'personas'}.</p>
-                {quote.stay.roomType && <p className="small text-secondary mb-0">Tipo elegido: <strong>{quote.stay.roomType}</strong>.</p>}
-              </div>
-            </div>
-            {!!quote.combination && !!quote.services?.length && (
-              <div className="card shadow-sm mb-3"><div className="card-body">
-                <h3 className="h6">Servicios elegidos</h3>
-                {quote.services.map((service) => <div className="d-flex justify-content-between gap-3 py-2 border-bottom" key={service.serviceId}>
-                  <div>{service.name}{service.description && <div className="small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}<div className="small text-secondary">{serviceQuantityLabel(service, quote.stay, quote.combination?.roomCount ?? 0)} · {money(service.unitPrice)} por unidad</div></div>
-                  <span className="text-nowrap">{money(service.lineTotal)}</span>
-                </div>)}
-                <div className="d-flex justify-content-between gap-3 mt-3 fw-semibold"><span>Total de servicios</span><span>{money(quote.servicesTotal)}</span></div>
-              </div></div>
-            )}
-            {quote.combination && (
-              <article className="card shadow-sm mb-3">
-                <div className="card-body">
-                  <h3 className="h6">Cotización de la habitación seleccionada</h3>
-                  <p className="small text-secondary">Esta es la habitación y cotización que enviaremos en tu consulta por WhatsApp.</p>
-                  {quote.combination.rooms.map((room, index) => (
-                    <div className="d-flex justify-content-between gap-3 border-bottom py-2" key={index}>
-                      <div><strong>{room.roomType}</strong><div className="small text-secondary">{room.persons} {room.persons === 1 ? 'persona' : 'personas'} · Capacidad base: {room.capacity}{room.extraBeds ? ` + ${room.extraBeds} cama(s) extra` : ''}</div><div className="small text-secondary">Amenities: {room?.amenities?.join(', ') || 'Ninguno'}</div></div>
-                      <span className="text-nowrap">{money(room.total)}</span>
-                    </div>
-                  ))}
-                  {!!quote.combination.extraBeds && <>
-                    <div className="d-flex justify-content-between gap-3 mt-3"><span>Habitación por estadía</span><span>{money(quote.combination.roomTotal)}</span></div>
-                    <div className="d-flex justify-content-between gap-3"><span>{quote.combination.extraBeds} cama(s) extra · {quote.combination.extraBedService?.name}</span><span>{money(quote.combination.extraBedsTotal)}</span></div>
-                  </>}
-                  {!!quote.servicesTotal && <div className="d-flex justify-content-between gap-3 mt-2"><span>Servicios elegidos</span><span>{money(quote.servicesTotal)}</span></div>}
-                  <div className="d-flex justify-content-between gap-3 mt-3 fw-semibold"><span>Total por estadía</span><span>{money(quote.combination.total)}</span></div>
-                </div>
-              </article>
-            )}
+        </div>
+        {step === 'quote' && result && quote && !loading && (
+          <section aria-live="polite">
+            <h2 className="visually-hidden" ref={quoteHeading} tabIndex={-1}>Cotización</h2>
+            {quote.combination && <div className="availability-quote-grid">
+              <article className="card"><div className="card-body">
+                <h3 className="h6 fw-bold">Detalle de tu estadía</h3>
+                <dl className="availability-quote-details">
+                  <div><dt>Alojamiento</dt><dd>{quote.stay.room?.name || `Habitación ${quote.stay.room?.number ?? ''}`}{quote.stay.roomType ? ` · ${quote.stay.roomType}` : ''}</dd></div>
+                  <div><dt>Fechas</dt><dd>{dateShort(quote.stay.checkIn)} → {dateShort(quote.stay.checkOut)}</dd></div>
+                  <div><dt>Duración</dt><dd>{quote.stay.nights} {quote.stay.nights === 1 ? 'noche' : 'noches'}</dd></div>
+                  <div><dt>Huéspedes</dt><dd>{quote.stay.persons} {quote.stay.persons === 1 ? 'persona' : 'personas'}</dd></div>
+                  {quote.combination.rooms.map((room, index) => !!room.amenities?.length && <div key={index}><dt>Comodidades de la habitación · {room.roomType}</dt><dd>{room.amenities.join(', ')}</dd></div>)}
+                  <div><dt>Alojamiento</dt><dd>{money(quote.combination.roomTotal)}</dd></div>
+                  {!!quote.combination.extraBeds && <div><dt>{quote.combination.extraBeds} cama(s) extra · {quote.combination.extraBedService?.name}</dt><dd>{money(quote.combination.extraBedsTotal)}</dd></div>}
+                  {quote.services.map((service) => <div key={service.serviceId}><dt>{service.name}<small className="d-block">{serviceQuantityLabel(service, quote.stay, quote.combination?.roomCount ?? 0)} · {money(service.unitPrice)} por unidad{service.description ? ` · ${service.description}` : ''}</small></dt><dd>{money(service.lineTotal)}</dd></div>)}
+                </dl>
+              </div></article>
+              <aside className="card"><div className="card-body"><h3 className="h6 fw-bold">Resumen de precios</h3><p className="text-secondary small mt-4 mb-1">Total estimado</p><strong className="availability-quote-total">{money(quote.combination.total)}</strong><p className="small text-secondary mt-2">La disponibilidad y los precios se confirman al gestionar la solicitud con el hotel.</p>
+                {contactDigits ? <a className="btn btn-primary w-100 mt-3" href={result.hotel.whatsapp ? `https://wa.me/${contactDigits}?text=${encodeURIComponent(whatsappMessage)}` : `tel:${contactDigits}`} target={result.hotel.whatsapp ? '_blank' : undefined} rel="noreferrer">{result.hotel.whatsapp ? 'Consultar por WhatsApp' : 'Llamar al hotel'}</a> : <p className="small text-secondary mt-3 mb-0">El alojamiento todavía no configuró un teléfono de contacto para recibir consultas.</p>}
+              </div></aside>
+            </div>}
             {!result.combination && <p className="text-secondary">{result.availableRoomCount === 0 ? 'La habitación seleccionada ya no está disponible para esas fechas. Volvé al calendario para elegir otra habitación o cambiar las fechas.' : 'La habitación seleccionada no admite esa cantidad de personas. Revisá la cantidad de huéspedes o elegí otra habitación.'}</p>}
-            {contactDigits && !!quote.combination && (
-              <a className="btn btn-success w-100 mt-2" href={result.hotel.whatsapp ? `https://wa.me/${contactDigits}?text=${encodeURIComponent(whatsappMessage)}` : `tel:${contactDigits}`}
-                target={result.hotel.whatsapp ? '_blank' : undefined} rel="noreferrer">
-                {result.hotel.whatsapp ? 'Consultar esta habitación por WhatsApp' : 'Llamar al hotel'}
-              </a>
-            )}
-            <p className="small text-secondary mt-3 mb-0">La disponibilidad y los precios se confirman al gestionar la solicitud con el hotel.</p>
+            <button type="button" className="btn btn-link px-0 mt-3" onClick={() => setStep('details')}>← Volver a personas y servicios</button>
           </section>
         )}
-        </div>
       </main>
     </div>
   );

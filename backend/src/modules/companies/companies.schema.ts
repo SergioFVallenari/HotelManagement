@@ -7,10 +7,13 @@ const bookingThemeSchema = z.object({
   text: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   surface: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  backgroundTop: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  headerSurface: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 }).strict();
 
 export const publicPageConfigSchema = z.object({
   bookingTheme: bookingThemeSchema,
+  slogan: z.string().trim().max(120).optional(),
   maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
   publicServiceIds: z.array(z.number().int().positive()).max(100).refine((ids) => new Set(ids).size === ids.length, 'No repitas servicios').optional(),
   publicExtraBeds: z.object({

@@ -1375,6 +1375,126 @@ body {
   padding: 32px 16px 48px;
 }
 
+.availability-screen {
+  min-height: 100dvh;
+  padding: 16px 12px 40px;
+  background: var(--booking-background);
+  color: var(--booking-text);
+}
+
+.public-booking-theme.availability-screen {
+  background: linear-gradient(to bottom, var(--booking-background-top) 0 180px, var(--booking-background) 180px);
+}
+
+.availability-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto 24px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--booking-header-surface);
+}
+
+.availability-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--booking-primary);
+  color: var(--booking-primary-contrast);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.availability-header strong,
+.availability-header span:not(.availability-brand-icon) {
+  display: block;
+}
+
+.availability-header strong { font-size: 15px; }
+.availability-header > div { min-width: 0; overflow-wrap: anywhere; }
+.availability-header span:not(.availability-brand-icon) { color: var(--bs-secondary-color); font-size: 12px; }
+.availability-header .availability-help { margin-left: auto; color: var(--booking-text); font-size: 13px; font-weight: 600; }
+
+.public-booking-theme .availability-card {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 18px;
+  box-shadow: none;
+}
+
+.availability-eyebrow {
+  color: var(--booking-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.availability-heading h1 { margin: 6px 0; font-size: 25px; font-weight: 700; }
+.availability-heading p { margin: 0; color: var(--bs-secondary-color); font-size: 14px; }
+.availability-steps { display: flex; gap: 12px; justify-content: space-between; list-style: none; margin: 24px 0; padding: 0 0 20px; border-bottom: 1px solid var(--bs-border-color); }
+.availability-steps li { display: flex; align-items: center; gap: 8px; color: var(--bs-secondary-color); font-size: 11px; }
+.availability-steps li span { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--booking-muted); font-weight: 700; }
+.availability-steps li.is-active { color: var(--booking-primary); font-weight: 700; }
+.availability-steps li.is-active span { background: var(--booking-primary); color: var(--booking-primary-contrast); }
+.availability-room-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; }
+.availability-room { padding: 12px; border: 1px solid var(--bs-border-color); border-radius: 10px; background: var(--booking-surface); color: var(--booking-text); text-align: left; }
+.availability-room.is-selected { border: 2px solid var(--booking-primary); background: color-mix(in srgb, var(--booking-primary) 8%, var(--booking-surface)); }
+.availability-room strong, .availability-room span { display: block; }
+.availability-room span { margin-top: 4px; color: var(--bs-secondary-color); font-size: 12px; }
+.availability-calendar-layout { display: grid; gap: 20px; }
+.availability-month { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.availability-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.availability-calendar-grid .btn { min-height: 44px; font-size: 12px; }
+.availability-selection-card { padding: 18px; border: 1px solid var(--bs-border-color); border-radius: 12px; }
+.availability-selection-card p { margin-top: 10px; }
+.availability-card .card { border-radius: 14px; box-shadow: none !important; }
+.availability-quote-grid { display: grid; gap: 16px; }
+.availability-quote-grid .card-body { padding: 20px; }
+.availability-quote-details { margin: 16px 0 0; }
+.availability-quote-details > div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--bs-border-color); }
+.availability-quote-details dt { color: var(--bs-secondary-color); font-size: 13px; font-weight: 400; }
+.availability-quote-details dd { margin: 0; text-align: right; font-size: 13px; font-weight: 600; }
+.availability-quote-total { color: var(--booking-primary); font-size: 30px; }
+.availability-details-selection { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding: 14px; border-radius: 10px; background: var(--booking-muted); font-size: 12px; }
+.availability-details-selection span { color: var(--bs-secondary-color); }
+
+@media (max-width: 767.98px) {
+  .public-booking-theme.availability-screen { padding: 0 0 24px; background: var(--booking-background); }
+  .availability-header { min-height: 76px; margin-bottom: 0; padding: 16px; border-radius: 0; }
+  .public-booking-theme .availability-card { min-height: calc(100dvh - 76px); padding: 22px 16px 32px; border: 0; border-radius: 0; }
+  .availability-heading h1 { font-size: 21px; }
+  .availability-heading p { font-size: 13px; }
+  .availability-steps { gap: 6px; margin: 18px 0; padding-bottom: 16px; }
+  .availability-steps li { flex: 1 1 0; justify-content: center; gap: 4px; padding: 8px 4px; border-radius: 8px; background: var(--booking-muted); font-size: 10px; text-align: center; }
+  .availability-steps li span { flex: 0 0 auto; width: auto; height: auto; background: none; }
+  .availability-steps li.is-active { background: color-mix(in srgb, var(--booking-primary) 13%, var(--booking-surface)); }
+  .availability-steps li.is-active span { background: transparent; color: inherit; }
+  .availability-room-list { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 6px; }
+  .availability-room { min-height: 44px; padding: 8px; text-align: center; font-size: 12px; }
+  .availability-room.is-selected { background: var(--booking-primary); color: var(--booking-primary-contrast); }
+  .availability-room span { font-size: 10px; }
+  .availability-room.is-selected span { color: inherit; }
+  .availability-calendar-grid .btn { min-width: 0; min-height: 44px; padding: 3px !important; }
+  .availability-selection-card { background: var(--booking-muted); border-color: transparent; }
+  .availability-stay-card .card-body, .availability-quote-grid .card-body { padding: 16px; }
+  .availability-extra-beds, .availability-service { padding: 14px 14px 14px 38px; border: 1px solid var(--bs-border-color); border-radius: 10px; }
+  .availability-card .form-select, .availability-card .form-control, .availability-card .btn { min-height: 44px; }
+  .availability-quote-details > div { flex-wrap: wrap; }
+}
+
+@media (min-width: 768px) {
+  .availability-screen { padding: 40px 24px 56px; }
+  .public-booking-theme .availability-card { padding: 36px 44px; }
+  .availability-heading h1 { font-size: 30px; }
+  .availability-calendar-layout { grid-template-columns: 1fr 1fr; align-items: start; }
+  .availability-quote-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+}
+
 .booking-card {
   background: var(--gh-surface);
   border: 1px solid var(--gh-border);
@@ -1485,11 +1605,30 @@ body {
 }
 
 .booking-theme-preview {
-  background: var(--booking-background);
+  background: linear-gradient(to bottom, var(--booking-background-top) 0 120px, var(--booking-background) 120px);
   color: var(--booking-text);
   border-radius: 12px;
   padding: 20px;
 }
+
+.booking-theme-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--booking-header-surface);
+  color: var(--booking-text);
+  font-size: 12px;
+}
+
+.booking-theme-preview-header strong,
+.booking-theme-preview-header small { display: block; }
+.booking-theme-preview-header small { margin-top: 3px; opacity: 0.72; }
+.booking-theme-preview-logo { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; height: 32px; border-radius: 8px; background: var(--booking-primary); color: var(--booking-primary-contrast); font-weight: 700; }
+.booking-theme-preview-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 0 12px; border-bottom: 1px solid color-mix(in srgb, var(--booking-secondary), transparent 65%); font-size: 10px; }
+.booking-theme-preview-steps span { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--booking-primary); color: var(--booking-primary-contrast); }
 
 .booking-theme-preview-card {
   background: var(--booking-surface);
@@ -1499,7 +1638,7 @@ body {
 }
 
 .booking-theme-preview-accent {
-  color: var(--booking-accent);
+  color: var(--booking-primary);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -1539,6 +1678,7 @@ body {
   background: var(--booking-primary);
   color: var(--booking-primary-contrast);
   padding: 10px;
+  text-align: center;
 }
 
 .booking-stay {

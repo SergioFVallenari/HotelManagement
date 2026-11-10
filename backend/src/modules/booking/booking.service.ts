@@ -71,6 +71,7 @@ export async function getPublicBookingPageConfig(slug: string) {
       ...capacity,
       roomTypes: publicRoomTypeOptions(types, capacity.publicExtraBedsEnabled, config.success ? config.data.maxAvailabilityPersons : null),
       name: company.name,
+      slogan: config.success ? config.data.slogan ?? '' : '',
       whatsapp: company.whatsapp,
       phone: company.phone,
       bookingTheme: publicBookingTheme(company.configPage),

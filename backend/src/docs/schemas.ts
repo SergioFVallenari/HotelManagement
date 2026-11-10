@@ -51,6 +51,7 @@ export const companySettingsSchema = z.object({
   bookingDepositPercent: z.number().int(),
   bookingSlug: z.string().nullable(),
   configPage: z.object({
+    slogan: z.string().max(120).optional(),
     publicServiceIds: z.array(z.number().int().positive()).optional(),
     maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
     publicExtraBeds: z.object({ enabled: z.boolean(), serviceId: z.number().int().positive().nullable() }).optional(),
@@ -61,6 +62,8 @@ export const companySettingsSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).optional(),
   }),
 });
@@ -352,6 +355,8 @@ export const publicBookingQuoteSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).nullable(),
   }),
   stay: z.object({
@@ -390,6 +395,7 @@ export const publicBookingQuoteSchema = z.object({
 
 export const publicBookingPageConfigSchema = z.object({
   hotel: z.object({
+    slogan: z.string(),
     roomTypes: z.array(z.object({ id: z.number().int().positive(), name: z.string(), roomCount: z.number().int().positive(), maxAvailabilityPersons: z.number().int().nonnegative(), maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative() })),
     publicServices: z.array(z.object({ id: z.number().int(), name: z.string(), description: z.string().nullable(), intervalDays: z.number().int().nullable(), price: money(), chargeType: serviceChargeTypeSchema })),
     hotelCapacityWithExtraBeds: z.number().int().nonnegative(),
@@ -409,6 +415,8 @@ export const publicBookingPageConfigSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).nullable(),
   }),
 });

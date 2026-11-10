@@ -239,7 +239,7 @@ export interface PublicAvailability {
 }
 
 export interface PublicBookingPageConfig {
-  hotel: { roomTypes: { id: number; name: string; roomCount: number; maxAvailabilityPersons: number; maxAvailabilityPersonsWithExtraBeds: number }[]; publicServices: Pick<Service, 'id' | 'name' | 'price' | 'chargeType' | 'description' | 'intervalDays'>[]; name: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; hotelCapacity: number; maxAvailabilityPersons: number; maxAvailabilityPersonsWithExtraBeds: number; publicExtraBedsEnabled: boolean; roomCount: number };
+  hotel: { roomTypes: { id: number; name: string; roomCount: number; maxAvailabilityPersons: number; maxAvailabilityPersonsWithExtraBeds: number }[]; publicServices: Pick<Service, 'id' | 'name' | 'price' | 'chargeType' | 'description' | 'intervalDays'>[]; name: string; slogan?: string; whatsapp: string | null; phone: string | null; bookingTheme?: Partial<BookingTheme> | null; hotelCapacity: number; maxAvailabilityPersons: number; maxAvailabilityPersonsWithExtraBeds: number; publicExtraBedsEnabled: boolean; roomCount: number };
 }
 
 export interface ReceiptUploadUrl {
@@ -255,7 +255,7 @@ export interface CompanySettings {
   phone: string | null;
   bookingDepositPercent: number;
   bookingSlug: string | null;
-  configPage: { bookingTheme?: Partial<BookingTheme>; maxAvailabilityPersons?: number | null; publicExtraBeds?: { enabled: boolean; serviceId: number | null }; publicServiceIds?: number[] };
+  configPage: { bookingTheme?: Partial<BookingTheme>; slogan?: string; maxAvailabilityPersons?: number | null; publicExtraBeds?: { enabled: boolean; serviceId: number | null }; publicServiceIds?: number[] };
   hotelCapacity: number;
   hotelCapacityWithExtraBeds?: number;
   maxAvailabilityPersons: number;

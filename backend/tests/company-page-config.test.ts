@@ -43,6 +43,16 @@ test('la configuración pública rechaza colores inválidos o claves inesperadas
   }).success, false);
 });
 
+test('la franja superior y el encabezado aceptan colores opcionales válidos', () => {
+  assert.equal(publicPageConfigSchema.safeParse({ bookingTheme: { ...validConfig.bookingTheme, backgroundTop: '#D2B992', headerSurface: '#FFFAF3' } }).success, true);
+  assert.equal(publicPageConfigSchema.safeParse({ bookingTheme: { ...validConfig.bookingTheme, backgroundTop: 'beige' } }).success, false);
+});
+
+test('el eslogan público es opcional, se normaliza y respeta el límite', () => {
+  assert.equal(publicPageConfigSchema.parse({ ...validConfig, slogan: '  Bienvenidos  ' }).slogan, 'Bienvenidos');
+  assert.equal(publicPageConfigSchema.safeParse({ ...validConfig, slogan: 'x'.repeat(121) }).success, false);
+});
+
 test('las camas extra públicas quedan desactivadas si no se configuran', () => {
   assert.equal(publicPageConfigSchema.parse(validConfig).publicExtraBeds, undefined);
   assert.equal(publicPageConfigSchema.safeParse({ ...validConfig, publicExtraBeds: { enabled: false, serviceId: null } }).success, true);

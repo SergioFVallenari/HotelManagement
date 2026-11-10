@@ -494,7 +494,7 @@ test('guardar el estilo y contacto actualiza la página del huésped incluso par
     configPage: { bookingTheme: theme, maxAvailabilityPersons: 12 },
   } });
   const quote = api<{ data: PublicBookingQuote }>(`/public/booking/${link.token}`).data;
-  assert.deepEqual(quote.hotel.bookingTheme, theme);
+  assert.deepEqual(quote.hotel.bookingTheme, bookingThemeFromConfig({ bookingTheme: theme }));
   assert.equal(quote.hotel.whatsapp, '0000000000');
   assert.equal(quote.hotel.phone, '0000000001');
   assert.equal(quote.totals.deposit, link.totals.deposit);
@@ -538,6 +538,9 @@ test('el tema conserva los colores personalizados, completa valores inválidos y
   assert.equal(bookingThemeFromConfig({ bookingTheme: { text: 'inválido' } }).text, DEFAULT_BOOKING_THEME.text);
   assert.equal(bookingThemeFromConfig({ bookingTheme: { background: '#FFFFFF' } }).surface, DEFAULT_BOOKING_THEME.surface);
   assert.equal(bookingThemeFromConfig({ bookingTheme: { surface: '#abcdef' } }).surface, '#ABCDEF');
+  const legacy = bookingThemeFromConfig({ bookingTheme: { background: '#123456', surface: '#ABCDEF' } });
+  assert.equal(legacy.backgroundTop, '#123456');
+  assert.equal(legacy.headerSurface, '#ABCDEF');
   const dark = bookingThemeStyle(DEFAULT_BOOKING_THEME) as Record<string, unknown>;
   assert.equal(dark.colorScheme, 'dark');
   assert.equal(dark['--booking-primary-contrast'], '#FFFFFF');

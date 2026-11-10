@@ -90,7 +90,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
     if (start && (next > shift(start, 30).slice(0, 7) || next < start.slice(0, 7))) resetSelection();
   }
 
-  return <section aria-label="Calendario público de disponibilidad">
+  return <section className="availability-calendar" aria-label="Calendario público de disponibilidad">
     <label className="form-label" htmlFor="calendar-room-type">Tipo de habitación</label>
     <select id="calendar-room-type" className="form-select mb-3" value={roomTypeId} onChange={(event) => {
       onTypeChange(event.target.value);
@@ -102,23 +102,22 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
     </select>
     {!roomTypeId && <p className="text-secondary">Elegí un tipo para ver sus habitaciones y fechas disponibles.</p>}
     {!!roomTypeId && <>
-      <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
-        <button type="button" className="btn btn-outline-secondary" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button>
-        <span className="fw-semibold text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
-        <button type="button" className="btn btn-outline-secondary" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button>
-        <button type="button" className="btn btn-outline-primary" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }}>Hoy</button>
-      </div>
       {loading ? <Spinner /> : error ? <><ErrorBanner message={error} /><button type="button" className="btn btn-outline-primary" onClick={() => setRetry((value) => value + 1)}>Reintentar</button></> : data && <>
         {data.rooms.length === 0 ? <p className="text-secondary">No hay habitaciones habilitadas de este tipo.</p> : room && <>
-          <div className="d-flex gap-2 overflow-auto pb-2 mb-3" role="group" aria-label="Habitaciones">
-            {data.rooms.map((item) => <button key={item.id} type="button" className={`btn text-nowrap ${item.id === room.id ? 'btn-primary' : 'btn-outline-primary'}`} aria-pressed={item.id === room.id} onClick={() => { setRoomId(item.id); resetSelection(); }}>
-              {item.number}{item.name ? ` · ${item.name}` : ''}
+          <h2 className="h6 fw-bold">Seleccioná tu habitación</h2>
+          <div className="availability-room-list mb-3" role="group" aria-label="Habitaciones">
+            {data.rooms.map((item) => <button key={item.id} type="button" className={`availability-room ${item.id === room.id ? 'is-selected' : ''}`} aria-pressed={item.id === room.id} onClick={() => { setRoomId(item.id); resetSelection(); }}>
+              <strong>{item.name || `Habitación ${item.number}`}</strong><span>Hasta {item.capacity} huéspedes</span>
             </button>)}
           </div>
-          <h2 className="h6">Habitación {room.number}{room.name ? ` · ${room.name}` : ''}</h2>
-          <p className="small text-secondary">{room.typeName} · Elegí entrada y luego salida. La disponibilidad corresponde a cada noche.</p>
-          <div className="d-flex flex-wrap gap-3 small mb-3"><span>● Disponible</span><span className="text-secondary">× Sin disponibilidad</span></div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
+          <div className="availability-calendar-layout"><div>
+          <div className="availability-month mb-3">
+            <span className="fw-semibold text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
+            <div className="d-flex gap-1"><button type="button" className="btn btn-sm btn-outline-secondary" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button><button type="button" className="btn btn-sm btn-outline-secondary" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button><button type="button" className="btn btn-sm btn-outline-primary" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }}>Hoy</button></div>
+          </div>
+          <p className="small text-secondary availability-calendar-hint">{room.typeName} · Elegí entrada y luego salida. La disponibilidad corresponde a cada noche.</p>
+          <div className="d-flex flex-wrap gap-3 small mb-3 availability-calendar-legend"><span>● Disponible</span><span className="text-secondary">× Sin disponibilidad</span></div>
+          <div className="availability-calendar-grid">
             {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => <div key={day} className="text-center small fw-semibold">{day}</div>)}
             {days.map((day) => {
               const inMonth = day.slice(0, 7) === month;
@@ -127,20 +126,22 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
               const canCheckOut = !!start && !end && day > start;
               const disabled = !inMonth || day < today || (!free && !canCheckOut);
               return <button key={day} type="button" disabled={disabled} className={`btn p-1 ${selected ? 'btn-primary' : free && inMonth && day >= today ? 'btn-outline-success' : 'btn-light text-secondary'}`}
-                style={{ minHeight: 52, opacity: inMonth ? 1 : 0.35 }} aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
+                style={{ opacity: inMonth ? 1 : 0.35 }} aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
                 aria-label={`${dateShort(day)}: ${free ? 'disponible' : 'sin disponibilidad'}${day === start ? ', entrada' : day === end ? ', salida' : ''}`}
                 onClick={() => selectDay(day)}>
                 <span className="d-block">{Number(day.slice(8))}</span><span className="d-block small" aria-hidden="true">{inMonth && day >= today ? free ? '●' : '×' : '\u00a0'}</span>
               </button>;
             })}
           </div>
-          <div className="mt-3" aria-live="polite">
+          </div><div className="availability-selection"><h3 className="h6 fw-bold">Tu selección</h3><div className="availability-selection-card" aria-live="polite">
+            <strong>{room.name || `Habitación ${room.number}`}</strong>
             {start && <p className="small mb-2">Entrada: <strong>{dateShort(start)}</strong>{end ? <> · Salida: <strong>{dateShort(end)}</strong></> : ' · Ahora elegí la fecha de salida.'}</p>}
+            {!start && <p className="small text-secondary mb-0">Elegí una fecha de entrada y una de salida.</p>}
             {selectionError && <ErrorBanner message={selectionError} />}
           </div>
           {start && <button type="button" className="btn btn-link px-0" onClick={resetSelection}>Limpiar fechas</button>}
-          <button type="button" className="btn btn-primary w-100 mt-2" disabled={!canContinue} onClick={() => { if (canContinue) onSelect(start, end, room); }}>Confirmar habitación y fechas</button>
-          <p className="small text-secondary mt-3 mb-0">Continuarás con esta habitación y estas fechas. En el siguiente paso indicarás cuántas personas se alojan y podrás agregar servicios extra.</p>
+          <button type="button" className="btn btn-primary w-100 mt-2" disabled={!canContinue} onClick={() => { if (canContinue) onSelect(start, end, room); }}>Continuar con mi reserva</button>
+          </div></div>
         </>}
       </>}
     </>}

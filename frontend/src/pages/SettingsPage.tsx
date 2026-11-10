@@ -646,6 +646,7 @@ function BookingSettingsSection() {
   const themeHexInvalid = BOOKING_THEME_FIELDS.some(({ key }) => !/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key]));
   const [section, setSection] = useState<'general' | 'anticipos' | 'contacto' | 'apariencia'>('general');
   const [maxPersonsDraft, setMaxPersonsDraft] = useState<string | null>(null);
+  const [sloganDraft, setSloganDraft] = useState<string | null>(null);
   const [extraBedsDraft, setExtraBedsDraft] = useState<{ enabled: boolean; serviceId: number | null } | null>(null);
   const publicExtraBeds = extraBedsDraft ?? settings?.configPage.publicExtraBeds ?? { enabled: false, serviceId: null };
   const [publicServicesDraft, setPublicServicesDraft] = useState<number[] | null>(null);
@@ -681,6 +682,7 @@ function BookingSettingsSection() {
           configPage: {
             ...settings?.configPage,
             bookingTheme: bookingThemeFromConfig(settings?.configPage),
+            slogan: (sloganDraft ?? settings?.configPage.slogan ?? '').trim(),
             maxAvailabilityPersons: maxPersonsValue === '' ? null : Number(maxPersonsValue),
             ...(!DEMO_MODE ? { publicExtraBeds } : {}),
             ...(!DEMO_MODE ? { publicServiceIds: publicServiceIds.filter((id) => optionalServices.some((service) => service.id === id)) } : {}),
@@ -689,6 +691,7 @@ function BookingSettingsSection() {
       });
       setOverrides({});
       setMaxPersonsDraft(null);
+      setSloganDraft(null);
       setExtraBedsDraft(null);
       setPublicServicesDraft(null);
       setToast('Configuración de reservas guardada.');
@@ -752,6 +755,11 @@ function BookingSettingsSection() {
             </ul>
             {section === 'general' && <>
               <div className="row g-3">
+              <div className="col-md-8">
+                <label className="form-label" htmlFor="booking-slogan">Eslogan de la página pública</label>
+                <input id="booking-slogan" className="form-control" maxLength={120} value={sloganDraft ?? settings?.configPage.slogan ?? ''} onChange={(event) => setSloganDraft(event.target.value)} placeholder="Opcional" />
+                <div className="form-text">Se muestra debajo del nombre del alojamiento en la página de disponibilidad.</div>
+              </div>
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-slug">Identificador público del hotel</label>
                 <input id="booking-slug" className="form-control" value={form.bookingSlug}
@@ -896,7 +904,7 @@ function BookingSettingsSection() {
       >
         <div className="row g-4">
           <div className="col-lg-6">
-            <p className="text-secondary small">Estos colores se aplican a la página de disponibilidad y al formulario que recibe el huésped. El fondo primario cubre la página y el secundario, el modal y las tarjetas.</p>
+            <p className="text-secondary small">Personalizá la franja superior, el fondo, el encabezado y el formulario de la página pública. La vista previa se actualiza al elegir cada color.</p>
             <div className="d-grid gap-3">
               {BOOKING_THEME_FIELDS.map(({ key, label, usage }) => (
                 <div className="d-flex align-items-center gap-3" key={key}>
@@ -947,15 +955,20 @@ function BookingSettingsSection() {
           <div className="col-lg-6">
             <div className="small text-secondary mb-2">Vista previa</div>
             <div className="booking-theme-preview" style={bookingThemeStyle(themeDraft)}>
+              <div className="booking-theme-preview-header">
+                <span className="booking-theme-preview-logo">{(settings?.name || 'Hotel').trim().charAt(0).toUpperCase()}</span>
+                <span><strong>{settings?.name || 'Tu alojamiento'}</strong>{(sloganDraft ?? settings?.configPage.slogan) && <small>{sloganDraft ?? settings?.configPage.slogan}</small>}</span>
+              </div>
               <div className="booking-theme-preview-card">
-                <span className="booking-theme-preview-accent">POSADA</span>
-                <h3>El nombre de tu hotel</h3>
-                <p>Encontrá una habitación para tu estadía</p>
+                <span className="booking-theme-preview-accent">Reservá tu estadía</span>
+                <h3>Encontrá tu próxima escapada</h3>
+                <p>Elegí tu habitación y las fechas para consultar disponibilidad.</p>
+                <div className="booking-theme-preview-steps"><span>01</span> Habitación y fechas <span>02</span> Personas y servicios</div>
                 <div className="booking-theme-preview-option">
-                  <strong>Habitación doble</strong>
-                  <span>Desde $80.000</span>
+                  <strong>Habitación de ejemplo</strong>
+                  <span>Hasta 2 huéspedes</span>
                 </div>
-                <button type="button" className="booking-theme-preview-button">Consultar disponibilidad</button>
+                <div className="booking-theme-preview-button">Continuar con mi reserva</div>
               </div>
             </div>
           </div>

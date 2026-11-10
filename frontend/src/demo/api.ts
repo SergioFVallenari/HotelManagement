@@ -238,10 +238,14 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
         }
         if ('configPage' in input) {
           const config = input.configPage as Input;
-          if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some((key) => !['bookingTheme', 'maxAvailabilityPersons'].includes(key))) throw new DemoApiError('La configuración de la página no es válida.');
+          if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some((key) => !['bookingTheme', 'maxAvailabilityPersons', 'slogan'].includes(key))) throw new DemoApiError('La configuración de la página no es válida.');
+          if ('slogan' in config) {
+            if (typeof config.slogan !== 'string' || config.slogan.trim().length > 120) throw new DemoApiError('El eslogan debe tener hasta 120 caracteres.');
+            updated.configPage.slogan = config.slogan.trim();
+          }
           if ('bookingTheme' in config) {
             const theme = config.bookingTheme as Input;
-            if (!theme || typeof theme !== 'object' || BOOKING_THEME_FIELDS.some(({ key }) => typeof theme[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(theme[key] as string))) throw new DemoApiError('Usá colores en formato hexadecimal #RRGGBB.');
+            if (!theme || typeof theme !== 'object' || BOOKING_THEME_FIELDS.some(({ key }) => (key !== 'backgroundTop' && key !== 'headerSurface' || theme[key] !== undefined) && (typeof theme[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(theme[key] as string)))) throw new DemoApiError('Usá colores en formato hexadecimal #RRGGBB.');
             updated.configPage.bookingTheme = bookingThemeFromConfig({ bookingTheme: theme });
           }
           if ('maxAvailabilityPersons' in config) {
