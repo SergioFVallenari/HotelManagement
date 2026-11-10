@@ -183,7 +183,7 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
     let guest: Guest;
     if (input.guestId) guest = requireRow(store.guests, Number(input.guestId));
     else {
-      const draft = input.guest as Input | undefined;
+      const draft = input.genericGuest === true ? { firstName: 'Huésped', lastName: 'genérico' } : input.guest as Input | undefined;
       if (!draft) throw new DemoApiError('Completá nombre y apellido del huésped.');
       const data = guestData(draft);
       const existing = data.email ? store.guests.find((g) => g.email === data.email) : undefined;
@@ -254,7 +254,7 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       }
       return { data: { ...company, hotelCapacity, maxAvailabilityPersons: Math.min(company.configPage.maxAvailabilityPersons ?? hotelCapacity, hotelCapacity) } };
     }
-    if (method === 'GET' && pathname === '/booking-links') return { data: links.filter((link) => !query.get('status') || link.status === query.get('status')).toReversed() };
+    if (method === 'GET' && pathname === '/booking-links') return page(links.filter((link) => !query.get('status') || link.status === query.get('status')).toReversed(), query);
     if (method === 'POST' && pathname === '/booking-links') {
       const offer = structuredClone(quoteStay(input));
       const deposit = input.deposit === undefined ? computeBookingDeposit(offer.total, company.bookingDepositPercent) : round2(Number(input.deposit));
@@ -377,6 +377,19 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
           `${r.code} ${r.guest?.firstName} ${r.guest?.lastName} ${r.room?.number} ${r.rooms?.map((line) => line.room?.number).join(' ') ?? ''}`.toLowerCase().includes(search);
       }).sort((a, b) => b.id - a.id);
       return page(rows, query);
+    }
+    if (method === 'POST' && pathname === '/reservations/batch') {
+      const items = input.reservations as Input[];
+      if (!Array.isArray(items) || !items.length || items.length > 50) throw new DemoApiError('Indicá entre 1 y 50 reservas.');
+      const snapshot = structuredClone(store);
+      const previousPaymentId = paymentId;
+      try {
+        return { data: items.map((item) => createReservation(item).data) };
+      } catch (err) {
+        Object.assign(store, snapshot);
+        paymentId = previousPaymentId;
+        throw err;
+      }
     }
     if (method === 'POST' && pathname === '/reservations') return createReservation(input);
     const reservationMatch = pathname.match(/^\/reservations\/(\d+)(?:\/(.+))?$/);

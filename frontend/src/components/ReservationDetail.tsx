@@ -10,6 +10,7 @@ import type { Column } from './DataTable';
 import { ErrorBanner, Toast } from './Feedback';
 import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, hotelToday } from '../lib/format';
 import { RefundBadge } from './Badge';
+import { useAuth } from '../auth/AuthContext';
 
 const PAYMENTS_COLUMNS: Column<Payment>[] = [
   { header: 'Fecha', render: (p) => dateTimeShort(p.paidAt) },
@@ -21,12 +22,14 @@ interface Props {
   reservation: Reservation | null;
   onClose: () => void;
   onChanged: (reservation: Reservation) => void;
+  onDeleted: () => void;
   onError: (err: unknown) => void;
   error?: string | null;
   onDismissError?: () => void;
 }
 
-export function ReservationDetail({ reservation, onClose, onChanged, onError, error, onDismissError }: Props) {
+export function ReservationDetail({ reservation, onClose, onChanged, onDeleted, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'CASH' as PaymentMethod, reference: '' });
   const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link' | 'approve' | 'reject'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'approve'>(null);
@@ -35,6 +38,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
@@ -116,6 +120,20 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   const linkVisible =
     !DEMO_MODE && !isPublicLink && ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
   const linkRegenerable = status === 'PENDING' || status === 'RESERVED' || status === 'CHECKED_IN';
+  const canDelete = !DEMO_MODE && (user?.role === 'OWNER' || user?.role === 'ADMIN');
+
+  async function deleteReservation() {
+    setBusyAction('cancel');
+    try {
+      await api(`/reservations/${current.id}`, { method: 'DELETE' });
+      setDeleteOpen(false);
+      onDeleted();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   async function generateLink(regenerate = false) {
     setBusyAction('link');
@@ -584,10 +602,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             </button>
           </div>
         )}
+        {canDelete && <div className="modal-actions"><button type="button" className="btn btn-outline-danger" onClick={() => setDeleteOpen(true)} disabled={!!busyAction}>Eliminar reserva</button></div>}
         </div>
       </Modal>
 
       <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />
+
+      <ConfirmDialog open={deleteOpen} title="Eliminar reserva" message="Esta acción es definitiva. Se eliminarán la reserva y sus pagos del historial y de los informes; el link de WhatsApp no podrá reutilizarse y se intentará borrar el comprobante. Si tiene pagos, debe estar cancelada y tener la devolución total registrada cuando corresponda. No debe tener check-in, check-out ni vínculos con MercadoPago." confirmLabel="Eliminar reserva" danger busy={!!busyAction} error={error} onCancel={() => setDeleteOpen(false)} onConfirm={() => void deleteReservation()} />
 
       <ConfirmDialog
         open={!!confirmAction}

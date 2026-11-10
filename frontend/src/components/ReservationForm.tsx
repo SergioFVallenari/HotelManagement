@@ -8,6 +8,8 @@ import { useAuth } from '../auth/AuthContext';
 import { DiscountInput } from './DiscountInput';
 import { Modal } from './Modal';
 import { RoomSelection } from './RoomSelection';
+import { IndependentReservationFields } from './IndependentReservationFields';
+import { buildIndependentReservations, type IndependentReservationDetails } from '../lib/reservationBatch';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { PaginationBar } from './pagination';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, PAYMENT_METHODS } from '../lib/format';
@@ -46,7 +48,9 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   const persons = selectedRooms.reduce((sum, line) => sum + line.persons, 0);
   const extraBeds = selectedRooms.reduce((sum, line) => sum + line.extraBeds, 0);
 
-  const [guestMode, setGuestMode] = useState<'existing' | 'new'>('new');
+  const [guestMode, setGuestMode] = useState<'existing' | 'new' | 'generic'>('new');
+  const [independent, setIndependent] = useState(false);
+  const [independentDetails, setIndependentDetails] = useState<Record<number, IndependentReservationDetails>>({});
   const [guestSearch, setGuestSearch] = useState('');
   const [guestResults, setGuestResults] = useState<GuestSelection[]>([]);
   const [guestSearched, setGuestSearched] = useState(false);
@@ -90,6 +94,8 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   }, [open]);
 
   function resetFormFields() {
+    setIndependent(false);
+    setIndependentDetails({});
     setCheckIn('');
     setCheckOut('');
     setGuestSearch('');
@@ -254,6 +260,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     if (!selectedRoom) {
       onError(new Error('Seleccioná una habitación disponible'));
       return;
@@ -264,6 +271,20 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
     }
     if (selectedRooms.some((line) => line.extraBeds > 0 && line.persons < line.room.capacity)) {
       onError(new Error('Las camas extras solo pueden cargarse cuando la habitación está llena'));
+      return;
+    }
+    if (independent) {
+      setSaving(true);
+      try {
+        const reservations = buildIndependentReservations(selectedRooms, checkIn, checkOut, independentDetails, servicesList.find((item) => item.isExtraBed));
+        const result = await api<{ data: Reservation[] }>('/reservations/batch', { method: 'POST', body: { reservations } });
+        onCreated(result.data[0]);
+        onClose();
+      } catch (err) {
+        onError(err);
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     const total = estimateTotal();
@@ -306,6 +327,8 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
           return;
         }
         body.guestId = selectedGuest.id;
+      } else if (guestMode === 'generic') {
+        body.genericGuest = true;
       } else {
         if (!newGuest.firstName.trim() || !newGuest.lastName.trim()) {
           onError(new Error('Completá nombre y apellido del huésped'));
@@ -332,8 +355,17 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
   if (!open) return null;
 
   return (
-    <Modal open={open} title="Nueva reserva" onClose={onClose} error={error} onDismissError={onDismissError} wide>
+    <Modal open={open} title={independent ? 'Nuevas reservas independientes' : 'Nueva reserva'} onClose={onClose} error={error} onDismissError={onDismissError} preventClose={saving} wide>
       <form onSubmit={handleSubmit}>
+        <fieldset disabled={saving}>
+        <div className="mb-4">
+          <label className="form-label" htmlFor="reservation-create-mode">Tipo de carga</label>
+          <select id="reservation-create-mode" className="form-select" value={independent ? 'independent' : 'group'} onChange={(e) => setIndependent(e.target.value === 'independent')}>
+            <option value="group">Una reserva · uno o varios alojamientos para el mismo huésped</option>
+            <option value="independent">Varias reservas · una por habitación, para huéspedes distintos</option>
+          </select>
+          {independent && <p className="form-text mb-0">Ideal para gente de paso: elegí las fechas una sola vez y marcá los dormis. Se guardan todas juntas; si alguna habitación ya se ocupó, no se crea ninguna.</p>}
+        </div>
         <div className="form-section">
           <h3 className="section-title">1 · Fechas y habitaciones</h3>
           <div className="filter-row">
@@ -349,13 +381,14 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
               {searchingRooms ? 'Buscando…' : 'Buscar disponibles'}
             </button>
           </div>
-          {rooms.length > 0 && <RoomSelection rooms={rooms} value={selectedRooms} onChange={changeRooms} />}
+          {rooms.length > 0 && <RoomSelection rooms={rooms} value={selectedRooms} onChange={changeRooms} independent={independent} />}
           {rooms.length === 0 && <p className="text-secondary mt-2 mb-0">Buscá habitaciones disponibles para el rango elegido.</p>}
           <p className="text-secondary small mb-0">
             Horario: check-in desde las {CHECK_IN_TIME} · check-out hasta las {CHECK_OUT_TIME} (noche a partir de la fecha de check-in).
           </p>
         </div>
 
+        {independent ? <IndependentReservationFields rooms={selectedRooms} nights={nights()} details={independentDetails} onChange={(roomId, value) => setIndependentDetails((previous) => ({ ...previous, [roomId]: value }))} extraBedService={servicesList.find((item) => item.isExtraBed)} /> : <>
         <div className="form-section">
           <h3 className="section-title">2 · Huésped</h3>
           <div className="toggle-row">
@@ -364,6 +397,9 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
             </button>
             <button type="button" className={`btn btn-sm ${guestMode === 'existing' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setGuestMode('existing')}>
               Huésped existente
+            </button>
+            <button type="button" className={`btn btn-sm ${guestMode === 'generic' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setGuestMode('generic')}>
+              Sin datos del huésped
             </button>
           </div>
 
@@ -386,7 +422,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                 <input type="email" className="form-control" maxLength={200} value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} />
               </div>
             </div>
-          ) : (
+          ) : guestMode === 'generic' ? <p className="small text-secondary mb-0">Se crea una ficha propia como «Huésped genérico». Podés completar los datos después sin modificar otras reservas.</p> : (
             <div>
               <div className="filter-row">
                 <input
@@ -668,15 +704,17 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
           <label className="form-label">Notas del huésped</label>
           <textarea className="form-control" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" />
         </div>
+        </>}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Reservando…' : 'Confirmar reserva'}
+          <button type="submit" className="btn btn-primary" disabled={saving || (independent && (selectedRooms.length === 0 || selectedRooms.length > 50))}>
+            {saving ? 'Reservando…' : independent ? `Crear ${selectedRooms.length} ${selectedRooms.length === 1 ? 'reserva' : 'reservas'}` : 'Confirmar reserva'}
           </button>
         </div>
+        </fieldset>
       </form>
     </Modal>
   );

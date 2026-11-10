@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { parseIdParam } from '../../lib/pagination.js';
+import { parseIdParam, parsePagination } from '../../lib/pagination.js';
 import { assertDiscountPermission } from '../../lib/discount.js';
 import {
   cancelBookingLink,
@@ -26,8 +26,9 @@ import type { CreateBookingLinkInput, ListBookingLinksQuery, PublicBookingInput,
 
 export async function listBookingLinksHandler(req: Request, res: Response): Promise<void> {
   const query = listBookingLinksQuerySchema.parse(req.query) as ListBookingLinksQuery;
-  const data = await listBookingLinks(query);
-  res.json({ data });
+  const pagination = parsePagination({ pageSize: 100, ...req.query });
+  const result = await listBookingLinks(query, pagination);
+  res.json(result);
 }
 
 export async function createBookingLinkHandler(req: Request, res: Response): Promise<void> {

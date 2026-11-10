@@ -10,6 +10,7 @@ import { createGuestSchema, updateGuestSchema } from '../modules/guests/guests.s
 import { createServiceSchema, updateServiceSchema } from '../modules/services/services.schema.js';
 import {
   createReservationSchema,
+  createReservationBatchSchema,
   updateReservationSchema,
 } from '../modules/reservations/reservations.schema.js';
 import { recordPaymentSchema } from '../modules/payments/payments.schema.js';
@@ -691,7 +692,7 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Reservas'],
       summary: 'Listar reservas',
-      description: noRole,
+      description: `${noRole} Ordenadas por cercanía del check-in a la fecha actual del hotel, incluyendo fechas pasadas; ante igual distancia se prioriza la fecha futura y luego el ID más reciente.`,
       parameters: [
         queryParam('page', 'Página (1-indexada)', { schema: { type: 'integer', minimum: 1 } }),
         queryParam('pageSize', 'Cantidad por página (default 10, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
@@ -717,7 +718,7 @@ const paths: Record<string, Json> = {
       summary: 'Crear reserva',
       description:
         `${noRole} Acepta varias habitaciones con rooms: [{ roomId, persons, extraBeds }]; personas, camas extras y tarifas se validan por habitación. Titular, fechas, estado y pagos son conjuntos. El formato legado de una habitación sigue vigente. Acepta un anticipo (payment) en la misma operación, y/o puede generar el link de MercadoPago ` +
-        'por el saldo (`generatePaymentLink`). Ver descripción ampliada en la portada.',
+        'por el saldo (`generatePaymentLink`). Con `genericGuest: true` crea una ficha propia de huésped genérico, sin exigir nombre ni contacto. Ver descripción ampliada en la portada.',
       requestBody: jsonBody(js(createReservationSchema, 'input'), 'Reserva a crear'),
       responses: {
         '201': ok(ref('Reservation'), 'Reserva creada'),
@@ -731,7 +732,31 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/reservations/batch': {
+    post: op({
+      tags: ['Reservas'],
+      summary: 'Crear varias reservas independientes',
+      description: `${noRole} Crea hasta 50 reservas en una sola transacción: si alguna falla, no se guarda ninguna. Cada reserva puede indicar genericGuest: true para crear una ficha propia sin datos de contacto. No admite órdenes de MercadoPago.`,
+      requestBody: jsonBody(js(createReservationBatchSchema, 'input'), 'Reservas a crear'),
+      responses: {
+        '201': ok({ type: 'array', items: ref('Reservation') }, 'Reservas creadas'),
+        ...errors({
+          '400': 'Datos de reserva inválidos',
+          '404': 'Habitación, servicio o huésped inexistente',
+          '409': 'Una de las habitaciones está ocupada en el período solicitado',
+        }),
+      },
+    }),
+  },
+
   '/api/reservations/{id}': {
+    delete: op({
+      tags: ['Reservas'],
+      summary: 'Eliminar reserva',
+      description: 'Solo ADMIN u OWNER. Admite reservas sin pagos o canceladas cuando no corresponde devolución o se registró la devolución total. Elimina también el historial de pagos. No admite check-in/check-out ni vínculos con MercadoPago. Las solicitudes de WhatsApp permanecen inutilizadas y se intenta borrar el comprobante de Storage.',
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: { '204': empty('Reserva eliminada'), ...errors({ '409': '`INVALID_STATE`: la reserva tiene movimientos o vínculos que impiden eliminarla' }) },
+    }),
     get: op({
       tags: ['Reservas'],
       summary: 'Obtener reserva',
@@ -1580,15 +1605,17 @@ const paths: Record<string, Json> = {
       tags: ['Reservas por WhatsApp'],
       summary: 'Listar solicitudes de reserva',
       description:
-        `${noRole} Devuelve las solicitudes preparadas por la recepción (máx. 100, más nuevas primero) ` +
+        `${noRole} Devuelve las solicitudes preparadas por la recepción, más nuevas primero, paginadas ` +
         'con la cotización congelada y el link público para compartir.',
       parameters: [
+        queryParam('page', 'Número de página (default 1)', { schema: { type: 'integer', minimum: 1 } }),
+        queryParam('pageSize', 'Cantidad por página (default 100, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
         queryParam('status', 'Filtrar por estado del link', {
           schema: { type: 'string', enum: ['OPEN', 'COMPLETED', 'CANCELLED'] },
         }),
       ],
       responses: {
-        '200': ok({ type: 'array', items: ref('BookingLink') }),
+        '200': ok({ type: 'array', items: ref('BookingLink') }, true),
         ...errors(),
       },
     }),

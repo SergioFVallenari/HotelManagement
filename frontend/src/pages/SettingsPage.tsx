@@ -1,10 +1,10 @@
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { hotelContactSchema, validateContact } from '../lib/contactValidation';
 import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
-import { IconBell, IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
+import { IconArrowLeft, IconBell, IconBrandInstagram, IconBrandWhatsapp, IconChevronRight, IconCreditCard, IconSparkles } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
@@ -335,7 +335,7 @@ function InstagramSettingsSection() {
   );
 }
 
-function MercadoPagoSection() {
+function MercadoPagoSection({ onNativeReturn }: { onNativeReturn: () => void }) {
   const { user } = useAuth();
   const { data, loading, error, reload } = useApi<{ data: MpConnection }>('/mp/connection');
   const connection = data?.data;
@@ -349,6 +349,10 @@ function MercadoPagoSection() {
   // Marca que hay un Custom Tab abierto esperando el deep link, para que el
   // watchdog de browserFinished sepa si todavia hay que hacer algo.
   const nativeOauthRef = useRef(false);
+  const onNativeReturnRef = useRef(onNativeReturn);
+  useEffect(() => {
+    onNativeReturnRef.current = onNativeReturn;
+  }, [onNativeReturn]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -450,6 +454,7 @@ function MercadoPagoSection() {
     function handleNativeUrl(url: string) {
       const query = extractOauthQuery(url);
       if (!query) return;
+      onNativeReturnRef.current();
       nativeOauthRef.current = false;
       void closeAuthTab().catch(() => { });
       applyOauthResultRef.current(query);
@@ -969,36 +974,38 @@ function BookingSettingsSection() {
 
 type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia' | 'notificaciones';
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
-  { id: 'pagos', label: 'Pagos online', icon: <IconCreditCard size={16} /> },
-  { id: 'reservas', label: 'Reservas', icon: <IconBrandWhatsapp size={16} /> },
-  { id: 'redes', label: 'Redes sociales', icon: <IconBrandInstagram size={16} /> },
-  { id: 'ia', label: 'Asistente de IA', icon: <IconSparkles size={16} /> },
-  { id: 'notificaciones', label: 'Notificaciones', icon: <IconBell size={16} /> },
+function WebSettingsNotice({ title }: { title: string }) {
+  return <div>
+    <h2 className="h5 mb-1">{title}</h2>
+    <div className="card shadow-sm mt-3">
+      <div className="card-body">
+        <strong>Disponible en la versión web</strong>
+        <p className="text-secondary mt-2 mb-0">Para configurar esta integración, ingresá a LAIXIA desde un navegador y abrí Configuración.</p>
+      </div>
+    </div>
+  </div>;
+}
+
+const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; description: string; icon: ReactNode }> = [
+  { id: 'pagos', label: 'Pagos online', description: 'Cobros y conexión con MercadoPago', icon: <IconCreditCard size={22} /> },
+  { id: 'reservas', label: 'Reservas', description: 'Portal, anticipos y apariencia', icon: <IconBrandWhatsapp size={22} /> },
+  { id: 'redes', label: 'Redes sociales', description: 'Canales conectados y mensajería', icon: <IconBrandInstagram size={22} /> },
+  { id: 'ia', label: 'Asistente de IA', description: 'Borradores y respuestas automáticas', icon: <IconSparkles size={22} /> },
+  { id: 'notificaciones', label: 'Notificaciones', description: 'Destinatarios y avisos', icon: <IconBell size={22} /> },
 ];
 
 // El callback de Instagram aterriza en /settings?tab=redes (redirect de
 // /settings/instagram). La tab se lee solo al montar para que el
 // history.replaceState que limpia el callback no la pise.
-function initialTab(): SettingsTab {
+function initialTab(): SettingsTab | null {
   if (DEMO_MODE) return 'reservas';
   const value = new URLSearchParams(window.location.search).get('tab');
-  return value === 'redes' || value === 'ia' || value === 'reservas' || value === 'notificaciones' ? value : 'pagos';
+  return value === 'pagos' || value === 'redes' || value === 'ia' || value === 'reservas' || value === 'notificaciones' ? value : new URLSearchParams(window.location.search).has('mp') ? 'pagos' : null;
 }
 
 export function SettingsPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const offset = event.key === 'ArrowRight' ? 1 : -1;
-    const next = (index + offset + SETTINGS_TABS.length) % SETTINGS_TABS.length;
-    setTab(SETTINGS_TABS[next].id);
-    tabRefs.current[next]?.focus();
-  }
+  const [tab, setTab] = useState<SettingsTab | null>(initialTab);
 
   if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') {
     return (
@@ -1010,71 +1017,52 @@ export function SettingsPage() {
 
   if (DEMO_MODE) {
     return (
-      <div>
-        <h1 className="h4 mb-1">Configuración de reservas</h1>
-        <p className="text-secondary mb-3">Anticipos, contacto y apariencia de la página que recibe el huésped.</p>
+      <div className="settings-page">
+        <div className="page-header mb-4"><div>
+          <h1 className="mb-2">Configuración de reservas</h1>
+          <p className="text-secondary mb-0">Anticipos, contacto y apariencia de la página que recibe el huésped.</p>
+        </div></div>
         <div className="alert alert-info">
           Los cambios son de demostración y se pierden al recargar. La paleta inicial es la del CRM.
           Personalizá el estilo en <strong>Apariencia</strong> y probalo con una <Link to="/booking-links">solicitud de reserva</Link> en esta pestaña.
           No se publican sitios ni se habilitan integraciones externas.
         </div>
-        <BookingSettingsSection />
+        <div className="settings-content"><BookingSettingsSection /></div>
       </div>
     );
   }
 
   return (
-    <div>
+    <div className="settings-page">
       <div className="page-header mb-4">
         <div>
-          <h1 className="h4 mb-1">Configuración</h1>
-          <p className="text-secondary mb-0">Pagos online, reservas, redes sociales, asistente de IA y destinatarios de notificaciones del hotel.</p>
+          <h1 className="mb-2">{tab ? 'Configuración' : 'Centro de configuración'}</h1>
+          <p className="text-secondary mb-0">{tab ? 'Administrá las opciones de tu alojamiento.' : 'Todas las herramientas para administrar tu alojamiento.'}</p>
         </div>
       </div>
 
-      <ul className="nav nav-tabs settings-tabs mb-4" role="tablist" aria-label="Configuración">
-        {SETTINGS_TABS.map((item, index) => {
-          const active = item.id === tab;
-          return (
-            <li className="nav-item" key={item.id} role="presentation">
-              <button
-                type="button"
-                role="tab"
-                id={`settings-tab-${item.id}`}
-                aria-selected={active}
-                aria-controls={`settings-panel-${item.id}`}
-                tabIndex={active ? 0 : -1}
-                ref={(el) => {
-                  tabRefs.current[index] = el;
-                }}
-                className={`nav-link d-flex align-items-center gap-2 ${active ? 'active' : ''}`}
-                onClick={() => setTab(item.id)}
-                onKeyDown={(event) => onTabKeyDown(event, index)}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {tab ? <button type="button" className="btn settings-back mb-4" onClick={() => setTab(null)}><IconArrowLeft size={18} aria-hidden="true" /> Volver a configuración</button> : (
+        <div className="settings-grid">
+          {SETTINGS_TABS.map((item) => <button type="button" className="settings-tile" key={item.id} onClick={() => setTab(item.id)}>
+            <span className="settings-tile-icon" aria-hidden="true">{item.icon}</span>
+            <span className="settings-tile-copy"><strong>{item.label}</strong><span>{item.description}</span></span>
+            <IconChevronRight className="settings-tile-arrow" size={20} aria-hidden="true" />
+          </button>)}
+        </div>
+      )}
 
       {/* Los paneles quedan montados (ocultos con d-none): no se pierde lo
           editado en el form de IA y siguen vivos los listeners del OAuth de
           MercadoPago. */}
       <div
-        role="tabpanel"
         id="settings-panel-pagos"
-        aria-labelledby="settings-tab-pagos"
-        className={tab === 'pagos' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'pagos' ? '' : 'd-none'}`}
       >
-        <MercadoPagoSection />
+        {isNative ? <WebSettingsNotice title="Pagos online" /> : <MercadoPagoSection onNativeReturn={() => setTab('pagos')} />}
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-reservas"
-        aria-labelledby="settings-tab-reservas"
-        className={tab === 'reservas' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'reservas' ? '' : 'd-none'}`}
       >
         <h2 className="h5 mb-1">Portal de reservas</h2>
         <p className="text-secondary mb-3">
@@ -1083,18 +1071,14 @@ export function SettingsPage() {
         <BookingSettingsSection />
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-redes"
-        aria-labelledby="settings-tab-redes"
-        className={tab === 'redes' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'redes' ? '' : 'd-none'}`}
       >
-        <InstagramSettingsSection />
+        {isNative ? <WebSettingsNotice title="Redes sociales" /> : <InstagramSettingsSection />}
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-ia"
-        aria-labelledby="settings-tab-ia"
-        className={tab === 'ia' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'ia' ? '' : 'd-none'}`}
       >
         <h2 className="h5 mb-1">Asistente de IA</h2>
         <p className="text-secondary mb-3">
@@ -1103,10 +1087,8 @@ export function SettingsPage() {
         <AiAssistantSection />
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-notificaciones"
-        aria-labelledby="settings-tab-notificaciones"
-        className={tab === 'notificaciones' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'notificaciones' ? '' : 'd-none'}`}
       >
         <RecipientSettings key={user?.companyId} />
       </div>

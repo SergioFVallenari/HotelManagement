@@ -14,6 +14,10 @@ import { registerReservationNotification } from '../notifications/notification.s
 import { calculateReservationAmounts, readReservationAmounts } from '../../lib/reservationAmounts.js';
 import { calculateDiscount } from '../../lib/discount.js';
 import { roomSelectionsTotal } from '../../lib/reservationRooms.js';
+import { reservationDeletionError } from './reservations.delete.js';
+import { removeReceipt } from '../booking/booking.storage.js';
+
+type ReservationTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 export interface ReservationRow {
   id: number;
@@ -282,7 +286,7 @@ export interface CreateReservationOptions {
   depositRequired?: number;
 }
 
-export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
+async function prepareReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
   const checkIn = parseDate(input.checkIn, 'checkIn');
   const checkOut = parseDate(input.checkOut, 'checkOut');
   assertValidRange(checkIn, checkOut);
@@ -355,7 +359,7 @@ export async function createReservation(input: CreateReservationInput, options: 
     order = await createOrderForReservation({ companyId, code, amount: orderAmount, guest: guestContext, checkIn: input.checkIn });
   }
 
-  const reservationId = await prisma.$transaction(async (tx) => {
+  return async (tx: ReservationTransaction) => {
     const roomIds = rooms.map((line) => line.roomId);
     await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" IN (${Prisma.join(roomIds)}) AND "companyId" = ${companyId} ORDER BY "id" FOR UPDATE`;
     if (options.idempotencyCode) {
@@ -388,7 +392,7 @@ export async function createReservation(input: CreateReservationInput, options: 
       if (!guest) throw notFound('Huésped', input.guestId);
       guestId = guest.id;
     } else {
-      const upserted = await resolveReservationGuest(tx, companyId, input.guest!);
+      const upserted = await resolveReservationGuest(tx, companyId, input.genericGuest ? { firstName: 'Huésped', lastName: 'genérico', phone: null, email: null } : input.guest!);
       guestId = upserted.id;
     }
 
@@ -460,11 +464,33 @@ export async function createReservation(input: CreateReservationInput, options: 
     });
 
     return reservation.id;
-  }, { timeout: 15_000, maxWait: 10_000 });
+  };
+}
 
+export async function createReservation(input: CreateReservationInput, options: CreateReservationOptions = {}) {
+  const write = await prepareReservation(input, options);
+  const reservationId = await prisma.$transaction(write, { timeout: 15_000, maxWait: 10_000 });
+  const companyId = getTenantId()!;
   const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId, companyId }, include: FULL_INCLUDE });
 
   return serializeReservation(reservation);
+}
+
+export async function createReservationBatch(inputs: CreateReservationInput[]) {
+  const companyId = getTenantId()!;
+  const writes: Awaited<ReturnType<typeof prepareReservation>>[] = [];
+  for (const input of inputs) writes.push(await prepareReservation(input, { skipPaymentLink: true }));
+  const roomIds = [...new Set(inputs.flatMap((input) => input.rooms?.map((line) => line.roomId) ?? [input.roomId!]))].sort((a, b) => a - b);
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" IN (${Prisma.join(roomIds)}) AND "companyId" = ${companyId} ORDER BY "id" FOR UPDATE`;
+    const result = [];
+    for (const write of writes) {
+      const id = await write(tx);
+      const row = await tx.reservation.findUniqueOrThrow({ where: { id, companyId }, include: FULL_INCLUDE });
+      result.push(serializeReservation(row));
+    }
+    return result;
+  }, { timeout: 30_000, maxWait: 10_000 });
 }
 
 export async function updateReservation(id: number, input: UpdateReservationInput) {
@@ -604,6 +630,46 @@ export async function getReservation(id: number) {
   const reservation = await prisma.reservation.findUnique({ where: { id }, include: FULL_INCLUDE });
   if (!reservation) throw notFound('Reserva', id);
   return serializeReservation(reservation);
+}
+
+export async function deleteReservation(id: number) {
+  const companyId = getTenantId()!;
+  const receiptPath = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Reservation" WHERE "id" = ${id} AND "companyId" = ${companyId} FOR UPDATE`;
+    const reservation = await tx.reservation.findUnique({
+      where: { id, companyId },
+      include: { payments: true, receipt: true, bookingLink: true },
+    });
+    if (!reservation) throw notFound('Reserva', id);
+    const reason = reservationDeletionError({
+      status: reservation.status,
+      hasStayActivity: !!reservation.checkedInAt || !!reservation.checkedOutAt,
+      refundEligible: reservation.refundEligible,
+      refunded: reservation.refunded,
+      refundAmount: reservation.refundAmount === null ? null : decToNum(reservation.refundAmount),
+      mpOrderId: reservation.mpOrderId,
+      mpCheckoutUrl: reservation.mpCheckoutUrl,
+      payments: reservation.payments.map((payment) => ({ amount: decToNum(payment.amount), method: payment.method })),
+    });
+    if (reason) throw conflict('INVALID_STATE', reason);
+    await tx.$queryRaw`SELECT "id" FROM "NotificationOutbox" WHERE "companyId" = ${companyId} AND "reservationId" = ${id} FOR UPDATE`;
+    await tx.$queryRaw`SELECT d."id" FROM "NotificationDelivery" d JOIN "NotificationOutbox" n ON n."id" = d."notificationId" WHERE n."companyId" = ${companyId} AND n."reservationId" = ${id} FOR UPDATE OF d`;
+    const processing = await tx.notificationOutbox.count({ where: { companyId, reservationId: id, OR: [{ status: 'PROCESSING' }, { deliveries: { some: { status: 'PROCESSING' } } }] } });
+    if (processing) throw conflict('INVALID_STATE', 'Hay una notificación en proceso. Intentá nuevamente en unos instantes.');
+    await tx.notificationOutbox.deleteMany({ where: { companyId, reservationId: id, status: { in: ['PENDING', 'FAILED'] } } });
+    if (reservation.bookingLink && reservation.bookingLink.status === 'OPEN') {
+      await tx.bookingLink.update({ where: { id: reservation.bookingLink.id, companyId }, data: { status: 'CANCELLED' } });
+    }
+    await tx.reservation.delete({ where: { id, companyId } });
+    return reservation.receipt?.storagePath ?? null;
+  });
+  if (receiptPath) {
+    try {
+      await removeReceipt(receiptPath);
+    } catch (error) {
+      console.error('[reservations] no se pudo borrar el comprobante de la reserva eliminada:', error);
+    }
+  }
 }
 
 export async function getPublicReservationByCode(code: string) {

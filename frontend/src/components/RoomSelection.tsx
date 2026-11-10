@@ -2,13 +2,13 @@ import type { Room } from '../api/types';
 import { money } from '../lib/format';
 import type { SelectedRoom } from '../lib/reservationRooms';
 
-export function RoomSelection({ rooms, value, onChange }: { rooms: Room[]; value: SelectedRoom[]; onChange: (value: SelectedRoom[]) => void }) {
+export function RoomSelection({ rooms, value, onChange, independent = false }: { rooms: Room[]; value: SelectedRoom[]; onChange: (value: SelectedRoom[]) => void; independent?: boolean }) {
   function update(roomId: number, changes: Partial<SelectedRoom>) {
     onChange(value.map((line) => line.room.id === roomId ? { ...line, ...changes } : line));
   }
 
   return <div className="mt-3">
-    <p className="small text-secondary">Seleccioná todas las habitaciones de la reserva e indicá las personas en cada una.</p>
+    <p className="small text-secondary">{independent ? 'Seleccioná las habitaciones: cada una tendrá su propia reserva. Indicá las personas en cada una.' : 'Seleccioná todas las habitaciones de la reserva e indicá las personas en cada una.'}</p>
     <div className="radio-list">
       {rooms.map((room) => {
         const selected = value.find((line) => line.room.id === room.id);

@@ -3,3 +3,4 @@ export function visiblePages(page: number, totalPages: number): number[] {
     .filter((value) => value >= 1 && value <= totalPages)
     .sort((a, b) => a - b);
 }
+export const DATA_TABLE_PAGE_SIZE = 10;

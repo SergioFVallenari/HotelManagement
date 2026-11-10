@@ -6,9 +6,10 @@ interface FilterPanelProps {
   children: ReactNode;
   activeCount?: number;
   onApply?: () => void;
+  title?: string;
 }
 
-export function FilterPanel({ children, activeCount = 0, onApply }: FilterPanelProps) {
+export function FilterPanel({ children, activeCount = 0, onApply, title }: FilterPanelProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -37,6 +38,7 @@ export function FilterPanel({ children, activeCount = 0, onApply }: FilterPanelP
         <IconChevronDown size={18} className="filters-panel-chevron" aria-hidden="true" />
       </button>
       <div id={id} className={`filters-panel-body${open ? ' is-open' : ''}`}>
+        {title && <div className="filter-panel-title">{title}</div>}
         <form className="filter-row" onSubmit={submit}>
           {children}
         </form>

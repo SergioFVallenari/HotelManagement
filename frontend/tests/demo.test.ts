@@ -3,10 +3,67 @@ import assert from 'node:assert/strict';
 import { createDemoApi, DemoApiError } from '../src/demo/api.ts';
 import type { BookingLink, CalendarData, CompanySettings, Guest, Page, PublicBookingQuote, Reservation, ReservationReceiptDetail, Room, RoomType, Service, Summary, User } from '../src/api/types.ts';
 import { bookingThemeFromConfig, bookingThemeStyle, DEFAULT_BOOKING_THEME } from '../src/lib/bookingTheme.ts';
+import { buildIndependentReservations, emptyIndependentDetails } from '../src/lib/reservationBatch.ts';
 
 const TODAY = '2026-10-26';
 const stay = { checkIn: '2026-12-01', checkOut: '2026-12-04' };
 const draft = { ...stay, roomId: 1, persons: 2, guestId: 1, services: [] };
+
+test('carga cuatro dormis por una noche con huéspedes genéricos y cobros independientes', () => {
+  const api = createDemoApi(TODAY);
+  const rooms = api<{ data: Room[] }>('/rooms/available?checkIn=2026-12-01&checkOut=2026-12-02').data.slice(0, 4);
+  assert.equal(rooms.length, 4);
+  const selections = rooms.map((room) => ({ room, persons: room.capacity, extraBeds: 0 }));
+  const details = { [rooms[0].id]: { ...emptyIndependentDetails(), paymentMode: 'full' as const }, [rooms[1].id]: { ...emptyIndependentDetails(), firstName: 'Ana', lastName: 'Pérez', paymentMode: 'custom' as const, amount: '1000', method: 'TRANSFER' as const } };
+  const reservations = buildIndependentReservations(selections, '2026-12-01', '2026-12-02', details);
+  const created = api<{ data: Reservation[] }>('/reservations/batch', { method: 'POST', body: { reservations } }).data;
+  assert.equal(created.length, 4);
+  assert.equal(new Set(created.map((row) => row.guestId)).size, 4);
+  assert.equal(new Set(created.map((row) => row.code)).size, 4);
+  assert.equal(created[0].guest?.firstName, 'Huésped');
+  assert.equal(created[0].totals.balance, 0);
+  assert.equal(created[1].guest?.firstName, 'Ana');
+  assert.equal(created[1].totals.amountPaid, 1000);
+  assert.equal(created[2].totals.amountPaid, 0);
+  assert.ok(created.every((row) => row.totals.nights === 1 && row.rooms?.length === 1));
+  api(`/guests/${created[0].guestId}`, { method: 'PUT', body: { firstName: 'Juan', lastName: 'Gómez' } });
+  const other = api<{ data: Reservation }>(`/reservations/${created[2].id}`).data;
+  assert.equal(other.guest?.firstName, 'Huésped');
+});
+
+test('si un dormi entra en conflicto no quedan reservas, huéspedes ni cobros parciales', () => {
+  const api = createDemoApi(TODAY);
+  const before = api<{ data: Guest[]; meta: { total: number } }>('/guests').meta.total;
+  const reservations = [{ ...draft, guestId: undefined, genericGuest: true, payment: { amount: 1000, method: 'CASH' } }, { ...draft, genericGuest: true, guestId: undefined }];
+  assert.throws(() => api('/reservations/batch', { method: 'POST', body: { reservations } }), DemoApiError);
+  assert.equal(api<{ meta: { total: number } }>('/guests').meta.total, before);
+  const retry = api<{ data: Reservation }>('/reservations', { method: 'POST', body: draft }).data;
+  assert.equal(retry.roomId, draft.roomId);
+});
+
+test('la carga independiente valida fechas, nombres incompletos e importes antes de enviar', () => {
+  const api = createDemoApi(TODAY);
+  const room = api<{ data: Room[] }>('/rooms/available?checkIn=2026-12-01&checkOut=2026-12-02').data[0];
+  const selections = [{ room, persons: 2, extraBeds: 0 }];
+  assert.throws(() => buildIndependentReservations(selections, '2026-12-02', '2026-12-01', {}));
+  assert.throws(() => buildIndependentReservations(selections, '2026-12-01', '2026-12-02', { [room.id]: { ...emptyIndependentDetails(), firstName: 'Ana' } }));
+  assert.throws(() => buildIndependentReservations(selections, '2026-12-01', '2026-12-02', { [room.id]: { ...emptyIndependentDetails(), paymentMode: 'custom', amount: '999999999' } }));
+});
+
+test('la cotización independiente incluye camas extra y distingue tarifas por persona y por noche', () => {
+  const api = createDemoApi(TODAY);
+  const room = api<{ data: Room[] }>('/rooms/available?checkIn=2026-12-01&checkOut=2026-12-02').data[0];
+  const extraBedService = { id: 999, price: 5000, chargeType: 'PER_DAY', isExtraBed: true } as Service;
+  const selections = [
+    { room: { ...room, price: 10000, pricingMode: 'PER_NIGHT' as const }, persons: 3, extraBeds: 1 },
+    { room: { ...room, id: 999, price: 2000, pricingMode: 'PER_PERSON' as const }, persons: 4, extraBeds: 0 },
+  ];
+  const reservations = buildIndependentReservations(selections, '2026-12-01', '2026-12-03', { [room.id]: { ...emptyIndependentDetails(), paymentMode: 'full' } }, extraBedService);
+  assert.equal(reservations[0].payment?.amount, 30000);
+  assert.deepEqual(reservations[0].services, [{ serviceId: 999, quantity: 2 }]);
+  assert.equal(reservations[1].payment, undefined);
+  assert.deepEqual(reservations[1].services, []);
+});
 
 test('descuento porcentual manual conserva subtotal, calcula el anticipo y descuenta los pagos del total neto', () => {
   const api = createDemoApi(TODAY);
@@ -371,6 +428,13 @@ test('anula links abiertos, valida anticipos y no permite enviar dos ofertas sob
   submitLink(api, first);
   assert.throws(() => submitLink(api, second), (error: DemoApiError) => error.code === 'ROOM_CONFLICT');
   assert.equal(api<{ data: BookingLink[] }>('/booking-links?status=OPEN').data[0].id, second.id);
+  const firstPage = api<Page<BookingLink>>('/booking-links?page=1&pageSize=1');
+  const secondPage = api<Page<BookingLink>>('/booking-links?page=2&pageSize=1');
+  assert.equal(firstPage.meta.total, 3);
+  assert.equal(firstPage.meta.totalPages, 3);
+  assert.equal(firstPage.data[0].id, second.id);
+  assert.equal(secondPage.data[0].id, first.id);
+  assert.equal(api<Page<BookingLink>>('/booking-links?status=OPEN&pageSize=1').meta.total, 1);
   assert.equal(api<Page<Reservation>>('/reservations?source=PUBLIC_LINK').meta.total, 1);
 });
 

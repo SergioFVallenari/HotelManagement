@@ -10,21 +10,24 @@ import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/Badge';
 import { useApiError } from '../components/pagination';
 import { DataTable } from '../components/DataTable';
+import { DATA_TABLE_PAGE_SIZE } from '../lib/pagination';
 import type { Column } from '../components/DataTable';
 import { dateShort, money } from '../lib/format';
+import { IconCalendarEvent, IconUser } from '@tabler/icons-react';
 
 const GUESTS_COLUMNS: Column<Guest>[] = [
   {
-    header: 'Nombre',
+    header: 'Huésped',
     render: (g) => (
-      <strong>
-        {g.lastName}, {g.firstName}
-      </strong>
+      <div className="guest-identity">
+        <span className="guest-avatar" aria-hidden="true">{`${g.firstName.trim().charAt(0)}${g.lastName.trim().charAt(0)}`.toUpperCase()}</span>
+        <span><strong>{g.firstName} {g.lastName}</strong><small>Huésped</small></span>
+      </div>
     ),
   },
-  { header: 'Email', render: (g) => g.email ?? '—' },
-  { header: 'Teléfono', render: (g) => g.phone ?? '—' },
-  { header: 'Reservas', align: 'end', render: (g) => g._count?.reservations ?? 0 },
+  { header: 'Email', render: (g) => g.email ?? <span className="text-secondary">Sin registrar</span> },
+  { header: 'Teléfono', render: (g) => g.phone ?? <span className="text-secondary">Sin registrar</span> },
+  { header: 'Reservas', align: 'center', render: (g) => <span className="guest-reservation-count">{g._count?.reservations ?? 0}</span> },
 ];
 
 const GUEST_DETAIL_RES_COLUMNS: Column<Reservation>[] = [
@@ -51,7 +54,7 @@ export function GuestsPage() {
   const [appliedQuery, setAppliedQuery] = useState<Record<string, string | undefined>>({});
   const [page, setPage] = useState(1);
 
-  const query = buildQuery({ q: appliedQuery.q, page });
+  const query = buildQuery({ q: appliedQuery.q, page, pageSize: DATA_TABLE_PAGE_SIZE });
   const { data, loading, error, reload } = useApi<Page<Guest>>(`/guests${query}`);
 
   const [open, setOpen] = useState(false);
@@ -118,18 +121,23 @@ export function GuestsPage() {
   }
 
   return (
-    <div>
+    <div className="guests-page">
       <div className="page-header mb-4">
         <div>
-          <h1 className="h4 mb-1">Huéspedes</h1>
-          <p className="text-secondary mb-0">{data?.meta.total ?? 0} huéspedes registrados</p>
+          <h1 className="mb-2">Huéspedes</h1>
+          <p className="text-secondary mb-0">Administrá los datos y el historial de tus huéspedes.</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={openCreate}>
           + Nuevo huésped
         </button>
       </div>
 
-      <FilterPanel onApply={applySearch} activeCount={appliedQuery.search ? 1 : 0}>
+      {data && <div className="guest-metrics mb-4">
+        <div className="card guest-metric"><span className="guest-metric-icon" aria-hidden="true"><IconUser size={19} /></span><span><small>{appliedQuery.q ? 'Huéspedes encontrados' : 'Huéspedes registrados'}</small><strong>{data.meta.total}</strong></span></div>
+        <div className="card guest-metric"><span className="guest-metric-icon guest-metric-icon--green" aria-hidden="true"><IconCalendarEvent size={19} /></span><span><small>Reservas vinculadas · página</small><strong>{guests.reduce((total, guest) => total + (guest._count?.reservations ?? 0), 0)}</strong></span></div>
+      </div>}
+
+      <FilterPanel onApply={applySearch} activeCount={appliedQuery.q ? 1 : 0}>
             <input
               placeholder="Buscar por nombre, apellido, email o teléfono…"
               className="form-control filter-search"
@@ -143,6 +151,7 @@ export function GuestsPage() {
       </FilterPanel>
 
       <DataTable<Guest>
+        className="guests-table"
         columns={GUESTS_COLUMNS}
         rows={guests}
         keyField="id"
@@ -153,10 +162,10 @@ export function GuestsPage() {
         onPageChange={setPage}
         actions={(guest) => (
           <div className="d-inline-flex gap-1">
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openDetail(guest.id)}>
+            <button type="button" className="btn btn-sm btn-outline-secondary guest-action" onClick={() => openDetail(guest.id)}>
               Ver
             </button>
-            <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => openEdit(guest)}>
+            <button type="button" className="btn btn-sm btn-outline-primary guest-action" onClick={() => openEdit(guest)}>
               Editar
             </button>
           </div>

@@ -142,6 +142,129 @@
 }
 
 @media (max-width: 767.98px) {
+  .settings-page .page-header h1 {
+    font-size: 26px;
+  }
+
+  .settings-page .settings-panel .card-body,
+  .settings-page .settings-content > .card > .card-body {
+    padding: 18px;
+  }
+
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .crm-theme .settings-tile {
+    min-height: 96px;
+    padding: 16px;
+  }
+
+  .settings-tile-copy strong {
+    font-size: 17px;
+  }
+
+  .crm-theme .laixia-modal .modal-dialog {
+    align-items: flex-end;
+    min-height: 100%;
+    height: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .crm-theme .laixia-modal .modal-content {
+    max-height: 90dvh;
+    border-top: 0;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .crm-theme .laixia-confirm .modal-body {
+    overflow-y: auto;
+  }
+
+  .crm-theme .laixia-modal .modal-content::before {
+    content: '';
+    flex-shrink: 0;
+    width: 48px;
+    height: 4px;
+    margin: 10px auto 0;
+    border-radius: 4px;
+    background: var(--gh-border);
+  }
+
+  .crm-theme .laixia-modal .modal-header,
+  .crm-theme .laixia-modal .modal-body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .crm-theme .data-table tbody td {
+    padding: 0.5rem 0;
+  }
+
+  .reservations-page .page-header h1,
+  .booking-links-page .page-header h1,
+  .guests-page .page-header h1 {
+    font-size: 26px;
+  }
+
+  .rooms-page .page-header h1 {
+    font-size: 26px;
+  }
+
+  .crm-theme .content {
+    padding: 20px 12px;
+  }
+
+  .crm-theme .topbar {
+    padding-inline: 12px;
+  }
+
+  .dashboard-page .page-header h1 {
+    font-size: 26px;
+  }
+
+  .crm-theme .dashboard-period .form-control {
+    font-size: 14px;
+  }
+
+  .dashboard-page .page-header {
+    margin-bottom: 24px;
+  }
+
+  .dashboard-page .status-bar-row {
+    gap: 10px !important;
+  }
+
+  .calendar-page .page-header h1 {
+    font-size: 26px;
+    line-height: 32px;
+  }
+
+  .calendar-page .page-header {
+    margin-bottom: 24px;
+  }
+
+  .calendar-page .calendar-toolbar .card-body {
+    padding: 16px 12px;
+  }
+
+  .calendar-page .calendar-navigation {
+    width: 100%;
+  }
+
+  .calendar-page .calendar-grid .cal-tabs-wrap {
+    padding-inline: 12px !important;
+  }
+
+  .calendar-page .calendar-grid .card-body {
+    padding: 16px 10px;
+  }
+
+  .crm-theme .calendar-page .cal-month .cal-day {
+    height: 96px;
+  }
+
   .responsive-table,
   .responsive-table > tbody,
   .responsive-table > tbody > tr {
@@ -318,6 +441,15 @@
 }
 
 @media (min-width: 900px) {
+  .crm-theme.sidebar-collapsed .sidebar-tagline,
+  .crm-theme.sidebar-collapsed .sidebar-footer {
+    display: none;
+  }
+
+  .crm-theme.sidebar-collapsed .sidebar-nav {
+    padding-inline: 6px;
+  }
+
   .sidebar-toggle-desktop {
     display: inline-flex;
     align-items: center;
@@ -329,7 +461,22 @@
   }
 }
 
+@media (min-width: 992px) {
+  .dashboard-page .dashboard-breakdown > .col-lg-6:first-child {
+    width: calc(50% - 8px);
+  }
+
+  .dashboard-page .dashboard-breakdown > .col-lg-6:last-child {
+    width: calc(50% + 8px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-backdrop {
+    transition: none;
+  }
+
   .filters-panel-chevron {
     transition: none;
   }

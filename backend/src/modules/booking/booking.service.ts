@@ -6,6 +6,7 @@ import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { badRequest, conflict, notFound } from '../../lib/AppError.js';
 import { decToNum, round2 } from '../../lib/money.js';
+import { paginationMeta, type Pagination } from '../../lib/pagination.js';
 import { calculateDiscount } from '../../lib/discount.js';
 import { assertValidRange, nightsBetween, parseDate, todayHotel } from '../../lib/date.js';
 import { computeBookingDeposit, quoteStay } from '../../lib/pricing.js';
@@ -437,14 +438,19 @@ export async function createBookingLink(input: CreateBookingLinkInput) {
   return serializeBookingLink(link);
 }
 
-export async function listBookingLinks(query: ListBookingLinksQuery) {
-  const rows = await prisma.bookingLink.findMany({
-    where: query.status ? { status: query.status } : {},
-    include: LINK_INCLUDE,
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
-  return rows.map(serializeBookingLink);
+export async function listBookingLinks(query: ListBookingLinksQuery, pagination: Pagination) {
+  const where = query.status ? { status: query.status } : {};
+  const [rows, total] = await Promise.all([
+    prisma.bookingLink.findMany({
+      where,
+      include: LINK_INCLUDE,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+    prisma.bookingLink.count({ where }),
+  ]);
+  return { data: rows.map(serializeBookingLink), meta: paginationMeta(total, pagination) };
 }
 
 export async function getBookingLink(id: number) {

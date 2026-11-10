@@ -3,11 +3,14 @@ import { Prisma, ReservationStatus } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { badRequest } from '../../lib/AppError.js';
 import { paginationMeta, parseIdParam, parsePagination } from '../../lib/pagination.js';
-import { parseDate } from '../../lib/date.js';
+import { parseDate, todayHotel } from '../../lib/date.js';
+import { nearestReservationIds } from './reservations.order.js';
 import {
   approveReservation,
   changeStatus,
   createReservation,
+  createReservationBatch,
+  deleteReservation,
   getReservation,
   markRefunded,
   rejectReservation,
@@ -15,7 +18,7 @@ import {
   updateReservation,
 } from './reservations.service.js';
 import type { CreateReservationInput, UpdateReservationInput } from './reservations.schema.js';
-import { createReservationSchema, updateReservationSchema } from './reservations.schema.js';
+import { createReservationSchema, createReservationBatchSchema, updateReservationSchema } from './reservations.schema.js';
 import { getReservationReceipt } from '../booking/booking.service.js';
 import { rejectReservationSchema } from '../booking/booking.schema.js';
 import { assertDiscountPermission } from '../../lib/discount.js';
@@ -73,18 +76,32 @@ export async function listReservations(req: Request, res: Response): Promise<voi
     where.AND = [...filters, { OR: [{ roomId }, { rooms: { some: { roomId } } }] }];
   }
 
-  const [total, reservations] = await Promise.all([
+  const today = todayHotel();
+  const [total, upcoming, past] = await Promise.all([
     prisma.reservation.count({ where }),
     prisma.reservation.findMany({
-      where,
-      skip,
-      take,
-      include: listInclude,
-      orderBy: [{ createdAt: 'desc' }],
+      where: { AND: [where, { checkIn: { gte: today } }] },
+      select: { id: true, checkIn: true },
+      take: skip + take,
+      orderBy: [{ checkIn: 'asc' }, { id: 'desc' }],
+    }),
+    prisma.reservation.findMany({
+      where: { AND: [where, { checkIn: { lt: today } }] },
+      select: { id: true, checkIn: true },
+      take: skip + take,
+      orderBy: [{ checkIn: 'desc' }, { id: 'desc' }],
     }),
   ]);
-
-  const data = reservations.map((r) => serializeReservation(r));
+  const ids = nearestReservationIds([...upcoming, ...past], today, skip, take);
+  const reservations = ids.length ? await prisma.reservation.findMany({
+    where: { AND: [where, { id: { in: ids } }] },
+    include: listInclude,
+  }) : [];
+  const byId = new Map(reservations.map((reservation) => [reservation.id, reservation]));
+  const data = ids.flatMap((id) => {
+    const reservation = byId.get(id);
+    return reservation ? [serializeReservation(reservation)] : [];
+  });
   res.json({ data, meta: paginationMeta(total, { page, pageSize, skip, take }) });
 }
 
@@ -95,10 +112,22 @@ export async function createReservationHandler(req: Request, res: Response): Pro
   res.status(201).json({ data: reservation });
 }
 
+export async function createReservationBatchHandler(req: Request, res: Response): Promise<void> {
+  const input = createReservationBatchSchema.parse(req.body);
+  for (const item of input.reservations) assertDiscountPermission(item.discount, req.user?.role);
+  const reservations = await createReservationBatch(input.reservations);
+  res.status(201).json({ data: reservations });
+}
+
 export async function getReservationHandler(req: Request, res: Response): Promise<void> {
   const id = parseIdParam(req.params.id);
   const reservation = await getReservation(id);
   res.json({ data: reservation });
+}
+
+export async function deleteReservationHandler(req: Request, res: Response): Promise<void> {
+  await deleteReservation(parseIdParam(req.params.id));
+  res.status(204).send();
 }
 
 export async function updateReservationHandler(req: Request, res: Response): Promise<void> {

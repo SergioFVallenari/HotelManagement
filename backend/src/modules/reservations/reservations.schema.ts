@@ -38,6 +38,7 @@ export const createReservationSchema = z
     rooms: roomSelectionsSchema.optional(),
     guestId: z.number().int().positive().optional(),
     guest: guestInputSchema.optional(),
+    genericGuest: z.boolean().optional(),
     checkIn: dateStringSchema,
     checkOut: dateStringSchema,
     persons: z.number().int().min(1).default(1),
@@ -49,14 +50,23 @@ export const createReservationSchema = z
     discount: discountSchema.optional(),
   })
   .refine((data) => data.roomId !== undefined || data.rooms !== undefined, { message: 'Seleccioná al menos una habitación', path: ['rooms'] })
-  .refine((data) => data.guestId !== undefined || data.guest !== undefined, {
+  .refine((data) => data.guestId !== undefined || data.guest !== undefined || data.genericGuest === true, {
     message: 'Debe indicar guestId o datos del huésped',
     path: ['guest'],
   })
   .refine((data) => !(data.guestId !== undefined && data.guest !== undefined), {
     message: 'Indique guestId o datos del huésped, no ambos',
     path: ['guest'],
+  })
+  .refine((data) => !data.genericGuest || (data.guestId === undefined && data.guest === undefined), {
+    message: 'El huésped genérico no admite datos de otro huésped', path: ['guest'],
   });
+
+export const createReservationBatchSchema = z.object({
+  reservations: z.array(createReservationSchema).min(1).max(50),
+}).refine((data) => data.reservations.every((item) => !item.generatePaymentLink && item.payment?.method !== 'MERCADOPAGO'), {
+  message: 'La carga conjunta solo admite cobros en efectivo, tarjeta o transferencia', path: ['reservations'],
+});
 
 export const updateReservationSchema = z
   .object({

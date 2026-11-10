@@ -1,23 +1,21 @@
 import { useEffect, useState } from 'react';
-import type { ComponentType } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
-import {
-  IconBed,
-  IconBrandWhatsapp,
-  IconBuildingSkyscraper,
-  IconCalendarCheck,
-  IconCalendarMonth,
-  IconDoor,
-  IconLayoutDashboard,
-  IconLogout,
-  IconMenu2,
-  IconMessages,
-  IconSparkles,
-  IconUserPlus,
-  IconUsers,
-  IconSettings
-} from '@tabler/icons-react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { IconLogout, IconMenu2, IconX } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
+import { ConfirmDialog } from './ConfirmDialog';
+import dashboardIcon from '../assets/navigation/dashboard.svg';
+import dashboardInactiveIcon from '../assets/navigation/dashboardInactivo.svg';
+import calendarIcon from '../assets/navigation/calendario.svg';
+import calendarActiveIcon from '../assets/navigation/calendarioActivo.svg';
+import roomsIcon from '../assets/navigation/habitaciones.svg';
+import reservationsIcon from '../assets/navigation/reservas.svg';
+import whatsappIcon from '../assets/navigation/whatsapp.svg';
+import messagesIcon from '../assets/navigation/mensajes.svg';
+import guestsIcon from '../assets/navigation/huespedes.svg';
+import roomTypesIcon from '../assets/navigation/tipos.svg';
+import servicesIcon from '../assets/navigation/servicios.svg';
+import usersIcon from '../assets/navigation/usuarios.svg';
+import settingsIcon from '../assets/navigation/configuracion.svg';
 import '../crmTheme.css';
 import { DEMO_MODE, DEMO_PATHS } from '../demo/config';
 import { DemoBanner } from '../demo/DemoBanner';
@@ -27,9 +25,9 @@ const THEME_KEY = 'layout.theme';
 
 function readTheme(): 'light' | 'dark' {
   try {
-    return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
   } catch {
-    return 'dark';
+    return 'light';
   }
 }
 
@@ -44,7 +42,8 @@ function readCollapsed(): boolean {
 type NavItem = {
   to: string;
   label: string;
-  icon: ComponentType<{ size?: number }>;
+  icon: string;
+  activeIcon?: string;
   roles?: ('OWNER' | 'ADMIN')[];
   end?: boolean;
 };
@@ -53,33 +52,40 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Operación',
     items: [
-      { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
-      { to: '/calendar', label: 'Calendario', icon: IconCalendarMonth },
-      { to: '/rooms', label: 'Habitaciones', icon: IconBed },
-      { to: '/reservations', label: 'Reservas', icon: IconCalendarCheck },
-      { to: '/booking-links', label: 'Reservas por WhatsApp', icon: IconBrandWhatsapp },
-      { to: '/messages', label: 'Mensajes', icon: IconMessages },
-      { to: '/guests', label: 'Huéspedes', icon: IconUsers },
+      { to: '/', label: 'Dashboard', icon: dashboardInactiveIcon, activeIcon: dashboardIcon },
+      { to: '/calendar', label: 'Calendario', icon: calendarIcon, activeIcon: calendarActiveIcon },
+      { to: '/rooms', label: 'Habitaciones', icon: roomsIcon },
+      { to: '/reservations', label: 'Reservas', icon: reservationsIcon },
+      { to: '/booking-links', label: 'Reservas por WhatsApp', icon: whatsappIcon },
+      { to: '/messages', label: 'Mensajes', icon: messagesIcon },
+      { to: '/guests', label: 'Huéspedes', icon: guestsIcon },
     ],
   },
   {
     title: 'Catálogo',
     items: [
-      { to: '/room-types', label: 'Tipos de habitación', icon: IconDoor },
-      { to: '/services', label: 'Servicios', icon: IconSparkles },
+      { to: '/room-types', label: 'Tipos de habitación', icon: roomTypesIcon },
+      { to: '/services', label: 'Servicios', icon: servicesIcon },
     ],
   },
   {
     title: 'Administración',
     items: [
-      { to: '/users', label: 'Usuarios', icon: IconUserPlus, roles: ['OWNER', 'ADMIN'] },
-      { to: '/settings', label: 'Configuración', icon: IconSettings, roles: ['OWNER', 'ADMIN'], end: true }
+      { to: '/users', label: 'Usuarios', icon: usersIcon, roles: ['OWNER', 'ADMIN'] },
+      { to: '/settings', label: 'Configuración', icon: settingsIcon, roles: ['OWNER', 'ADMIN'], end: true }
     ],
   },
 ];
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const { pathname } = useLocation();
+  const pageTitle = NAV_GROUPS.flatMap((group) => group.items).find((item) =>
+    item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`),
+  )?.label ?? (pathname === '/perfil' ? 'Mi perfil' : 'LAIXIA');
+  const displayName = user?.name || user?.username || 'Usuario';
+  const initials = displayName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(readTheme);
@@ -115,15 +121,18 @@ export function Layout() {
 
   return (
     <div className={`layout crm-theme ${layoutClass}`} data-bs-theme={theme}>
-      <div className="sidebar-backdrop" onClick={() => setDrawerOpen(false)} />
+      <div className="sidebar-backdrop" onClick={() => setDrawerOpen(false)} aria-hidden="true" />
       <aside id="main-sidebar" className="sidebar" aria-label="Menú principal">
         <div className="sidebar-brand">
-          <span className="brand-icon"><IconBuildingSkyscraper size={26} /></span>
+          <span className="brand-icon" aria-hidden="true">L</span>
           <div>
             <strong>LAIXIA</strong>
-            <small>{user?.companyName}</small>
           </div>
         </div>
+        <div className="sidebar-tagline">Gestión hotelera</div>
+        <button type="button" className="btn sidebar-close sidebar-toggle-mobile" onClick={() => setDrawerOpen(false)} aria-label="Cerrar menú">
+          <IconX size={20} />
+        </button>
         <nav className="sidebar-nav">
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter(
@@ -137,32 +146,30 @@ export function Layout() {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    title={item.label}
+                    aria-label={item.label}
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                     end={item.end ?? item.to === '/'}
                     onClick={() => setDrawerOpen(false)}
                   >
-                    <span className="nav-icon"><item.icon size={20} /></span>
-                    <span className="nav-label">{item.label}</span>
+                    {({ isActive }) => <>
+                      <span className="nav-icon"><img src={isActive ? item.activeIcon ?? item.icon : item.icon} alt="" width="19" height="19" /></span>
+                      <span className="nav-label">{item.label}</span>
+                    </>}
                   </NavLink>
                 ))}
               </div>
             );
           })}
         </nav>
+        <div className="sidebar-footer" title={user?.companyName}>
+          <strong>{user?.companyName}</strong>
+          <small>Plan de gestión</small>
+        </div>
       </aside>
       <div className="main">
         <header className="topbar">
           <div className="topbar-left">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm sidebar-toggle sidebar-toggle-desktop"
-              onClick={toggleSidebar}
-              aria-label={collapsed ? 'Expandir menú' : 'Contraer menú'}
-              aria-expanded={!collapsed}
-              aria-controls="main-sidebar"
-            >
-              <IconMenu2 size={18} />
-            </button>
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm sidebar-toggle sidebar-toggle-mobile"
@@ -173,45 +180,61 @@ export function Layout() {
             >
               <IconMenu2 size={18} />
             </button>
-            <div className="topbar-title">SOFTWARE DE GESTIÓN HOTELERA</div>
+            <nav className="topbar-title" aria-label="Ubicación actual">LAIXIA <span className="mx-2" aria-hidden="true">/</span> <span aria-current="page">{pageTitle}</span></nav>
           </div>
           <div className="topbar-actions">
-            <div className="form-check form-switch crm-theme-switch">
-              <input id="crm-light-mode" className="form-check-input" type="checkbox" role="switch"
-                checked={theme === 'light'} onChange={(event) => setTheme(event.target.checked ? 'light' : 'dark')} />
-              <label className="form-check-label" htmlFor="crm-light-mode">Modo claro</label>
-            </div>
-            <div className={`topbar-user ${DEMO_MODE ? '' : 'dropdown'}`}>
-              <div
-                className={`d-flex flex-column align-items-end text-end ${DEMO_MODE ? '' : 'dropdown-toggle'}`}
-                data-bs-toggle={DEMO_MODE ? undefined : 'dropdown'}
-                aria-expanded={DEMO_MODE ? undefined : false}
-                role={DEMO_MODE ? undefined : 'button'}
-                style={{ cursor: DEMO_MODE ? 'default' : 'pointer' }}
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm sidebar-toggle sidebar-toggle-desktop"
+              onClick={toggleSidebar}
+              aria-label={collapsed ? 'Expandir menú' : 'Contraer menú'}
+              aria-expanded={!collapsed}
+              aria-controls="main-sidebar"
+            >
+              <IconMenu2 size={18} />
+            </button>
+            <div className="topbar-user dropdown">
+              <button
+                type="button"
+                className="user-avatar"
+                data-bs-toggle="dropdown"
+                aria-expanded={false}
+                aria-label={`Menú de ${displayName}`}
+                title={displayName}
               >
-                <span className="user-name mb-0">
-                  {user?.name ?? user?.username}
-                </span>
-                <small className="user-role mb-0">
-                  {user?.role === 'OWNER' ? 'Propietario' : user?.role === 'ADMIN' ? 'Administrador' : 'Recepción'}
-                </small>
-              </div>
-              {!DEMO_MODE && <ul className="dropdown-menu dropdown-menu-end">
-                <li>
-                  <NavLink className="dropdown-item" to="/perfil" onClick={() => setDrawerOpen(false)}>
-                    Mi perfil
-                  </NavLink>
+                {initials}
+              </button>
+              <ul className="dropdown-menu dropdown-menu-end">
+                <li className="px-3 py-2">
+                  <strong className="d-block">{displayName}</strong>
+                  <small className="user-role">
+                    {user?.role === 'OWNER' ? 'Propietario' : user?.role === 'ADMIN' ? 'Administrador' : 'Recepción'}
+                  </small>
                 </li>
-                <li>
-                  <hr className="dropdown-divider" />
+                <li className="px-3 py-2">
+                  <div className="form-check form-switch crm-theme-switch">
+                    <input id="crm-light-mode" className="form-check-input" type="checkbox" role="switch"
+                      checked={theme === 'light'} onChange={(event) => setTheme(event.target.checked ? 'light' : 'dark')} />
+                    <label className="form-check-label" htmlFor="crm-light-mode">Modo claro</label>
+                  </div>
                 </li>
-                <li>
-                  <button type="button" className="dropdown-item" onClick={logout}>
-                    <IconLogout size={16} className="me-2" />
-                    Cerrar sesión
-                  </button>
-                </li>
-              </ul>}
+                {!DEMO_MODE && <>
+                  <li>
+                    <NavLink className="dropdown-item" to="/perfil" onClick={() => setDrawerOpen(false)}>
+                      Mi perfil
+                    </NavLink>
+                  </li>
+                  <li>
+                    <hr className="dropdown-divider" />
+                  </li>
+                  <li>
+                    <button type="button" className="dropdown-item" onClick={() => setConfirmLogout(true)}>
+                      <IconLogout size={16} className="me-2" />
+                      Cerrar sesión
+                    </button>
+                  </li>
+                </>}
+              </ul>
             </div>
           </div>
         </header>
@@ -220,6 +243,8 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      <ConfirmDialog open={confirmLogout} title="Cerrar sesión" message="¿Querés cerrar tu sesión?" confirmLabel="Cerrar sesión"
+        onCancel={() => setConfirmLogout(false)} onConfirm={() => { setConfirmLogout(false); logout(); }} />
     </div>
   );
 }

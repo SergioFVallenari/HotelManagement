@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { Modal as BsModal } from 'bootstrap';
 import { ErrorBanner } from './Feedback';
 
@@ -14,6 +14,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar'
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
   const onCancelRef = useRef(onCancel);
   const openRef = useRef(open);
@@ -75,11 +76,12 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar'
   }, []);
 
   return (
-    <div ref={ref} className="modal fade" tabIndex={-1} aria-hidden={!open}>
+    <div ref={ref} className="modal fade laixia-modal laixia-confirm" tabIndex={-1} aria-hidden={!open} aria-labelledby={titleId}>
       <div className="modal-dialog modal-dialog-centered">
         <div className="modal-content">
           <div className="modal-header">
-            <h5 className="modal-title">{title}</h5>
+            <span className="confirm-icon" aria-hidden="true">!</span>
+            <h5 id={titleId} className="modal-title">{title}</h5>
             <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Cerrar" />
           </div>
           <div className="modal-body">

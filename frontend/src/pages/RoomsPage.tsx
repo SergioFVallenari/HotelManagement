@@ -9,18 +9,16 @@ import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useApiError } from '../components/pagination';
 import { DataTable } from '../components/DataTable';
+import { DATA_TABLE_PAGE_SIZE } from '../lib/pagination';
 import { FilterPanel } from '../components/FilterPanel';
 import type { Column } from '../components/DataTable';
 import { dateShort, money, today, addDays } from '../lib/format';
 
 const ROOMS_COLUMNS: Column<Room>[] = [
-  { header: 'N°', render: (r) => <strong>{r.number}</strong> },
-  { header: 'Nombre', render: (r) => r.name ?? '—' },
-  { header: 'Tipo', render: (r) => r.type?.name ?? '—' },
-  { header: 'Cap.', render: (r) => r.capacity },
-  { header: 'Camas extra máx.', render: (r) => r.maxExtraBeds },
-  { header: 'Precio', render: (r) => <>{money(r.price)} <span className="text-secondary">/{r.pricingMode === 'PER_PERSON' ? 'persona/noche' : 'noche'}</span></> },
-  { header: 'Amenities', className: 'text-secondary', render: (r) => (r.amenities.length ? r.amenities.join(' · ') : '—') },
+  { header: 'Habitación', render: (r) => <div className="room-identity"><span className="room-number">{r.number}</span><span><strong>{r.name || `Habitación ${r.number}`}</strong><small>{r.type?.name ?? '—'}</small></span></div> },
+  { header: 'Capacidad', render: (r) => <>{r.capacity} huéspedes <small className="room-detail">Hasta {r.maxExtraBeds} camas extra</small></> },
+  { header: 'Tarifa / noche', render: (r) => <><strong className="room-price">{money(r.price)}</strong><small className="room-detail">por {r.pricingMode === 'PER_PERSON' ? 'persona y noche' : 'noche'}</small></> },
+  { header: 'Servicios', render: (r) => (r.amenities.length ? r.amenities.join(' · ') : '—') },
   { header: 'Estado', render: (r) => <ActiveBadge active={r.isActive} /> },
   { header: 'Reservas', render: (r) => r._count?.reservations ?? 0 },
 ];
@@ -47,7 +45,7 @@ export function RoomsPage() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const { data, loading, error, reload } = useApi<Page<Room>>(`/rooms${buildQuery({ page, pageSize: 15, search: query })}`);
+  const { data, loading, error, reload } = useApi<Page<Room>>(`/rooms${buildQuery({ page, pageSize: DATA_TABLE_PAGE_SIZE, search: query })}`);
   const typesApi = useApi<{ data: RoomType[] }>('/room-types');
 
   const [formOpen, setFormOpen] = useState(false);
@@ -163,11 +161,11 @@ export function RoomsPage() {
   const rooms = data?.data ?? [];
 
   return (
-    <div>
+    <div className="rooms-page">
       <div className="page-header mb-4">
         <div>
-          <h1 className="h4 mb-1">Habitaciones</h1>
-          <p className="text-secondary mb-0">{data?.meta.total ?? 0} habitaciones registradas</p>
+          <h1 className="mb-2">Habitaciones</h1>
+          <p className="text-secondary mb-0">Administrá tus unidades, tarifas y servicios.</p>
         </div>
         <div className="page-actions">
           <button type="button" className={`btn ${availOpen ? 'btn-primary' : 'btn-outline-primary'}`} aria-expanded={availOpen} aria-controls="room-availability" onClick={() => setAvailOpen((v) => !v)}>
@@ -190,6 +188,8 @@ export function RoomsPage() {
           onChange={(e) => applySearch(e.target.value)}
         />
       </FilterPanel>
+
+      {data && <p className="rooms-count text-secondary">{data.meta.total} habitaciones registradas</p>}
 
       {availOpen && (
         <div id="room-availability" className="card shadow-sm mb-4">
@@ -254,6 +254,7 @@ export function RoomsPage() {
       )}
 
       <DataTable<Room>
+        className="rooms-table"
         columns={ROOMS_COLUMNS}
         rows={rooms}
         keyField="id"
@@ -266,7 +267,7 @@ export function RoomsPage() {
           isAdmin
             ? (room) => (
               <div className="d-inline-flex gap-1">
-                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(room)}>
+                <button type="button" className="btn btn-sm btn-outline-secondary room-edit" onClick={() => openEdit(room)}>
                   Editar
                 </button>
                 <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { clearError(); setDeleting(room); }}>
@@ -281,6 +282,7 @@ export function RoomsPage() {
       <Modal
         open={formOpen}
         title={editing ? `Editar habitación ${editing.number}` : 'Nueva habitación'}
+        description={editing ? 'Actualizá los datos de la habitación.' : 'Completá los datos para agregar una habitación a tu alojamiento.'}
         onClose={() => {
           setFormOpen(false);
           clearError();
