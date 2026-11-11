@@ -1,0 +1,198 @@
+.laixia-login {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: 43.55% 1fr;
+  background: #121326;
+  color: #f8f8fc;
+}
+
+.laixia-login-panel {
+  padding: 64px 11.4% 64px 15.4%;
+  background: linear-gradient(145deg, #111426, #151329);
+}
+
+.laixia-login-form {
+  max-width: 350px;
+}
+
+.laixia-login-brand svg {
+  width: 80px;
+  height: 36px;
+  color: #8c69ed;
+  margin-bottom: 8px;
+}
+
+.laixia-login-brand span {
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  line-height: 1.25;
+  padding-left: 0.22em;
+}
+
+.laixia-login-heading h1 {
+  color: #f8f8fc;
+  letter-spacing: -0.025em;
+}
+
+.laixia-login-heading p {
+  color: #c1bdd5;
+}
+
+.laixia-login-field {
+  --bs-border-color: #3c3755;
+  min-height: 48px;
+  background: #232238;
+  color: #c5bce4;
+  box-shadow: inset 0 0 0 1px #ffffff03;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.laixia-login-field:focus-within {
+  --bs-border-color: #9879ef;
+  box-shadow: 0 0 0 3px #9879ef26;
+}
+
+.laixia-login-field > svg {
+  flex-shrink: 0;
+  stroke-width: 1.7;
+}
+
+.laixia-login-field input {
+  min-width: 0;
+  color: #f8f8fc;
+  font-size: 16px;
+  caret-color: #ad91ff;
+  color-scheme: dark;
+}
+
+.laixia-login-field input:focus {
+  color: #f8f8fc;
+  box-shadow: none;
+}
+
+.laixia-login-field input::placeholder {
+  color: #bdb7d0;
+  opacity: 1;
+}
+
+.laixia-login-field input:autofill {
+  -webkit-text-fill-color: #f8f8fc;
+  box-shadow: 0 0 0 100px #232238 inset;
+}
+
+.laixia-login-password-toggle {
+  width: 30px;
+  height: 30px;
+  color: #c5bce4;
+}
+
+.laixia-login-password-toggle:hover {
+  color: #fff;
+}
+
+.laixia-login-submit {
+  --bs-btn-border-color: #8661ed;
+  --bs-btn-hover-border-color: #9879ef;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+  min-height: 46px;
+  background: linear-gradient(110deg, #7952e7, #754de1);
+  color: #fff;
+  transition: filter 150ms;
+}
+
+.laixia-login-submit:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.laixia-login-submit:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.laixia-login-register {
+  --bs-btn-hover-color: #e0d5ff;
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-color: #9690ad;
+  color: #c4afff;
+}
+
+.laixia-company-option {
+  --bs-btn-color: #f8f8fc;
+  --bs-btn-bg: #232238;
+  --bs-btn-border-color: #3c3755;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #2e2847;
+  --bs-btn-hover-border-color: #9879ef;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #382b58;
+  --bs-btn-active-border-color: #9879ef;
+  --bs-btn-disabled-color: #c1bdd5;
+  --bs-btn-disabled-bg: #232238;
+  --bs-btn-disabled-border-color: #3c3755;
+}
+
+.laixia-company-option > svg,
+.laixia-company-role {
+  color: #c4afff;
+}
+
+.laixia-login-legal {
+  color: #9690ad;
+  font-size: 12px;
+}
+
+.laixia-login-legal a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.laixia-login-legal a:hover {
+  color: #e0d5ff;
+  text-decoration: underline;
+}
+
+.laixia-login-form :is(button, a):focus-visible {
+  outline: 2px solid #b99fff;
+  outline-offset: 4px;
+}
+
+.laixia-login-photo {
+  position: relative;
+  min-width: 0;
+}
+
+.laixia-login-photo img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+@media (max-width: 1100px) {
+  .laixia-login {
+    grid-template-columns: 48% 1fr;
+  }
+
+  .laixia-login-panel {
+    padding: 48px 9%;
+  }
+
+}
+
+@media (max-width: 700px) {
+  .laixia-login {
+    grid-template-columns: 1fr;
+  }
+
+  .laixia-login-panel {
+    padding: max(40px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+  }
+
+  .laixia-login-photo {
+    display: none;
+  }
+}

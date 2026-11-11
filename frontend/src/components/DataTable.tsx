@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { Key, ReactNode } from 'react';
 import { LoadState } from './Feedback';
 import { PaginationBar } from './pagination';
 import type { PageMeta } from '../api/types';
+import { DATA_TABLE_PAGE_SIZE } from '../lib/pagination';
 
 export interface Column<T> {
   header: ReactNode;
@@ -45,31 +47,47 @@ export function DataTable<T>({
   variant = 'card',
   className = '',
 }: DataTableProps<T>) {
+  const [localPage, setLocalPage] = useState(1);
+  useEffect(() => {
+    if (!loading && meta && meta.page > Math.max(1, meta.totalPages)) {
+      onPageChange?.(Math.max(1, meta.totalPages));
+    }
+  }, [loading, meta, onPageChange]);
+  const totalPages = Math.max(1, Math.ceil(rows.length / DATA_TABLE_PAGE_SIZE));
+  const currentPage = Math.min(localPage, totalPages);
+  const visibleRows = meta ? rows : rows.slice((currentPage - 1) * DATA_TABLE_PAGE_SIZE, currentPage * DATA_TABLE_PAGE_SIZE);
+  const paginationMeta = meta ?? { page: currentPage, pageSize: DATA_TABLE_PAGE_SIZE, total: rows.length, totalPages };
+  const pagination = paginationMeta.totalPages > 1 && (
+    <div className="p-3 border-top">
+      <PaginationBar meta={paginationMeta} onChange={meta ? onPageChange : setLocalPage} />
+    </div>
+  );
   const table = (
     <div className="table-responsive">
-      <table className={`table align-middle ${size === 'sm' ? 'table-sm mb-2' : 'mb-0'} ${className}`}>
+      <table className={`table align-middle responsive-table data-table ${size === 'sm' ? 'table-sm mb-2' : 'mb-0'} ${className}`}>
         <thead>
           <tr>
             {columns.map((col, i) => (
-              <th key={i} className={col.align === 'end' ? 'text-end' : col.align === 'center' ? 'text-center' : undefined}>
+              <th key={i} scope="col" className={col.align === 'end' ? 'text-end' : col.align === 'center' ? 'text-center' : undefined}>
                 {col.header}
               </th>
             ))}
-            {actions && <th className="text-end">Acciones</th>}
+            {actions && <th scope="col" className="text-end">Acciones</th>}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <tr key={valueAt(row, keyField)}>
               {columns.map((col, i) => (
                 <td
                   key={i}
+                  data-label={typeof col.header === 'string' || typeof col.header === 'number' ? String(col.header) : undefined}
                   className={`${col.align === 'end' ? 'text-end' : col.align === 'center' ? 'text-center' : ''} ${col.className ?? ''}`}
                 >
-                  {col.render(row)}
+                  <div className="table-cell-value">{col.render(row)}</div>
                 </td>
               ))}
-              {actions && <td className="text-end">{actions(row)}</td>}
+              {actions && <td data-label="Acciones" className="text-end table-actions">{actions(row)}</td>}
             </tr>
           ))}
         </tbody>
@@ -77,7 +95,7 @@ export function DataTable<T>({
     </div>
   );
 
-  if (variant === 'bare') return table;
+  if (variant === 'bare') return <>{table}{pagination}</>;
 
   return (
     <div className="card shadow-sm">
@@ -86,9 +104,7 @@ export function DataTable<T>({
         {rows.length > 0 && (
           <>
             {table}
-            <div className="p-3 border-top">
-              <PaginationBar meta={meta} onChange={onPageChange} />
-            </div>
+            {pagination}
           </>
         )}
       </div>

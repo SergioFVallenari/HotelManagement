@@ -32,6 +32,7 @@ export async function updateService(req: Request, res: Response): Promise<void> 
   const service = await prisma.service.findUnique({ where: { id } });
   if (!service) throw notFound('Servicio', id);
 
+  createServiceSchema.parse({ ...service, price: Number(service.price), ...input });
   try {
     const updated = await prisma.service.update({ where: { id }, data: input });
     res.json({ data: updated });

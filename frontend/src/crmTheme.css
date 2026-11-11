@@ -1,4 +1,14 @@
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin.woff2') format('woff2');
+}
+
 .crm-theme {
+  --sidebar-w: 240px;
+  --header-height: 78px;
   color-scheme: dark;
   --gh-100: #1b2135;
   --gh-200: #343c55;
@@ -88,41 +98,163 @@
     var(--gh-page-bg);
 }
 
-.crm-theme .sidebar {
-  background: linear-gradient(180deg, #14192d, #0e1424);
-  border-right: 1px solid var(--gh-border);
+.crm-theme[data-bs-theme] .sidebar {
+  --gh-sidebar-text: #c3c8d7;
+  --gh-sidebar-muted: #78829f;
+  background: #101425;
+  border-right: 0;
 }
 
 .crm-theme .sidebar-brand {
-  border-bottom-color: var(--gh-border);
+  height: 72px;
+  gap: 14px;
+  padding: 24px 22px 10px;
+  border-bottom: 0;
 }
 
-.crm-theme .brand-icon {
-  color: var(--crm-cyan);
-  filter: drop-shadow(0 0 8px rgb(151 102 243 / 30%));
+.crm-theme[data-bs-theme] .sidebar-brand strong {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.crm-theme[data-bs-theme] .brand-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: #7665e8;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  filter: none;
+}
+
+.crm-theme .sidebar-tagline {
+  padding: 3px 24px 24px;
+  color: #a99bff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.crm-theme .sidebar-nav {
+  padding: 0 12px 24px;
+}
+
+.crm-theme .nav-group {
+  gap: 6px;
+}
+
+.crm-theme .nav-group + .nav-group {
+  margin-top: 14px;
+}
+
+.crm-theme .nav-group-title {
+  padding: 14px 12px 5px;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.crm-theme .sidebar-nav .nav-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.crm-theme .sidebar-nav .nav-item {
+  min-height: 39px;
+  padding: 9px 12px;
+  gap: 7px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
 }
 
 .crm-theme .sidebar-nav .nav-item {
   transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.crm-theme .sidebar-nav .nav-item:hover {
-  background: rgb(180 154 255 / 9%);
+.crm-theme[data-bs-theme] .sidebar-nav .nav-item:hover {
+  color: #fff;
+  background: #20263b;
 }
 
-.crm-theme .sidebar-nav .nav-item.active {
-  color: #f5eeff;
-  background: linear-gradient(105deg, rgb(128 86 202 / 35%), rgb(128 86 202 / 18%));
-  box-shadow: inset 0 0 0 1px rgb(180 154 255 / 15%), 0 3px 12px rgb(0 0 0 / 12%);
+.crm-theme[data-bs-theme] .sidebar-nav .nav-item.active {
+  color: #fff;
+  background: #302c55;
+  box-shadow: none;
+  font-weight: 700;
 }
 
-.crm-theme .sidebar-nav .nav-item.active .nav-icon {
-  color: #c5a8ff;
+.crm-theme .sidebar-footer {
+  flex-shrink: 0;
+  margin: auto 16px 18px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #20263b;
+}
+
+.crm-theme .sidebar-footer strong,
+.crm-theme .sidebar-footer small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-theme .sidebar-footer strong {
+  color: #fff;
+  font-size: 12px;
+}
+
+.crm-theme .sidebar-footer small {
+  color: #a99bff;
+  font-size: 10px;
+}
+
+.crm-theme .sidebar-close {
+  position: absolute;
+  top: 23px;
+  right: 4px;
+  padding: 4px;
+  color: #c3c8d7;
 }
 
 .crm-theme .topbar {
   background: #12182a;
-  box-shadow: 0 3px 16px rgb(0 0 0 / 10%);
+  border-bottom: 0;
+  padding-inline: 38px;
+}
+
+.crm-theme .topbar-title {
+  color: var(--gh-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.crm-theme .sidebar-toggle {
+  border: 0;
+  background: transparent;
+}
+
+.crm-theme .user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 39px;
+  height: 39px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--gh-surface-muted);
+  color: var(--crm-violet);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crm-theme .content {
+  padding: 36px 38px 28px;
 }
 
 .crm-theme .topbar-title,
@@ -330,6 +462,89 @@
 .crm-theme .modal-header,
 .crm-theme .modal-footer {
   border-color: var(--gh-border);
+}
+
+.crm-theme .laixia-modal .modal-content {
+  border: 0;
+  border-top: 4px solid var(--crm-violet);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.crm-theme .laixia-modal .modal-header {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.crm-theme .laixia-modal .modal-title {
+  color: var(--gh-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.crm-theme .laixia-modal .modal-description {
+  margin: 6px 0 0;
+  color: var(--gh-text-muted);
+  font-size: 12px;
+}
+
+.crm-theme .laixia-modal .modal-body {
+  padding: 24px;
+}
+
+.crm-theme .laixia-modal .modal-body > .modal-actions,
+.crm-theme .laixia-modal .modal-body > form > .modal-actions {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--gh-border);
+}
+
+.crm-theme .laixia-modal .modal-actions .btn {
+  min-width: 100px;
+}
+
+.crm-theme .laixia-confirm .modal-dialog {
+  max-width: 400px;
+}
+
+.crm-theme .laixia-confirm .modal-content {
+  border-top: 0;
+}
+
+.crm-theme .laixia-confirm .modal-header {
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 0;
+}
+
+.crm-theme .laixia-confirm .modal-title {
+  flex: 1;
+  font-size: 16px;
+}
+
+.crm-theme .laixia-confirm .modal-body {
+  padding-top: 0;
+}
+
+.crm-theme .laixia-confirm .confirm-message {
+  color: var(--gh-text-muted);
+  font-size: 13px;
+}
+
+.crm-theme .laixia-confirm .confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bs-warning-bg-subtle);
+  color: var(--bs-warning-text-emphasis);
+  font-weight: 700;
 }
 
 .crm-theme .badge {
@@ -560,6 +775,7 @@
 
 .crm-theme .topbar-user {
   min-width: 0;
+  justify-content: flex-end;
 }
 
 @media (max-width: 575.98px) {
@@ -592,39 +808,39 @@
   --gh-700: #4735ad;
   --gh-800: #20243a;
   --gh-900: #20243a;
-  --gh-primary: #6654d9;
+  --gh-primary: #7665e8;
   --gh-primary-hover: #5542c3;
   --gh-primary-active: #4735ad;
-  --gh-page-bg: #f8f9fd;
+  --gh-page-bg: #f5f6fa;
   --gh-surface: #fff;
-  --gh-surface-muted: #eeeafe;
-  --gh-border: #e5e7f0;
-  --gh-text: #20243a;
-  --gh-text-muted: #737991;
+  --gh-surface-muted: #ece8ff;
+  --gh-border: #e7eaf1;
+  --gh-text: #101425;
+  --gh-text-muted: #78829a;
   --gh-text-disabled: #a3a8ba;
   --gh-sidebar-bg: #fff;
   --gh-sidebar-text: #737991;
   --gh-sidebar-muted: #737991;
   --gh-focus-ring: rgb(102 84 217 / 18%);
-  --crm-violet: #6654d9;
-  --crm-cyan: #168b89;
+  --crm-violet: #7665e8;
+  --crm-cyan: #17856b;
   --crm-blue: #4d74ce;
-  --crm-button: #6654d9;
+  --crm-button: #7665e8;
   --crm-button-hover: #5542c3;
   --crm-button-active: #4735ad;
   --crm-shadow: 0 5px 20px rgb(32 36 58 / 5%);
-  --bs-primary-rgb: 102, 84, 217;
-  --bs-secondary-rgb: 115, 121, 145;
+  --bs-primary-rgb: 118, 101, 232;
+  --bs-secondary-rgb: 120, 130, 154;
   --bs-success-rgb: 25, 125, 95;
   --bs-danger-rgb: 184, 57, 83;
   --bs-warning-rgb: 150, 105, 20;
   --bs-info-rgb: 22, 139, 137;
   --bs-light-rgb: 248, 249, 253;
-  --bs-body-color-rgb: 32, 36, 58;
+  --bs-body-color-rgb: 16, 20, 37;
   --bs-body-bg-rgb: 255, 255, 255;
-  --bs-emphasis-color: #20243a;
-  --bs-emphasis-color-rgb: 32, 36, 58;
-  --bs-secondary-color-rgb: 115, 121, 145;
+  --bs-emphasis-color: #101425;
+  --bs-emphasis-color-rgb: 16, 20, 37;
+  --bs-secondary-color-rgb: 120, 130, 154;
   --bs-secondary-bg: #eeeafe;
   --bs-secondary-bg-rgb: 238, 234, 254;
   --bs-tertiary-bg: #f8f9fd;
@@ -654,30 +870,400 @@
   background: var(--gh-page-bg);
 }
 
-.crm-theme[data-bs-theme='light'] .sidebar,
 .crm-theme[data-bs-theme='light'] .topbar {
   background: var(--gh-surface);
   box-shadow: none;
 }
 
-.crm-theme[data-bs-theme='light'] .sidebar-brand strong {
+.crm-theme .data-table {
+  font-size: 12px;
+}
+
+.crm-theme .data-table thead th {
+  padding: 18px;
+  color: var(--gh-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.crm-theme .data-table thead th:first-child {
+  border-top-left-radius: 12px;
+}
+
+.crm-theme .data-table thead th:last-child {
+  border-top-right-radius: 12px;
+}
+
+.crm-theme .data-table tbody td {
+  padding: 10px 18px;
+}
+
+.crm-theme .data-table .table-actions .btn-outline-primary,
+.crm-theme .data-table .table-actions .btn-outline-secondary {
+  --bs-btn-color: var(--crm-violet);
+  --bs-btn-border-color: transparent;
+}
+
+.rooms-page .page-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.rooms-page .page-header p,
+.rooms-page .rooms-count {
+  font-size: 14px;
+}
+
+.rooms-page .rooms-count {
+  margin: 28px 3px 20px;
+}
+
+.rooms-page .room-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 180px;
+}
+
+.rooms-page .room-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 46px;
+  min-height: 46px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--gh-surface-muted);
+  color: var(--crm-violet);
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.rooms-page .room-identity strong,
+.rooms-page .room-identity small,
+.rooms-page .room-detail {
+  display: block;
+}
+
+.rooms-page .room-identity strong {
+  font-size: 15px;
+}
+
+.rooms-page .room-identity small,
+.rooms-page .room-detail {
+  margin-top: 4px;
+  color: var(--gh-text-muted);
+  font-size: 11px;
+}
+
+.rooms-page .room-price {
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.crm-theme[data-bs-theme='light'] .rooms-page .room-edit {
+  --bs-btn-color: #7665e8;
+  --bs-btn-bg: #f0edff;
+  --bs-btn-border-color: #f0edff;
+}
+
+.crm-theme[data-bs-theme='light'] .rooms-page .filters-panel .form-control:not(:focus) {
+  background: #f5f6fa;
+  border-color: #f5f6fa;
+}
+
+.reservations-page .page-header h1,
+.booking-links-page .page-header h1,
+.guests-page .page-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.reservations-page .page-header p,
+.booking-links-page .page-header p,
+.guests-page .page-header p {
+  font-size: 14px;
+}
+
+.reservation-metrics .card-body {
+  padding: 20px;
+}
+
+.reservation-metrics .card-body > strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 24px;
+}
+
+.reservation-metric-label {
+  min-height: 24px;
+  padding-left: 12px;
+  border-left: 4px solid var(--crm-violet);
+  color: var(--gh-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.reservation-metric-label--danger {
+  border-color: #df506b;
+}
+
+.reservations-page .filter-panel-title {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reservations-page .reservation-code {
+  color: var(--crm-violet);
+}
+
+.reservations-page .reservation-room {
+  display: block;
+  margin-top: 3px;
+  color: var(--gh-text-muted);
+}
+
+.crm-theme[data-bs-theme='light'] .data-table thead th {
+  background: #f1f1fa;
+}
+
+.crm-theme[data-bs-theme='light'] .reservations-page .reservation-view,
+.crm-theme[data-bs-theme='light'] .booking-links-page .booking-share {
+  --bs-btn-color: #7665e8;
+  --bs-btn-bg: #f0edff;
+  --bs-btn-border-color: #f0edff;
+}
+
+.crm-theme[data-bs-theme='light'] .booking-links-page .filters-panel .form-select:not(:focus) {
+  background-color: #f5f6fa;
+  border-color: #f5f6fa;
+}
+
+.guest-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.guest-metric {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+
+.guest-metric-icon,
+.guest-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--gh-surface-muted);
+  color: var(--crm-violet);
+}
+
+.guest-metric-icon--green {
+  background: var(--bs-success-bg-subtle);
+  color: var(--bs-success-text-emphasis);
+}
+
+.guest-metric small,
+.guest-metric strong,
+.guest-identity strong,
+.guest-identity small {
+  display: block;
+}
+
+.guest-metric small,
+.guest-identity small {
+  color: var(--gh-text-muted);
+  font-size: 11px;
+}
+
+.guest-metric strong {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.guest-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guest-avatar {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.guest-reservation-count {
+  display: inline-block;
+  min-width: 42px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--gh-surface-muted);
+  color: var(--crm-violet);
+  text-align: center;
+  font-weight: 700;
+}
+
+.crm-theme[data-bs-theme='light'] .guests-page .guest-action {
+  --bs-btn-color: #7665e8;
+  --bs-btn-border-color: transparent;
+}
+
+.settings-page .page-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.settings-page .page-header p {
+  font-size: 14px;
+}
+
+.crm-theme .settings-page .booking-settings-tabs .nav-link {
+  margin: 0;
+  border: 0;
+  border-radius: 9px;
+  color: var(--gh-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.crm-theme .settings-page .booking-settings-tabs .nav-link:hover {
+  color: var(--crm-violet);
+  background: var(--gh-surface-muted);
+}
+
+.crm-theme .settings-page .booking-settings-tabs .nav-link.active {
+  color: var(--crm-violet);
+  background: var(--gh-surface-muted);
+}
+
+.crm-theme .settings-page .booking-settings-tabs {
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gh-border);
+}
+
+.crm-theme .settings-page .booking-settings-tabs .nav-link {
+  padding: 9px 14px;
+}
+
+.settings-page .settings-panel > h2,
+.settings-page .settings-panel > div > h2 {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.settings-page .settings-panel > p,
+.settings-page .settings-panel > div > p {
+  font-size: 13px;
+}
+
+.settings-page .settings-panel .card-body,
+.settings-page .settings-content > .card > .card-body {
+  padding: 24px;
+}
+
+.settings-page .card-body h3,
+.settings-page .card-body legend {
+  font-weight: 700;
+}
+
+.settings-page .card-body .form-label,
+.settings-page .card-body .form-check-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-page .card-body .form-text {
+  line-height: 1.5;
+}
+
+.settings-page .card-body .modal-actions {
+  padding-top: 18px;
+  border-top: 1px solid var(--gh-border);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.crm-theme .settings-tile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: 116px;
+  padding: 22px;
+  border: 1px solid var(--gh-border);
+  border-radius: 14px;
+  background: var(--gh-surface);
   color: var(--gh-text);
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.crm-theme[data-bs-theme='light'] .brand-icon {
-  color: var(--gh-primary);
-  filter: none;
+.crm-theme .settings-tile:hover {
+  border-color: var(--crm-violet);
+  box-shadow: var(--crm-shadow);
 }
 
-.crm-theme[data-bs-theme='light'] .sidebar-nav .nav-item:hover,
-.crm-theme[data-bs-theme='light'] .sidebar-nav .nav-item.active {
-  color: var(--gh-primary);
-  background: #eeeafe;
-  box-shadow: none;
+.settings-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--crm-violet);
+  background: var(--gh-surface-muted);
 }
 
-.crm-theme[data-bs-theme='light'] .sidebar-nav .nav-item.active .nav-icon {
-  color: var(--gh-primary);
+.settings-tile-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-tile-copy strong,
+.settings-tile-copy span {
+  display: block;
+}
+
+.settings-tile-copy strong {
+  font-size: 20px;
+}
+
+.settings-tile-copy span {
+  margin-top: 5px;
+  color: var(--gh-text-muted);
+  font-size: 13px;
+}
+
+.settings-tile-arrow {
+  flex-shrink: 0;
+}
+
+.crm-theme .settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  color: var(--crm-violet);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .crm-theme[data-bs-theme='light'] .btn-primary {
@@ -931,4 +1517,434 @@
 
 .crm-theme[data-bs-theme='light'] :is(a, button, input, select, textarea):focus-visible {
   outline-color: var(--gh-primary);
+}
+
+.dashboard-page {
+  font-size: 13px;
+}
+
+.dashboard-page .page-header {
+  margin-bottom: 27px;
+}
+
+.dashboard-page .page-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 36px;
+}
+
+.dashboard-page .page-header p {
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.crm-theme .dashboard-page .card,
+.crm-theme .calendar-page .card {
+  --bs-card-border-radius: 15px;
+  --bs-card-inner-border-radius: 15px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--gh-surface);
+  box-shadow: none !important;
+}
+
+.dashboard-page .filters-panel-body {
+  padding: 14px 22px;
+}
+
+.dashboard-page .filter-row {
+  align-items: center;
+}
+
+.dashboard-page .dashboard-period {
+  flex: 0 1 350px;
+  margin: 0;
+  min-width: 0;
+}
+
+.dashboard-period legend {
+  float: none;
+  width: auto;
+  margin-bottom: 6px;
+  color: var(--gh-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.dashboard-period > div {
+  padding-inline: 6px;
+  border-radius: 7px;
+  background: var(--gh-page-bg);
+}
+
+.dashboard-period label {
+  min-width: 0;
+}
+
+.crm-theme .dashboard-period .form-control {
+  min-height: 30px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.dashboard-page .filter-row .btn {
+  min-width: 152px;
+  min-height: 38px;
+  padding-inline: 22px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.dashboard-page .metric-card .card-body {
+  padding: 17px 18px 13px;
+}
+
+.dashboard-page .metric-symbol {
+  display: block;
+  width: 37px;
+  height: 37px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--gh-surface-muted);
+}
+
+.dashboard-page .metric-card--cyan .metric-symbol {
+  background: color-mix(in srgb, var(--crm-cyan) 13%, var(--gh-surface));
+}
+
+.crm-theme[data-bs-theme='light'] .dashboard-page .metric-card--cyan .metric-symbol {
+  background: #e1f4f2;
+}
+
+.dashboard-page .metric-card .text-uppercase {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 13px;
+}
+
+.crm-theme .dashboard-page .metric-card .card-value {
+  color: var(--gh-text);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 34px;
+  margin-bottom: 5px;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+  text-shadow: none;
+}
+
+.dashboard-page .metric-card .small:not(.text-uppercase) {
+  font-size: 11px;
+  line-height: 13px;
+}
+
+.dashboard-page .card-header {
+  padding: 20px 22px 0;
+  border: 0;
+  font-size: 17px;
+  font-weight: 700 !important;
+}
+
+.dashboard-page .card-body {
+  padding: 16px 22px 20px;
+}
+
+.dashboard-page .status-bars {
+  gap: 22px;
+}
+
+.dashboard-page .status-bar-row {
+  --status-color: var(--crm-violet);
+  font-size: 12px;
+}
+
+.dashboard-page .status-bar-row[data-status='CHECKED_IN'] {
+  --status-color: var(--crm-cyan);
+}
+
+.dashboard-page .status-bar-row[data-status='CANCELLED'] {
+  --status-color: #d34f69;
+}
+
+.dashboard-page .status-bar-row[data-status='PENDING'] {
+  --status-color: var(--bs-warning-text-emphasis);
+}
+
+.crm-theme .dashboard-page .status-bar-row .badge {
+  flex: 0 0 98px;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--gh-text-muted) !important;
+  font-size: 12px;
+  text-align: left;
+}
+
+.dashboard-page .status-bar-row strong {
+  min-width: 18px;
+  text-align: right;
+}
+
+.dashboard-page .bar-track {
+  height: 10px;
+  background: var(--gh-page-bg);
+}
+
+.crm-theme .dashboard-page .bar-fill {
+  background: var(--status-color);
+}
+
+.dashboard-page .table td,
+.dashboard-page .table tbody th {
+  padding: 8px 0;
+}
+
+.dashboard-page .table tr:last-child > * {
+  border-bottom: 0;
+}
+
+.dashboard-page .dashboard-metrics,
+.dashboard-page .dashboard-charts {
+  --bs-gutter-x: 20px;
+  --bs-gutter-y: 20px;
+}
+
+.dashboard-page .dashboard-breakdown {
+  --bs-gutter-x: 24px;
+}
+
+.dashboard-page .dashboard-breakdown .card {
+  min-height: 190px;
+}
+
+.dashboard-page .dashboard-charts {
+  margin-top: 3px;
+}
+
+.dashboard-page .dashboard-charts .card {
+  min-height: 205px;
+}
+
+.dashboard-page .dashboard-charts .card-header {
+  padding: 18px 19px 0;
+  font-size: 16px;
+}
+
+.dashboard-page .dashboard-charts .card-body {
+  padding: 14px 19px 10px;
+}
+
+.calendar-page {
+  --cal-available: var(--crm-cyan);
+  --cal-occupied: #ff91a6;
+  --cal-turnover: #f2c973;
+  --cal-weekday-bg: var(--gh-surface-muted);
+  --cal-weekend-bg: #1e2339;
+  --cal-occupied-bg: #352131;
+  --cal-turnover-bg: #352d25;
+  font-size: 13px;
+}
+
+.crm-theme[data-bs-theme='light'] .calendar-page {
+  --cal-available: #17856b;
+  --cal-occupied: #d34f69;
+  --cal-turnover: #a87924;
+  --cal-weekday-bg: #f0f1f8;
+  --cal-weekend-bg: #f7f5ff;
+  --cal-occupied-bg: #fbe7e7;
+  --cal-turnover-bg: #fff3d9;
+}
+
+.calendar-page .page-header {
+  margin-bottom: 28px;
+}
+
+.calendar-page .page-header h1 {
+  font-size: 29px;
+  font-weight: 700;
+  line-height: 35px;
+}
+
+.calendar-page .page-header p {
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.crm-theme .calendar-page .calendar-today {
+  min-width: 65px;
+  min-height: 38px;
+  border-color: transparent;
+  border-radius: 9px;
+  background: var(--gh-surface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crm-theme .calendar-page .calendar-today:hover {
+  background: var(--bs-primary-bg-subtle);
+  color: var(--gh-primary);
+}
+
+.calendar-page .calendar-toolbar .card-body {
+  min-height: 83px;
+  padding: 20px 24px;
+}
+
+.calendar-page .calendar-month-picker {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.crm-theme .calendar-page .calendar-month-picker .input-group-text {
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--gh-text);
+  font-size: 20px;
+  text-transform: capitalize;
+}
+
+.crm-theme .calendar-page .calendar-month-picker .btn {
+  border: 0;
+  border-radius: 7px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.calendar-page .legend-chip {
+  gap: 5px;
+  font-size: 12px;
+}
+
+.crm-theme .calendar-page .cal-swatch {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--gh-text-muted);
+}
+
+.calendar-page .calendar-grid .cal-tabs-wrap {
+  padding: 12px 20px 0 !important;
+  background: transparent;
+}
+
+.calendar-page .cal-tabs {
+  gap: 22px;
+}
+
+.calendar-page .cal-tabs .nav-item {
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.crm-theme .calendar-page .cal-tabs .nav-link {
+  padding: 6px 0 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--gh-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.crm-theme .calendar-page .cal-tabs .nav-link.active,
+.crm-theme .calendar-page .cal-tabs .nav-link:hover {
+  border-bottom-color: var(--gh-primary);
+}
+
+.calendar-page .calendar-grid .card-body {
+  padding: 20px 20px 28px;
+}
+
+.calendar-page .calendar-room-heading {
+  margin-bottom: 24px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.calendar-page .cal-month {
+  border-collapse: separate;
+  border-spacing: 2px 3px;
+}
+
+.crm-theme .calendar-page .cal-month thead th {
+  height: 32px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--cal-weekday-bg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 13px;
+}
+
+.crm-theme .calendar-page .cal-month .cal-day {
+  height: 75px;
+  border: 0;
+  border-radius: 2px;
+  background-color: var(--gh-surface) !important;
+  box-shadow: inset 3px 0 0 var(--cal-available);
+}
+
+.crm-theme .calendar-page .cal-month td.cal-weekend {
+  background-color: var(--cal-weekend-bg) !important;
+}
+
+.crm-theme .calendar-page .cal-month .cal-occupied {
+  background-color: var(--cal-occupied-bg) !important;
+  box-shadow: inset 3px 0 0 var(--cal-occupied);
+}
+
+.crm-theme .calendar-page .cal-month .cal-turnover {
+  background-color: var(--cal-turnover-bg) !important;
+  box-shadow: inset 3px 0 0 var(--cal-turnover);
+}
+
+.crm-theme .calendar-page .cal-daynum {
+  padding: 9px 12px 6px;
+  background: transparent;
+  color: var(--gh-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.crm-theme .calendar-page .cal-today .cal-daynum {
+  font-weight: 700;
+}
+
+.crm-theme .calendar-page .cal-outside .cal-daynum {
+  color: var(--gh-text-disabled);
+}
+
+.crm-theme .calendar-page .cal-chip {
+  width: calc(100% - 16px);
+  margin: 0 4px 3px 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cal-occupied);
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.crm-theme .calendar-page .cal-turnover .cal-chip,
+.crm-theme .calendar-page .cal-chip-mark {
+  color: var(--cal-turnover);
+}
+
+.crm-theme .calendar-page .cal-chip:hover {
+  background: transparent;
+  text-decoration: underline;
 }

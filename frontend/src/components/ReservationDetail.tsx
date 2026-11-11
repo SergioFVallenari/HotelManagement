@@ -10,6 +10,7 @@ import type { Column } from './DataTable';
 import { ErrorBanner, Toast } from './Feedback';
 import { dateShort, dateTimeShort, money, PAYMENT_METHODS, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, hotelToday } from '../lib/format';
 import { RefundBadge } from './Badge';
+import { useAuth } from '../auth/AuthContext';
 
 const PAYMENTS_COLUMNS: Column<Payment>[] = [
   { header: 'Fecha', render: (p) => dateTimeShort(p.paidAt) },
@@ -21,20 +22,25 @@ interface Props {
   reservation: Reservation | null;
   onClose: () => void;
   onChanged: (reservation: Reservation) => void;
+  onDeleted: () => void;
   onError: (err: unknown) => void;
   error?: string | null;
   onDismissError?: () => void;
 }
 
-export function ReservationDetail({ reservation, onClose, onChanged, onError, error, onDismissError }: Props) {
+export function ReservationDetail({ reservation, onClose, onChanged, onDeleted, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'CASH' as PaymentMethod, reference: '' });
-  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link' | 'approve' | 'reject'>(null);
+  const [busyAction, setBusyAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'payment' | 'link' | 'approve' | 'reject' | 'edit'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'checkin' | 'checkout' | 'cancel' | 'refund' | 'approve'>(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [receiptData, setReceiptData] = useState<ReservationReceiptDetail | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editingDates, setEditingDates] = useState(false);
+  const [dates, setDates] = useState({ checkIn: '', checkOut: '' });
   const [rejectReason, setRejectReason] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
@@ -59,14 +65,17 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   useEffect(() => {
     if (!reservation || reservation.status !== 'PENDING') return;
     const reservationId = reservation.id;
-    let alive = true;
+    const controller = new AbortController();
+    let pending = false;
     let timer: number | undefined;
     const started = Date.now();
 
     function tick() {
-      api<{ data: Reservation }>(`/reservations/${reservationId}`)
+      if (controller.signal.aborted || pending) return;
+      pending = true;
+      api<{ data: Reservation }>(`/reservations/${reservationId}`, { signal: controller.signal })
         .then((result) => {
-          if (!alive) return;
+          if (controller.signal.aborted) return;
           if (result.data.status === 'RESERVED') {
             onChangedRef.current(result.data);
             showToast('Pago recibido');
@@ -75,12 +84,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
           scheduleNext();
         })
         .catch(() => {
-          if (alive) scheduleNext();
-        });
+          if (!controller.signal.aborted) scheduleNext();
+        })
+        .finally(() => { pending = false; });
     }
 
     function scheduleNext() {
-      if (!alive) return;
+      if (controller.signal.aborted) return;
       const delay = Date.now() - started < 30_000 ? 5000 : 15_000;
       timer = window.setTimeout(() => void tick(), delay);
     }
@@ -94,7 +104,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     timer = window.setTimeout(() => void tick(), 5000);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      alive = false;
+      controller.abort();
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -112,6 +122,44 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
   const linkVisible =
     !DEMO_MODE && !isPublicLink && ['PENDING', 'RESERVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(status) && (reservation.mpCheckoutUrl != null || status === 'PENDING');
   const linkRegenerable = status === 'PENDING' || status === 'RESERVED' || status === 'CHECKED_IN';
+  const canDelete = !DEMO_MODE && (user?.role === 'OWNER' || user?.role === 'ADMIN');
+
+  async function saveDates(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (dates.checkOut <= dates.checkIn) {
+      onError(new Error('La fecha de salida debe ser posterior a la fecha de entrada.'));
+      return;
+    }
+    if (dates.checkIn === current.checkIn.slice(0, 10) && dates.checkOut === current.checkOut.slice(0, 10)) {
+      setEditingDates(false);
+      return;
+    }
+    setBusyAction('edit');
+    onDismissError?.();
+    try {
+      const result = await api<{ data: Reservation }>(`/reservations/${current.id}`, { method: 'PATCH', body: dates });
+      setEditingDates(false);
+      onChanged(result.data);
+      showToast('Fechas actualizadas');
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteReservation() {
+    setBusyAction('cancel');
+    try {
+      await api(`/reservations/${current.id}`, { method: 'DELETE' });
+      setDeleteOpen(false);
+      onDeleted();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   async function generateLink(regenerate = false) {
     setBusyAction('link');
@@ -230,12 +278,12 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
     checkout: 'Confirmar el check-out y liberar todas las habitaciones de esta reserva.',
     cancel: '¿Cancelar esta reserva? Se aplica la política de devolución (10 días de anticipación).',
     refund: `Confirmar que se devolvieron ${money(reservation.refundAmount)} al huésped.`,
-    approve: `Confirmar que el anticipo de ${money(reservation.bookingLink?.deposit ?? 0)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
+    approve: `Confirmar que el anticipo de ${money(reservation.depositRequired)} fue acreditado. La reserva pasa a "Reservada" y el pago queda registrado como transferencia.`,
   };
 
   return (
     <>
-      <Modal open title={`Reserva ${reservation.code}`} onClose={onClose} error={error} onDismissError={onDismissError} wide>
+      <Modal open title={`Reserva ${reservation.code}`} onClose={() => { setEditingDates(false); onClose(); }} error={error} onDismissError={onDismissError} wide>
         <div className="reservation-detail">
         <div className="row g-3 reservation-overview">
           <div className="col-md-6">
@@ -283,6 +331,17 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
               <dt>Notas</dt>
               <dd>{reservation.notes ?? '—'}</dd>
             </dl>
+            {(status === 'PENDING' || status === 'RESERVED') && !DEMO_MODE && (
+              editingDates ? <form onSubmit={saveDates} className="mt-3">
+                <div className="row g-2">
+                  <div className="col-sm-6"><label className="form-label" htmlFor="edit-reservation-checkin">Entrada</label><input id="edit-reservation-checkin" type="date" className="form-control" value={dates.checkIn} onChange={(event) => setDates({ ...dates, checkIn: event.target.value })} required disabled={!!busyAction} /></div>
+                  <div className="col-sm-6"><label className="form-label" htmlFor="edit-reservation-checkout">Salida</label><input id="edit-reservation-checkout" type="date" className="form-control" value={dates.checkOut} onChange={(event) => setDates({ ...dates, checkOut: event.target.value })} required disabled={!!busyAction} /></div>
+                </div>
+                <p className="form-text">Se comprobará la disponibilidad y se recalcularán el total y el anticipo. Los pagos registrados se conservan; revisá el saldo después del cambio.</p>
+                <div className="d-flex flex-wrap gap-2 mt-3"><button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => { setEditingDates(false); onDismissError?.(); }} disabled={!!busyAction}>Cancelar</button><button type="submit" className="btn btn-sm btn-primary" disabled={!!busyAction}>{busyAction === 'edit' ? 'Guardando…' : 'Guardar fechas'}</button></div>
+              </form> : <button type="button" className="btn btn-sm btn-outline-primary mt-2" onClick={() => { onDismissError?.(); setDates({ checkIn: reservation.checkIn.slice(0, 10), checkOut: reservation.checkOut.slice(0, 10) }); setEditingDates(true); }} disabled={!!busyAction || !!reservation.mpCheckoutUrl || awaitingVerification} title={reservation.mpCheckoutUrl ? 'No se pueden modificar fechas con un link de MercadoPago activo.' : awaitingVerification ? 'Primero verificá el comprobante de la solicitud.' : undefined}>Modificar fechas</button>
+            )}
+            {(reservation.mpCheckoutUrl || awaitingVerification) && (status === 'PENDING' || status === 'RESERVED') && <p className="form-text mb-0">{reservation.mpCheckoutUrl ? 'No se pueden modificar fechas con un link de MercadoPago activo.' : 'Primero verificá el comprobante de la solicitud para modificar las fechas.'}</p>}
             </section>
           </div>
 
@@ -344,7 +403,7 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             {awaitingVerification && (
               <>
                 <p className="text-secondary small mb-2 mt-2">
-                  Revisá que la transferencia coincida con el anticipo de {money(reservation.bookingLink?.deposit ?? 0)}. Al
+                  Revisá que la transferencia coincida con el anticipo de {money(reservation.depositRequired)}. Al
                   aprobar, se registra el pago y la reserva pasa a <strong>Reservada</strong>.
                 </p>
                 <div className="d-flex gap-2 flex-wrap">
@@ -392,6 +451,10 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             <span>Servicios</span>
             <strong>{money(reservation.totals.servicesTotal)}</strong>
           </div>
+          {(reservation.totals.discountAmount ?? 0) > 0 && <div>
+            <span>Descuento{reservation.discount?.type === 'PERCENTAGE' ? ` (${reservation.discount.value}%)` : ''}</span>
+            <strong className="text-success">−{money(reservation.totals.discountAmount)}</strong>
+          </div>}
           <div>
             <span>Total</span>
             <strong>{money(reservation.totals.total)}</strong>
@@ -470,16 +533,16 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
                   <tbody>
                     {reservation.services.map((s) => (
                       <tr key={s.id}>
-                        <td>{s.name}</td>
+                        <td>{s.name}{s.description && <div className="small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{s.description}</div>}</td>
                         <td>{s.quantity}</td>
                         <td className="text-secondary">
                           {s.chargeType === 'PER_PERSON'
                             ? s.personsCovered != null
-                              ? `${s.personsCovered} de ${reservation.persons + reservation.extraBeds}`
+                              ? `${s.personsCovered} de ${reservation.persons}`
                               : 'todas'
                             : '—'}
                         </td>
-                        <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}</td>
+                        <td className="text-secondary">{s.chargeType ? CHARGE_TYPES[s.chargeType] : '—'}{s.chargeType === 'PER_ROOM_INTERVAL' && <div className="small">Cada {s.intervalDays} día(s), sin incluir el día de salida</div>}</td>
                         <td className="text-end">{money(s.lineTotal)}</td>
                       </tr>
                     ))}
@@ -576,10 +639,13 @@ export function ReservationDetail({ reservation, onClose, onChanged, onError, er
             </button>
           </div>
         )}
+        {canDelete && <div className="modal-actions"><button type="button" className="btn btn-outline-danger" onClick={() => setDeleteOpen(true)} disabled={!!busyAction}>Eliminar reserva</button></div>}
         </div>
       </Modal>
 
       <Toast show={!!toast} message={toast ?? ''} onHide={() => setToast(null)} />
+
+      <ConfirmDialog open={deleteOpen} title="Eliminar reserva" message="Esta acción es definitiva. Se eliminarán la reserva y sus pagos del historial y de los informes; el link de WhatsApp no podrá reutilizarse y se intentará borrar el comprobante. Si tiene pagos, debe estar cancelada y tener la devolución total registrada cuando corresponda. No debe tener check-in, check-out ni vínculos con MercadoPago." confirmLabel="Eliminar reserva" danger busy={!!busyAction} error={error} onCancel={() => setDeleteOpen(false)} onConfirm={() => void deleteReservation()} />
 
       <ConfirmDialog
         open={!!confirmAction}

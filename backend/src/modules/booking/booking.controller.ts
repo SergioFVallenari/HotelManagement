@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
-import { parseIdParam } from '../../lib/pagination.js';
+import { parseIdParam, parsePagination } from '../../lib/pagination.js';
+import { assertDiscountPermission } from '../../lib/discount.js';
 import {
   cancelBookingLink,
   createBookingLink,
@@ -9,6 +10,7 @@ import {
   getPublicReservationStatus,
   getPublicAvailability,
   getPublicBookingPageConfig,
+  getPublicCalendar,
   listBookingLinks,
   submitBooking,
 } from './booking.service.js';
@@ -17,18 +19,21 @@ import {
   listBookingLinksQuerySchema,
   publicBookingSchema,
   publicAvailabilityQuerySchema,
+  publicCalendarQuerySchema,
   receiptUploadSchema,
 } from './booking.schema.js';
 import type { CreateBookingLinkInput, ListBookingLinksQuery, PublicBookingInput, ReceiptUploadInput } from './booking.schema.js';
 
 export async function listBookingLinksHandler(req: Request, res: Response): Promise<void> {
   const query = listBookingLinksQuerySchema.parse(req.query) as ListBookingLinksQuery;
-  const data = await listBookingLinks(query);
-  res.json({ data });
+  const pagination = parsePagination({ pageSize: 100, ...req.query });
+  const result = await listBookingLinks(query, pagination);
+  res.json(result);
 }
 
 export async function createBookingLinkHandler(req: Request, res: Response): Promise<void> {
   const input = createBookingLinkSchema.parse(req.body) as CreateBookingLinkInput;
+  assertDiscountPermission(input.discount, req.user?.role);
   const link = await createBookingLink(input);
   res.status(201).json({ data: link });
 }
@@ -63,6 +68,12 @@ export async function getPublicAvailabilityHandler(req: Request, res: Response):
 
 export async function getPublicBookingPageConfigHandler(req: Request, res: Response): Promise<void> {
   const data = await getPublicBookingPageConfig(String(req.params.slug));
+  res.json({ data });
+}
+
+export async function getPublicCalendarHandler(req: Request, res: Response): Promise<void> {
+  const query = publicCalendarQuerySchema.parse(req.query);
+  const data = await getPublicCalendar(String(req.params.slug), query);
   res.json({ data });
 }
 

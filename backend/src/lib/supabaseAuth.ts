@@ -70,7 +70,7 @@ export async function signUpSelfService(input: {
   metadata: Record<string, unknown>;
   emailRedirectTo?: string;
 }): Promise<void> {
-  const { error } = await client.auth.signUp({
+  const { error, data } = await client.auth.signUp({
     email: input.email,
     password: input.password,
     options: {
@@ -78,10 +78,12 @@ export async function signUpSelfService(input: {
       ...(input.emailRedirectTo ? { emailRedirectTo: input.emailRedirectTo } : {}),
     },
   });
-  console.log('signUpSelfService', error);
-  // Con email ya registrado GoTrue responde user_already_exists o un user sin
-  // identities, a proposito, para no filtrar si la cuenta existe.
-  if (error && error.code !== 'user_already_exists') throw toAppError(error);
+  if (error) throw toAppError(error);
+  if (!data.user) throw toAppError(null);
+  // GoTrue puede ocultar un email registrado devolviendo un usuario sin identidades.
+  if (data.user.identities?.length === 0) {
+    throw conflict('DUPLICATE', 'Ya existe una cuenta con ese email');
+  }
 }
 
 export async function adminCreateUser(input: {

@@ -8,7 +8,7 @@ import { Modal } from '../components/Modal';
 import { ReservationDetail } from '../components/ReservationDetail';
 import { useApiError } from '../components/pagination';
 
-const WEEKDAY_HEADERS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
+const WEEKDAY_HEADERS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 const MAX_CHIPS = 2;
 
@@ -150,42 +150,46 @@ export function CalendarPage() {
   }
 
   return (
-    <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div className="calendar-page">
+      <div className="page-header">
         <div>
-          <h1 className="h4 mb-1">Calendario de disponibilidad</h1>
-          <p className="text-secondary mb-0">Ocupación por habitación y día del mes</p>
+          <h1 className="mb-2">Calendario de disponibilidad</h1>
+          <p className="text-secondary mb-0">Consultá la ocupación por habitación y día.</p>
         </div>
-        <div className="btn-toolbar gap-2" role="group" aria-label="Navegación del mes">
-          <div className="input-group" style={{ width: 'auto' }}>
-            <button type="button" className="btn btn-outline-secondary" onClick={() => changeMonth(-1)} aria-label="Mes anterior">
-              ‹
-            </button>
-            <span className="input-group-text fw-semibold">
-              {new Date(year, month, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
-            </span>
-            <button type="button" className="btn btn-outline-secondary" onClick={() => changeMonth(1)} aria-label="Mes siguiente">
-              ›
-            </button>
-          </div>
-          <button type="button" className="btn btn-outline-primary" onClick={goToday}>
-            Hoy
-          </button>
-        </div>
+        <button type="button" className="btn btn-outline-primary calendar-today" onClick={goToday}>
+          Hoy
+        </button>
       </div>
 
-      <div className="d-flex flex-wrap gap-3 mb-3">
-        {(['AVAILABLE', 'OCCUPIED', 'TURNOVER'] as const).map((s) => (
-          <span key={s} className="legend-chip">
-            <span className={`cal-swatch ${STATUS_LABEL[s].cls}`} /> {STATUS_LABEL[s].label}
-          </span>
-        ))}
+      <div className="card calendar-toolbar mb-4">
+        <div className="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div className="btn-toolbar calendar-navigation" role="group" aria-label="Navegación del mes">
+            <div className="input-group calendar-month-picker">
+              <button type="button" className="btn btn-outline-secondary" onClick={() => changeMonth(-1)} aria-label="Mes anterior">
+                ‹
+              </button>
+              <span className="input-group-text fw-bold" aria-live="polite">
+                {new Date(year, month, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
+              </span>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => changeMonth(1)} aria-label="Mes siguiente">
+                ›
+              </button>
+            </div>
+          </div>
+          <div className="d-flex flex-wrap gap-3 calendar-legend" aria-label="Estados de disponibilidad">
+            {(['AVAILABLE', 'OCCUPIED', 'TURNOVER'] as const).map((s) => (
+              <span key={s} className="legend-chip">
+                <span className={`cal-swatch ${STATUS_LABEL[s].cls}`} aria-hidden="true" /> {STATUS_LABEL[s].label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       <LoadState loading={loading} error={error} onRetry={reload} empty={cal?.rooms.length === 0} />
 
       {cal && cal.rooms.length > 0 && activeRoom && (
-        <div className="card shadow-sm">
+        <div className="card calendar-grid">
           <div className="card-header p-0 cal-tabs-wrap">
             <ul className="nav nav-tabs cal-tabs" role="tablist" aria-label="Habitaciones">
               {cal.rooms.map((room, index) => {
@@ -202,11 +206,11 @@ export function CalendarPage() {
                       ref={(el) => {
                         tabRefs.current[index] = el;
                       }}
-                      className={`nav-link ${active ? 'active' : ''}`}
+                      className={`nav-link ${active ? 'active' : ''} p-2 rounded shadow-sm`}
                       onClick={() => setActiveRoomId(room.id)}
                       onKeyDown={(e) => onTabKeyDown(e, index)}
                     >
-                      {room.number}
+                      Habitación {room.number}
                     </button>
                   </li>
                 );
@@ -220,13 +224,13 @@ export function CalendarPage() {
             id={`cal-panel-${activeRoom.id}`}
             aria-labelledby={`cal-tab-${activeRoom.id}`}
           >
-            <div className="d-flex align-items-baseline gap-2 mb-2">
-              <span className="fw-semibold">Habitación {activeRoom.number}</span>
-              {roomSubtitle(activeRoom) && <small className="text-secondary">{roomSubtitle(activeRoom)}</small>}
+            <div className="d-flex flex-wrap align-items-baseline gap-2 calendar-room-heading">
+              <span>Habitación {activeRoom.number}</span>
+              {roomSubtitle(activeRoom) && <span>· {roomSubtitle(activeRoom)}</span>}
             </div>
 
             <div className="table-responsive">
-              <table className="table table-bordered cal-month mb-0">
+              <table className="table cal-month mb-0" aria-label={`Disponibilidad de la habitación ${activeRoom.number}`}>
                 <thead>
                   <tr>
                     {WEEKDAY_HEADERS.map((label, i) => (
@@ -268,7 +272,7 @@ export function CalendarPage() {
                                   <span className="cal-chip-mark">{r.checkOut === dayIso ? '↓' : '↑'}</span>
                                 )}
                                 <span className="cal-chip-guest">{r.guestName}</span>
-                                <span className="cal-chip-code">{r.code}</span>
+                                <span className="visually-hidden">{r.code}</span>
                               </button>
                             ))}
                             {overflow > 0 && <span className="cal-chip-more">+{overflow}</span>}
@@ -305,6 +309,7 @@ export function CalendarPage() {
 
       <ReservationDetail
         reservation={selected}
+        onDeleted={() => { handleCloseDetail(); reload(); }}
         onClose={handleCloseDetail}
         onChanged={handleDetailChanged}
         onError={handleDetailError}

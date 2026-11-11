@@ -74,6 +74,7 @@ export const CHARGE_TYPES: Record<string, string> = {
   PER_PERSON: 'Por persona',
   PER_DAY: 'Por día',
   PACK: 'Pack / fijo',
+  PER_ROOM_INTERVAL: 'Por habitación e intervención',
 };
 
 export function nightsCount(checkIn: string, checkOut: string): number {

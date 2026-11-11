@@ -4,9 +4,9 @@ import { api } from "../api/client";
 const ConfirmEmail = () => {
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
     const [message, setMessage] = useState("Verificando tu email...");
+    const [params] = useState(() => new URLSearchParams(window.location.search));
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
         const tokenHash = params.get("token_hash");
         const type = params.get("type");
         window.history.replaceState({}, "", window.location.pathname);
@@ -17,19 +17,29 @@ const ConfirmEmail = () => {
             return;
         }
 
-        api(
-            `/auth/confirm-email?token_hash=${encodeURIComponent(tokenHash)}&type=${encodeURIComponent(type)}`,
-            { method: "GET" }
-        )
-            .then((res) => {
-                setStatus("success");
-                setMessage((res as { message: string }).message);
-            })
-            .catch(() => {
-                setStatus("error");
-                setMessage("No pudimos confirmar tu email. El enlace puede haber expirado o ya haber sido utilizado.");
-            });
-    }, []);
+        const controller = new AbortController();
+        // StrictMode limpia el primer efecto antes del timer: el token se consume una sola vez.
+        const timer = window.setTimeout(() => {
+            void api<{ message: string }>(
+                `/auth/confirm-email?token_hash=${encodeURIComponent(tokenHash)}&type=${encodeURIComponent(type)}`,
+                { method: "GET", signal: controller.signal }
+            )
+                .then((res) => {
+                    if (controller.signal.aborted) return;
+                    setStatus("success");
+                    setMessage(res.message);
+                })
+                .catch(() => {
+                    if (controller.signal.aborted) return;
+                    setStatus("error");
+                    setMessage("No pudimos confirmar tu email. El enlace puede haber expirado o ya haber sido utilizado.");
+                });
+        }, 0);
+        return () => {
+            window.clearTimeout(timer);
+            controller.abort();
+        };
+    }, [params]);
 
     return (
         <main

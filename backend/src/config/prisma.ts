@@ -2,8 +2,11 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client.js';
 import { env } from './env.js';
 import { getTenantId } from '../lib/tenant.js';
+import { measureDatabaseOperation } from '../lib/performance.js';
+import pg from 'pg';
+import { instrumentPgPool } from '../lib/pgDiagnostics.js';
 
-const adapter = new PrismaPg({
+const poolOptions = {
   connectionString: env.databaseUrl,
   // Prisma 7 con driver adapters no hereda los timeouts de v6: el default de
   // connectionTimeoutMillis es 0 (sin timeout), asi que una Lambda puede quedar
@@ -11,9 +14,13 @@ const adapter = new PrismaPg({
   // multiplexa las conexiones en el pooler.
   max: 5,
   connectionTimeoutMillis: 10_000,
-  idleTimeoutMillis: 30_000,
+  idleTimeoutMillis: 300_000,
   ...(isRemoteHost(env.databaseUrl) ? { ssl: { rejectUnauthorized: false } } : {}),
-});
+};
+
+const adapter = env.performanceDiagnostics
+  ? new PrismaPg(instrumentPgPool(new pg.Pool(poolOptions)), { disposeExternalPool: true })
+  : new PrismaPg(poolOptions);
 
 function isRemoteHost(databaseUrl: string): boolean {
   const hostname = new URL(databaseUrl).hostname;
@@ -33,6 +40,8 @@ const SCOPEABLE_MODELS = new Set([
   'CompanyAiSetting',
   'BookingLink',
   'ReservationReceipt',
+  'NotificationOutbox',
+  'CompanyNotificationRecipient',
 ]);
 
 type RawArgs = Record<string, any>;
@@ -42,6 +51,14 @@ function mergeWhere(where: unknown, companyId: number): unknown {
 }
 
 export const prisma = new PrismaClient({ adapter }).$extends({
+  query: {
+    $allModels: {
+      $allOperations({ model, operation, args, query }) {
+        return measureDatabaseOperation(`${model}.${operation}`, () => query(args));
+      },
+    },
+  },
+}).$extends({
   query: {
     $allModels: {
       async $allOperations({ model, operation, args, query }) {

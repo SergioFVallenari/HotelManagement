@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { requiresCsrfHeader } from '../lib/requestSecurity.js';
+import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '../modules/recipients/recipients.schema.js';
+import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
 import { credentialsSchema, loginSchema, registerSchema, resendSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
 import { createRoomSchema, updateRoomSchema } from '../modules/rooms/rooms.schema.js';
@@ -7,6 +10,7 @@ import { createGuestSchema, updateGuestSchema } from '../modules/guests/guests.s
 import { createServiceSchema, updateServiceSchema } from '../modules/services/services.schema.js';
 import {
   createReservationSchema,
+  createReservationBatchSchema,
   updateReservationSchema,
 } from '../modules/reservations/reservations.schema.js';
 import { recordPaymentSchema } from '../modules/payments/payments.schema.js';
@@ -140,9 +144,11 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/public/booking/{token}/receipt', 'post'],
   ['/api/public/availability/{slug}', 'get'],
   ['/api/public/availability/{slug}/config', 'get'],
+  ['/api/public/availability/{slug}/calendar', 'get'],
 ];
 
 const componentSchemas: Record<string, Json> = {
+  NotificationRecipient: js(recipientSchema),
   Company: js(schemas.companySchema),
   CompanySettings: js(schemas.companySettingsSchema),
   AuthUser: js(schemas.authUserSchema),
@@ -170,6 +176,38 @@ const componentSchemas: Record<string, Json> = {
 };
 
 const paths: Record<string, Json> = {
+  '/api/recipients': {
+    get: op({
+      tags: ['Notificaciones'],
+      summary: 'Listar destinatarios de notificaciones del hotel',
+      description: `${ownerOrAdmin} Incluye activos e inactivos. La empresa se obtiene exclusivamente de la sesión.`,
+      responses: { '200': ok({ type: 'array', items: ref('NotificationRecipient') }), ...errors() },
+    }),
+    post: op({
+      tags: ['Notificaciones'],
+      summary: 'Agregar un destinatario de notificaciones',
+      description: `${ownerOrAdmin} Normaliza el email a minúsculas y lo activa por defecto. No permite elegir companyId ni envía correos.`,
+      requestBody: jsonBody(js(createRecipientSchema, 'input'), 'Nombre, email y activación del destinatario'),
+      responses: { '201': ok(ref('NotificationRecipient')), ...errors(), '409': errResponse('El email ya está registrado en este hotel') },
+    }),
+  },
+  '/api/recipients/{id}': {
+    patch: op({
+      tags: ['Notificaciones'],
+      summary: 'Editar o activar/desactivar un destinatario',
+      description: `${ownerOrAdmin} Actualización parcial. Desactivar conserva el destinatario y lo excluye de la consulta de destinatarios activos. No permite cambiarlo de hotel.`,
+      parameters: [pathIdParam('ID del destinatario de este hotel')],
+      requestBody: jsonBody(js(updateRecipientSchema, 'input'), 'Campos a actualizar; el switch envía únicamente enabled'),
+      responses: { '200': ok(ref('NotificationRecipient')), ...errors(), '409': errResponse('El email ya está registrado en este hotel') },
+    }),
+    delete: op({
+      tags: ['Notificaciones'],
+      summary: 'Eliminar un destinatario del hotel',
+      description: ownerOrAdmin,
+      parameters: [pathIdParam('ID del destinatario de este hotel')],
+      responses: { '204': empty('Destinatario eliminado'), ...errors(), '404': errResponse('DESTINATARIO_NO_ENCONTRADO: el destinatario no existe en este hotel') },
+    }),
+  },
   '/health': {
     get: op({
       tags: ['Estado'],
@@ -559,7 +597,7 @@ const paths: Record<string, Json> = {
       tags: ['Huéspedes'],
       summary: 'Crear huésped',
       description: noRole,
-      requestBody: jsonBody(js(createGuestSchema, 'input'), 'Datos del huésped'),
+      requestBody: jsonBody(js(createGuestSchema, 'input'), 'Nombre y apellido obligatorios; email y teléfono opcionales. Los contactos vacíos se guardan como null.'),
       responses: {
         '201': ok(ref('Guest'), 'Huésped creado'),
         ...errors({
@@ -654,7 +692,7 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Reservas'],
       summary: 'Listar reservas',
-      description: noRole,
+      description: `${noRole} Ordenadas por cercanía del check-in a la fecha actual del hotel, incluyendo fechas pasadas; ante igual distancia se prioriza la fecha futura y luego el ID más reciente.`,
       parameters: [
         queryParam('page', 'Página (1-indexada)', { schema: { type: 'integer', minimum: 1 } }),
         queryParam('pageSize', 'Cantidad por página (default 10, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
@@ -680,7 +718,7 @@ const paths: Record<string, Json> = {
       summary: 'Crear reserva',
       description:
         `${noRole} Acepta varias habitaciones con rooms: [{ roomId, persons, extraBeds }]; personas, camas extras y tarifas se validan por habitación. Titular, fechas, estado y pagos son conjuntos. El formato legado de una habitación sigue vigente. Acepta un anticipo (payment) en la misma operación, y/o puede generar el link de MercadoPago ` +
-        'por el saldo (`generatePaymentLink`). Ver descripción ampliada en la portada.',
+        'por el saldo (`generatePaymentLink`). Con `genericGuest: true` crea una ficha propia de huésped genérico, sin exigir nombre ni contacto. Ver descripción ampliada en la portada.',
       requestBody: jsonBody(js(createReservationSchema, 'input'), 'Reserva a crear'),
       responses: {
         '201': ok(ref('Reservation'), 'Reserva creada'),
@@ -694,7 +732,31 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/reservations/batch': {
+    post: op({
+      tags: ['Reservas'],
+      summary: 'Crear varias reservas independientes',
+      description: `${noRole} Crea hasta 50 reservas en una sola transacción: si alguna falla, no se guarda ninguna. Cada reserva puede indicar genericGuest: true para crear una ficha propia sin datos de contacto. No admite órdenes de MercadoPago.`,
+      requestBody: jsonBody(js(createReservationBatchSchema, 'input'), 'Reservas a crear'),
+      responses: {
+        '201': ok({ type: 'array', items: ref('Reservation') }, 'Reservas creadas'),
+        ...errors({
+          '400': 'Datos de reserva inválidos',
+          '404': 'Habitación, servicio o huésped inexistente',
+          '409': 'Una de las habitaciones está ocupada en el período solicitado',
+        }),
+      },
+    }),
+  },
+
   '/api/reservations/{id}': {
+    delete: op({
+      tags: ['Reservas'],
+      summary: 'Eliminar reserva',
+      description: 'Solo ADMIN u OWNER. Admite reservas sin pagos o canceladas cuando no corresponde devolución o se registró la devolución total. Elimina también el historial de pagos. No admite check-in/check-out ni vínculos con MercadoPago. Las solicitudes de WhatsApp permanecen inutilizadas y se intenta borrar el comprobante de Storage.',
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: { '204': empty('Reserva eliminada'), ...errors({ '409': '`INVALID_STATE`: la reserva tiene movimientos o vínculos que impiden eliminarla' }) },
+    }),
     get: op({
       tags: ['Reservas'],
       summary: 'Obtener reserva',
@@ -1335,6 +1397,24 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/ai/reservations/chat': {
+    post: op({
+      tags: ['Asistente de IA'],
+      summary: 'Preparar una reserva manual desde el chat interno',
+      description: 'Requiere sesión. Independiente de Instagram. Solo propone: no crea reservas ni pagos. Consulta disponibilidad real y devuelve una propuesta firmada válida por 10 minutos, o una pregunta aclaratoria. Hasta 30 mensajes por conversación.',
+      requestBody: jsonBody(js(reservationChatSchema, 'input'), 'Historial del chat interno'),
+      responses: { '200': ok({ type: 'object', properties: { reply: { type: 'string' }, proposal: { type: ['object', 'null'], additionalProperties: true } } }), ...errors(), '502': errResponse('Respuesta inválida o fallo de Gemini'), '503': errResponse('IA no configurada') },
+    }),
+  },
+  '/api/ai/reservations/confirm': {
+    post: op({
+      tags: ['Asistente de IA'],
+      summary: 'Confirmar la propuesta del chat interno',
+      description: 'Solo acepta una propuesta firmada para el usuario y empresa de la sesión. Revalida disponibilidad, capacidad y precios; crea una reserva STAFF sin pagos. Los reintentos de la misma propuesta devuelven la reserva existente.',
+      requestBody: jsonBody(js(confirmAiReservationSchema, 'input'), 'Token de la propuesta revisada por recepción'),
+      responses: { '201': ok(ref('Reservation')), ...errors(), '409': errResponse('Propuesta vencida, cambio de precios o habitación ocupada') },
+    }),
+  },
   '/api/ai/config': {
     get: op({
       tags: ['Asistente de IA'],
@@ -1357,13 +1437,14 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Asistente de IA'],
       summary: 'Configuración del asistente de IA de la empresa',
-      description: noRole + ' Devuelve los defaults (`enabled: false`, `autoReply: true`) si la empresa nunca configuró nada.',
+      description: noRole + ' Devuelve los defaults (`enabled: false`, `autoReply: true`, `reservationAssistantEnabled: false`) si la empresa nunca configuró nada. El asistente de reservas es independiente del de mensajes.',
       responses: {
         '200': okPlain(
           {
             data: {
               type: 'object',
               properties: {
+                reservationAssistantEnabled: { type: 'boolean' },
                 enabled: { type: 'boolean' },
                 autoReply: { type: 'boolean' },
                 instructions: { type: 'string', nullable: true },
@@ -1378,12 +1459,13 @@ const paths: Record<string, Json> = {
     put: op({
       tags: ['Asistente de IA'],
       summary: 'Actualizar la configuración del asistente de IA',
-      description: ownerOrAdmin + ' Upsert de la configuración de la empresa.',
+      description: ownerOrAdmin + ' Upsert de la configuración de la empresa. `reservationAssistantEnabled` habilita el chat interno y su confirmación, independientemente de `enabled` (mensajes). Si se omite, conserva el valor existente.',
       requestBody: jsonBody(
         {
           type: 'object',
           required: ['enabled', 'autoReply'],
           properties: {
+            reservationAssistantEnabled: { type: 'boolean' },
             enabled: { type: 'boolean' },
             autoReply: { type: 'boolean' },
             instructions: { type: 'string', maxLength: 2000, nullable: true },
@@ -1397,6 +1479,7 @@ const paths: Record<string, Json> = {
             data: {
               type: 'object',
               properties: {
+                reservationAssistantEnabled: { type: 'boolean' },
                 enabled: { type: 'boolean' },
                 autoReply: { type: 'boolean' },
                 instructions: { type: 'string', nullable: true },
@@ -1522,15 +1605,17 @@ const paths: Record<string, Json> = {
       tags: ['Reservas por WhatsApp'],
       summary: 'Listar solicitudes de reserva',
       description:
-        `${noRole} Devuelve las solicitudes preparadas por la recepción (máx. 100, más nuevas primero) ` +
+        `${noRole} Devuelve las solicitudes preparadas por la recepción, más nuevas primero, paginadas ` +
         'con la cotización congelada y el link público para compartir.',
       parameters: [
+        queryParam('page', 'Número de página (default 1)', { schema: { type: 'integer', minimum: 1 } }),
+        queryParam('pageSize', 'Cantidad por página (default 100, máx 100)', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
         queryParam('status', 'Filtrar por estado del link', {
           schema: { type: 'string', enum: ['OPEN', 'COMPLETED', 'CANCELLED'] },
         }),
       ],
       responses: {
-        '200': ok({ type: 'array', items: ref('BookingLink') }),
+        '200': ok({ type: 'array', items: ref('BookingLink') }, true),
         ...errors(),
       },
     }),
@@ -1705,14 +1790,19 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Consultar disponibilidad y cotización orientativa',
-      description: 'Público. Devuelve availableRoomCount con el total de habitaciones activas libres durante toda la estadía, independientemente del tamaño del grupo. Incluye tipos disponibles para alojar al grupo en una habitación y una combinación sugerida. La combinación usa capacidad base, prioriza menos habitaciones y luego menor precio, y detalla personas y total por habitación. No expone números ni datos de huéspedes. Rate limit: 30 / 10 min por IP.',
+      description: 'Público. Con roomId cotiza exclusivamente la habitación seleccionada en el calendario y devuelve su identificación real en stay.room, sin alternativas. Sin roomId devuelve habitaciones libres, una combinación sugerida y options seleccionables por tipo. Cada opción incluye su propia combination completa, roomCount, roomTotal, servicios y total para poder elegirla y compartirla por WhatsApp. Las alternativas también contemplan grupos y camas extra, respetando la distribución solicitada. La combinación sugerida prioriza menos habitaciones y luego menor precio. Sin includeExtraBeds usa solo capacidad base. Con includeExtraBeds=true solo admite camas extra si el hotel habilitó publicExtraBeds y su servicio seleccionado sigue activo y marcado como cama extra. Respeta maxExtraBeds por habitación y desglosa extraBeds, roomTotal, extraBedsTotal y extraBedService. Las personas de cada línea incluyen a quienes usan camas extra; su tarifa no se duplica en el precio base PER_PERSON. PACK cobra por cama y estadía; PER_DAY/PER_PERSON por cama y noche. No expone datos de huéspedes. Rate limit: 30 / 10 min por IP.',
       security: publicSecurity,
       parameters: [
         { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
         queryParam('checkIn', 'Fecha de entrada YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
         queryParam('checkOut', 'Fecha de salida YYYY-MM-DD', { required: true, schema: { type: 'string', format: 'date' } }),
         queryParam('persons', 'Cantidad de personas, hasta el máximo informado por la configuración pública del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
+        queryParam('roomTypeId', 'Tipo de habitación elegido entre hotel.roomTypes de /config. Opcional: al omitirlo combina cualquier tipo. Filtra opciones, combinación, capacidad y cantidad de habitaciones. Solo acepta tipos del hotel con habitaciones activas. stay.roomType devuelve el nombre solicitado, incluso sin disponibilidad.', { schema: { type: 'integer', minimum: 1 } }),
+        queryParam('roomId', 'Habitación elegida en el calendario. Debe estar activa, pertenecer al hotel y coincidir con roomTypeId si se envía. Cotiza exclusivamente esa habitación, limita personas a su capacidad y camas extra habilitadas, fuerza una sola habitación y devuelve options vacío. stay.room contiene id, número, nombre, capacidad y máximo de camas extra reales. Si se ocupó, devuelve combination=null y availableRoomCount=0 sin sustituirla por otra. No crea ni bloquea una reserva.', { schema: { type: 'integer', minimum: 1 } }),
         queryParam('roomCount', 'Cantidad exacta de habitaciones. Si se omite, combina automáticamente la menor cantidad posible.', { schema: { type: 'integer', minimum: 1, maximum: 100 } }),
+        queryParam('includeExtraBeds', 'Aceptación del huésped para agregar camas extra. Por defecto false; nunca habilita un servicio que el hotel no haya publicado.', { schema: { type: 'boolean', default: false } }),
+        queryParam('services', 'Array JSON de {serviceId, quantity?}. Solo servicios activos publicados por el hotel. quantity se usa solo para PACK (1 por defecto); PER_PERSON cobra por todos los huéspedes y noches, PER_DAY por noche. PER_ROOM_INTERVAL cobra por habitación e intervención cada intervalDays, sin incluir check-in ni check-out: floor((noches-1)/intervalDays) × habitaciones. Devuelve services con descripción, frecuencia, cantidades, unitPrice y lineTotal, servicesTotal y totales incluyendo servicios. Cada opción tiene su propio desglose de servicios según la cantidad de habitaciones.', { schema: { type: 'string' } }),
+        queryParam('roomPersons', 'Personas por habitación separadas por comas (ejemplo: 3,1). Requiere roomCount, igual cantidad de valores y suma igual a persons. Busca el menor precio respetando esta distribución.', { schema: { type: 'string', pattern: '^\\d+(,\\d+)*$' } }),
       ],
       responses: {
         '200': ok({ type: 'object', additionalProperties: true }),
@@ -1721,11 +1811,38 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/public/availability/{slug}/calendar': {
+    get: op({
+      tags: ['Disponibilidad pública'],
+      summary: 'Consultar calendario público por tipo de habitación',
+      description: 'Público. Habitaciones activas del hotel con número y nombre reales. Cada celda contiene únicamente available (disponibilidad por noche); no expone reservas ni huéspedes. Bloquean PENDING, RESERVED y CHECKED_IN, incluidas reservas grupales. Rango inclusivo de hasta 62 días. Rate limit: 120 / 10 min por IP.',
+      security: publicSecurity,
+      parameters: [
+        { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+        queryParam('roomTypeId', 'Tipo de habitación del hotel', { required: true, schema: { type: 'integer', minimum: 1 } }),
+        queryParam('from', 'Primer día del calendario', { required: true, schema: { type: 'string', format: 'date' } }),
+        queryParam('to', 'Último día del calendario', { required: true, schema: { type: 'string', format: 'date' } }),
+      ],
+      responses: {
+        '200': ok({ type: 'object', properties: {
+          from: { type: 'string', format: 'date' }, to: { type: 'string', format: 'date' },
+          days: { type: 'array', items: { type: 'string', format: 'date' } },
+          rooms: { type: 'array', items: { type: 'object', properties: {
+            id: { type: 'integer' }, number: { type: 'string' }, name: { type: ['string', 'null'] }, typeName: { type: ['string', 'null'] },
+            capacity: { type: 'integer', minimum: 1 }, maxExtraBeds: { type: 'integer', minimum: 0 },
+            cells: { type: 'array', items: { type: 'object', properties: { available: { type: 'boolean' } }, required: ['available'] } },
+          }, required: ['id', 'number', 'name', 'typeName', 'capacity', 'maxExtraBeds', 'cells'] } },
+        }, required: ['from', 'to', 'days', 'rooms'] }),
+        ...errors({ '404': '`NOT_FOUND`: alojamiento inexistente' }),
+      },
+    }),
+  },
+
   '/api/public/availability/{slug}/config': {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Obtener identidad visual pública del hotel',
-      description: 'Público. Devuelve nombre, contacto y tema visual configurado para las páginas públicas del hotel identificado por slug.',
+      description: 'Público. Devuelve nombre, contacto, tema visual, capacidad, configuración de camas extra, roomTypes (tipos con habitaciones activas, cantidad y límites de personas con/sin camas extra) y publicServices (id, nombre, precio y modalidad de cobro de servicios activos habilitados por el hotel).',
       security: publicSecurity,
       parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
       responses: {
@@ -1787,6 +1904,26 @@ const paths: Record<string, Json> = {
   },
 };
 
+for (const [path, methods] of Object.entries(paths)) {
+  for (const [method, value] of Object.entries(methods)) {
+    if (!['post', 'put', 'patch', 'delete'].includes(method) || !requiresCsrfHeader(method, path)) continue;
+    const operation = value as Json;
+    operation.parameters = [
+      ...((operation.parameters as Json[] | undefined) ?? []),
+      {
+        name: 'X-GH-CSRF',
+        in: 'header',
+        required: true,
+        description: 'Protección CSRF por preflight CORS. Valor fijo 1; no es un token secreto.',
+        schema: { type: 'string', const: '1' },
+      },
+    ];
+    const responses = operation.responses as Record<string, Json>;
+    const previous = responses['403']?.description;
+    responses['403'] = errResponse(`${previous ? `${previous}. ` : ''}SOLICITUD_NO_PERMITIDA: falta X-GH-CSRF: 1 o el Origin no pertenece a CORS_ORIGINS`);
+  }
+}
+
 export const info = {
   title: 'API Gestión Hotel',
   version: '1.0.0',
@@ -1804,6 +1941,11 @@ export const info = {
     '## Envelope',
     'Las respuestas exitosas van envueltas en `{ data, meta? }` (salvo auth y `/health`). ' +
       'Los errores siempre devuelven `{ error: { code, message, details? } }`.',
+    '',
+    '## Protección CSRF',
+    'Las escrituras requieren `X-GH-CSRF: 1`, incluso login y logout. Si se envía `Origin`, debe coincidir exactamente con `CORS_ORIGINS`. ' +
+      'Los clientes CLI pueden omitir Origin, pero no la cabecera. Swagger la agrega automáticamente. ' +
+      'Solo se exceptúan los webhooks de MercadoPago/Instagram y los POST públicos de reserva por token.',
     '',
     '## Códigos de error',
     '- `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_JSON` (400); `UNAUTHORIZED` (401); `FORBIDDEN`, `REGISTER_KEY_REQUIRED` (403); `NOT_FOUND`, `MP_NOT_CONNECTED` (404).',
@@ -1846,6 +1988,7 @@ export const openApiDocument = {
     },
   ],
   tags: [
+    { name: 'Notificaciones', description: 'Destinatarios de avisos por email, aislados por hotel' },
     { name: 'Estado', description: 'Health check' },
     { name: 'Autenticación', description: 'Login de 2 pasos y sesión' },
     { name: 'Empresas', description: 'Hoteles (multi-tenant)' },

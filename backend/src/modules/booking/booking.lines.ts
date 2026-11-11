@@ -5,6 +5,9 @@ import { decToNum } from '../../lib/money.js';
 export interface BookingServiceLine {
   serviceId: number;
   name: string;
+  description?: string | null;
+  intervalDays?: number | null;
+  isExtraBed?: boolean;
   chargeType: string;
   quantity: number;
   personsCovered: number | null;
@@ -21,6 +24,9 @@ export function parseServiceLines(value: unknown): BookingServiceLine[] {
       {
         serviceId: Number(line.serviceId ?? 0),
         name: typeof line.name === 'string' ? line.name : '',
+        description: typeof line.description === 'string' ? line.description : null,
+        intervalDays: typeof line.intervalDays === 'number' && Number.isInteger(line.intervalDays) && line.intervalDays > 0 ? line.intervalDays : null,
+        ...(typeof line.isExtraBed === 'boolean' ? { isExtraBed: line.isExtraBed } : {}),
         chargeType: typeof line.chargeType === 'string' ? line.chargeType : 'PACK',
         quantity: Number(line.quantity ?? 0),
         personsCovered: line.personsCovered == null ? null : Number(line.personsCovered),

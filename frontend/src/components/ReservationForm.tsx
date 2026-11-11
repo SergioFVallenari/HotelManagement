@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
+import { guestContactSchema, validateContact } from '../lib/contactValidation';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
 import { DEMO_MODE } from '../demo/config';
-import type { Guest, PageMeta, PaymentMethod, Reservation, Room, Service } from '../api/types';
+import type { Discount, Guest, PageMeta, PaymentMethod, Reservation, Room, Service } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
+import { DiscountInput } from './DiscountInput';
 import { Modal } from './Modal';
 import { RoomSelection } from './RoomSelection';
+import { IndependentReservationFields } from './IndependentReservationFields';
+import { buildIndependentReservations, type IndependentReservationDetails } from '../lib/reservationBatch';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { PaginationBar } from './pagination';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME, PAYMENT_METHODS } from '../lib/format';
+import { discountPreview, serviceQuantity } from '../lib/pricing';
+import { serviceQuantityLabel } from '../lib/services';
 
 const SUGGESTED_DEPOSIT_RATE = 0.15;
 const DEPOSIT_METHODS: PaymentMethod[] = DEMO_MODE ? ['CASH', 'CARD', 'TRANSFER'] : ['CASH', 'CARD', 'TRANSFER', 'MERCADOPAGO'];
@@ -29,6 +36,9 @@ interface GuestSelection {
 }
 
 export function ReservationForm({ open, onClose, onCreated, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
+  const canDiscount = user?.role === 'ADMIN' || user?.role === 'OWNER';
+  const [discount, setDiscount] = useState<Discount | null>(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -38,7 +48,9 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   const persons = selectedRooms.reduce((sum, line) => sum + line.persons, 0);
   const extraBeds = selectedRooms.reduce((sum, line) => sum + line.extraBeds, 0);
 
-  const [guestMode, setGuestMode] = useState<'existing' | 'new'>('new');
+  const [guestMode, setGuestMode] = useState<'existing' | 'new' | 'generic'>('new');
+  const [independent, setIndependent] = useState(false);
+  const [independentDetails, setIndependentDetails] = useState<Record<number, IndependentReservationDetails>>({});
   const [guestSearch, setGuestSearch] = useState('');
   const [guestResults, setGuestResults] = useState<GuestSelection[]>([]);
   const [guestSearched, setGuestSearched] = useState(false);
@@ -58,15 +70,15 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
 
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    api<{ data: Service[] }>('/services')
+    const controller = new AbortController();
+    api<{ data: Service[] }>('/services', { signal: controller.signal })
       .then((servicesResult) => {
-        if (!alive) return;
+        if (controller.signal.aborted) return;
         setServicesList(servicesResult.data.filter((s) => s.isActive));
       })
-      .catch((err) => onError(err));
+      .catch((err) => { if (!controller.signal.aborted) onError(err); });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [open]);
 
@@ -82,6 +94,8 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   }, [open]);
 
   function resetFormFields() {
+    setIndependent(false);
+    setIndependentDetails({});
     setCheckIn('');
     setCheckOut('');
     setGuestSearch('');
@@ -89,6 +103,7 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
     setGuestSearched(false);
     setNewGuest({ firstName: '', lastName: '', phone: '', email: '' });
     setNotes('');
+    setDiscount(null);
     setPaymentLink(false);
     setDepositMode('none');
     setDepositAmount('');
@@ -145,22 +160,14 @@ export function ReservationForm({ open, onClose, onCreated, onError, error, onDi
   }
 
   function maxPersons(): number {
-    return Math.max(1, persons + extraBeds);
+    return Math.max(1, persons);
   }
 
   function autoQuantity(
     service: Service,
     item?: { quantity: number; personsCovered?: number | null },
   ): number {
-    switch (service.chargeType) {
-      case 'PER_PERSON':
-        return (item?.personsCovered ?? maxPersons()) * nights();
-      case 'PER_DAY':
-        if (service.isExtraBed) return extraBeds > 0 ? extraBeds * nights() : nights();
-        return nights();
-      case 'PACK':
-        return item?.quantity ?? 1;
-    }
+    return serviceQuantity(service.chargeType, { persons, extraBeds, nights: nights(), roomCount: selectedRooms.length }, service.chargeType === 'PACK' ? item?.quantity : service.chargeType === 'PER_PERSON' ? item?.personsCovered ?? maxPersons() : undefined, service.isExtraBed, service.intervalDays);
   }
 
 useEffect(() => {
@@ -176,7 +183,7 @@ useEffect(() => {
     }),
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [checkIn, checkOut, persons, extraBeds]);
+}, [checkIn, checkOut, persons, extraBeds, selectedRooms.length]);
 
 function setPersonsCovered(serviceId: number, personsCovered: number | null) {
   setServices((prev) =>
@@ -216,10 +223,15 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
     });
   }
 
-  function estimateTotal(): number {
+  function estimateSubtotal(): number {
     if (!selectedRoom) return 0;
     const servicesTotal = services.reduce((acc, s) => acc + s.quantity * s.service.price, 0);
     return round2(selectedRoomsTotal(selectedRooms, nights()) + servicesTotal);
+  }
+
+  function estimateTotal(): number {
+    const subtotal = estimateSubtotal();
+    return round2(subtotal - discountPreview(subtotal, canDiscount ? discount : null));
   }
 
   function suggestedDeposit(): number {
@@ -248,6 +260,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     if (!selectedRoom) {
       onError(new Error('Seleccioná una habitación disponible'));
       return;
@@ -258,6 +271,20 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
     }
     if (selectedRooms.some((line) => line.extraBeds > 0 && line.persons < line.room.capacity)) {
       onError(new Error('Las camas extras solo pueden cargarse cuando la habitación está llena'));
+      return;
+    }
+    if (independent) {
+      setSaving(true);
+      try {
+        const reservations = buildIndependentReservations(selectedRooms, checkIn, checkOut, independentDetails, servicesList.find((item) => item.isExtraBed));
+        const result = await api<{ data: Reservation[] }>('/reservations/batch', { method: 'POST', body: { reservations } });
+        onCreated(result.data[0]);
+        onClose();
+      } catch (err) {
+        onError(err);
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     const total = estimateTotal();
@@ -284,11 +311,12 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
         persons,
         extraBeds,
         notes: notes.trim() || null,
+        ...(canDiscount && discount ? { discount } : {}),
         ...(depositViaMp() ? {} : { generatePaymentLink: paymentLink }),
         ...(deposit > 0 ? { payment: { amount: deposit, method: depositMethod } } : {}),
         services: services.map((s) => ({
           serviceId: s.service.id,
-          quantity: s.quantity,
+          quantity: Math.max(1, s.quantity),
           ...(s.personsCovered !== undefined && s.personsCovered !== null ? { personsCovered: s.personsCovered } : {}),
         })),
       };
@@ -299,17 +327,18 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
           return;
         }
         body.guestId = selectedGuest.id;
+      } else if (guestMode === 'generic') {
+        body.genericGuest = true;
       } else {
-        if (!newGuest.firstName || !newGuest.lastName || !newGuest.phone || !newGuest.email) {
-          onError(new Error('Completá nombre, apellido, teléfono y email del huésped'));
+        if (!newGuest.firstName.trim() || !newGuest.lastName.trim()) {
+          onError(new Error('Completá nombre y apellido del huésped'));
           setSaving(false);
           return;
         }
         body.guest = {
           firstName: newGuest.firstName.trim(),
           lastName: newGuest.lastName.trim(),
-          phone: newGuest.phone.trim(),
-          email: newGuest.email.trim(),
+          ...validateContact(guestContactSchema, newGuest),
         };
       }
 
@@ -326,8 +355,17 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
   if (!open) return null;
 
   return (
-    <Modal open={open} title="Nueva reserva" onClose={onClose} error={error} onDismissError={onDismissError} wide>
+    <Modal open={open} title={independent ? 'Nuevas reservas independientes' : 'Nueva reserva'} onClose={onClose} error={error} onDismissError={onDismissError} preventClose={saving} wide>
       <form onSubmit={handleSubmit}>
+        <fieldset disabled={saving}>
+        <div className="mb-4">
+          <label className="form-label" htmlFor="reservation-create-mode">Tipo de carga</label>
+          <select id="reservation-create-mode" className="form-select" value={independent ? 'independent' : 'group'} onChange={(e) => setIndependent(e.target.value === 'independent')}>
+            <option value="group">Una reserva · uno o varios alojamientos para el mismo huésped</option>
+            <option value="independent">Varias reservas · una por habitación, para huéspedes distintos</option>
+          </select>
+          {independent && <p className="form-text mb-0">Ideal para gente de paso: elegí las fechas una sola vez y marcá los dormis. Se guardan todas juntas; si alguna habitación ya se ocupó, no se crea ninguna.</p>}
+        </div>
         <div className="form-section">
           <h3 className="section-title">1 · Fechas y habitaciones</h3>
           <div className="filter-row">
@@ -343,13 +381,14 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
               {searchingRooms ? 'Buscando…' : 'Buscar disponibles'}
             </button>
           </div>
-          {rooms.length > 0 && <RoomSelection rooms={rooms} value={selectedRooms} onChange={changeRooms} />}
+          {rooms.length > 0 && <RoomSelection rooms={rooms} value={selectedRooms} onChange={changeRooms} independent={independent} />}
           {rooms.length === 0 && <p className="text-secondary mt-2 mb-0">Buscá habitaciones disponibles para el rango elegido.</p>}
           <p className="text-secondary small mb-0">
             Horario: check-in desde las {CHECK_IN_TIME} · check-out hasta las {CHECK_OUT_TIME} (noche a partir de la fecha de check-in).
           </p>
         </div>
 
+        {independent ? <IndependentReservationFields rooms={selectedRooms} nights={nights()} details={independentDetails} onChange={(roomId, value) => setIndependentDetails((previous) => ({ ...previous, [roomId]: value }))} extraBedService={servicesList.find((item) => item.isExtraBed)} /> : <>
         <div className="form-section">
           <h3 className="section-title">2 · Huésped</h3>
           <div className="toggle-row">
@@ -358,6 +397,9 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
             </button>
             <button type="button" className={`btn btn-sm ${guestMode === 'existing' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setGuestMode('existing')}>
               Huésped existente
+            </button>
+            <button type="button" className={`btn btn-sm ${guestMode === 'generic' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setGuestMode('generic')}>
+              Sin datos del huésped
             </button>
           </div>
 
@@ -372,15 +414,15 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                 <input className="form-control" value={newGuest.lastName} onChange={(e) => setNewGuest({ ...newGuest, lastName: e.target.value })} required />
               </div>
               <div className="col-sm-6">
-                <label className="form-label">Teléfono *</label>
-                <input className="form-control" value={newGuest.phone} onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })} required />
+                <label className="form-label">Teléfono (opcional)</label>
+                <input type="tel" className="form-control" minLength={3} maxLength={30} value={newGuest.phone} onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })} />
               </div>
               <div className="col-sm-6">
-                <label className="form-label">Email *</label>
-                <input type="email" className="form-control" value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} required />
+                <label className="form-label">Email (opcional)</label>
+                <input type="email" className="form-control" maxLength={200} value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} />
               </div>
             </div>
-          ) : (
+          ) : guestMode === 'generic' ? <p className="small text-secondary mb-0">Se crea una ficha propia como «Huésped genérico». Podés completar los datos después sin modificar otras reservas.</p> : (
             <div>
               <div className="filter-row">
                 <input
@@ -447,6 +489,7 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                           {service.name} <span className="text-secondary small">({money(service.price)})</span>
                         </label>
                       </div>
+                      {service.description && <div className="small text-secondary text-break mt-1" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}
                       {selected && (
                         <div className="d-flex align-items-center gap-2 mt-2 flex-wrap">
                           {service.chargeType === 'PACK' ? (
@@ -488,7 +531,9 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
                           ) : (
                             <span className="text-secondary small">
                               {selected.quantity} unidades ={' '}
-                              {service.isExtraBed
+                              {service.chargeType === 'PER_ROOM_INTERVAL'
+                                ? serviceQuantityLabel({ ...service, quantity: selected.quantity }, { persons, nights: nights() }, selectedRooms.length)
+                                : service.isExtraBed
                                 ? `${Math.max(1, extraBeds)} cama(s) extra(s) × ${nights()} noche(s)`
                                 : `${nights()} noche(s)`}{' '}
                               · {CHARGE_TYPES[service.chargeType]}
@@ -510,7 +555,12 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
             <p className="text-secondary mb-0">Elegí una habitación para ver el total y cobrar un anticipo.</p>
           ) : (
             <>
+              {canDiscount && <DiscountInput value={discount} subtotal={estimateSubtotal()} onChange={setDiscount} />}
               <div className="totals-box">
+                {canDiscount && discount && <>
+                  <div><span>Subtotal</span><strong>{money(estimateSubtotal())}</strong></div>
+                  <div><span>Descuento{discount.type === 'PERCENTAGE' ? ` (${discount.value}%)` : ''}</span><strong className="text-success">−{money(discountPreview(estimateSubtotal(), discount))}</strong></div>
+                </>}
                 <div>
                   <span>Total de la reserva</span>
                   <strong>{money(estimateTotal())}</strong>
@@ -654,15 +704,17 @@ function setPersonsCovered(serviceId: number, personsCovered: number | null) {
           <label className="form-label">Notas del huésped</label>
           <textarea className="form-control" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" />
         </div>
+        </>}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Reservando…' : 'Confirmar reserva'}
+          <button type="submit" className="btn btn-primary" disabled={saving || (independent && (selectedRooms.length === 0 || selectedRooms.length > 50))}>
+            {saving ? 'Reservando…' : independent ? `Crear ${selectedRooms.length} ${selectedRooms.length === 1 ? 'reserva' : 'reservas'}` : 'Confirmar reserva'}
           </button>
         </div>
+        </fieldset>
       </form>
     </Modal>
   );

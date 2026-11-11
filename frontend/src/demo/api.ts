@@ -1,7 +1,7 @@
-import type { BookingLink, CalendarData, CompanySettings, Guest, PaymentMethod, Reservation, ReservationStatus, Room, Service, Summary } from '../api/types.ts';
+import type { BookingLink, CalendarData, CompanySettings, Discount, Guest, PaymentMethod, Reservation, ReservationStatus, Room, Service, Summary } from '../api/types.ts';
 import { BOOKING_THEME_FIELDS, bookingThemeFromConfig, DEFAULT_BOOKING_THEME } from '../lib/bookingTheme.ts';
 import { round2 } from '../lib/format.ts';
-import { computeBookingDeposit } from '../lib/pricing.ts';
+import { computeBookingDeposit, discountPreview, serviceQuantity } from '../lib/pricing.ts';
 import { createDemoData, dayRange, demoUser, shiftDay, updateTotals, type DemoData } from './data.ts';
 
 export class DemoApiError extends Error {
@@ -20,6 +20,16 @@ const active = (reservation: Reservation) => reservation.status !== 'CANCELLED' 
 const overlaps = (reservation: Reservation, from: string, to: string) => reservation.checkIn < to && reservation.checkOut > from;
 const nextId = (rows: { id: number }[]) => Math.max(0, ...rows.map((row) => row.id)) + 1;
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+function guestData(input: Input) {
+  const firstName = text(input.firstName);
+  const lastName = text(input.lastName);
+  const email = text(input.email) || null;
+  const phone = text(input.phone) || null;
+  if (!firstName || !lastName) throw new DemoApiError('Completá nombre y apellido del huésped.');
+  if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200)) throw new DemoApiError('Indicá un email válido o dejalo vacío.');
+  if (phone && (phone.length < 3 || phone.length > 30)) throw new DemoApiError('Indicá un teléfono válido o dejalo vacío.');
+  return { firstName, lastName, email, phone };
+}
 const usesRoom = (reservation: Reservation, roomId: number) => reservation.roomId === roomId || reservation.rooms?.some((line) => line.roomId === roomId);
 
 function requireRow<T extends { id: number }>(rows: T[], id: number): T {
@@ -135,12 +145,18 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
     const lines = ((input.services ?? []) as Input[]).map((line, index) => {
       const service = requireRow(store.services, Number(line.serviceId));
       if (!service.isActive) throw new DemoApiError('El servicio está inactivo.');
-      const quantity = positive(line.quantity, 'La cantidad del servicio');
-      return { id: index + 1, serviceId: service.id, name: service.name, chargeType: service.chargeType, isExtraBed: service.isExtraBed, personsCovered: line.personsCovered == null ? null : Number(line.personsCovered), quantity, unitPrice: service.price, lineTotal: round2(quantity * service.price) };
+      const quantity = service.chargeType === 'PER_ROOM_INTERVAL'
+        ? serviceQuantity(service.chargeType, { persons: stay.persons, extraBeds: stay.extraBeds, nights: stay.nights, roomCount: stay.rooms.length }, undefined, false, service.intervalDays)
+        : positive(line.quantity, 'La cantidad del servicio');
+      return { id: index + 1, serviceId: service.id, name: service.name, description: service.description ?? null, intervalDays: service.intervalDays ?? null, chargeType: service.chargeType, isExtraBed: service.isExtraBed, personsCovered: line.personsCovered == null ? null : Number(line.personsCovered), quantity, unitPrice: service.price, lineTotal: round2(quantity * service.price) };
     });
     const roomTotal = round2(stay.rooms.reduce((sum, line) => sum + line.total, 0));
     const servicesTotal = round2(lines.reduce((sum, line) => sum + line.lineTotal, 0));
-    return { ...stay, lines, roomTotal, servicesTotal, total: round2(roomTotal + servicesTotal) };
+    const subtotal = round2(roomTotal + servicesTotal);
+    const discount = input.discount as Discount | undefined;
+    if (discount && (!['PERCENTAGE', 'FIXED'].includes(discount.type) || !Number.isFinite(discount.value) || discount.value < 0 || discount.value > (discount.type === 'PERCENTAGE' ? 100 : subtotal))) throw new DemoApiError('El descuento no es válido.');
+    const discountAmount = discountPreview(subtotal, discount);
+    return { ...stay, lines, roomTotal, servicesTotal, subtotal, discount: discount ?? null, discountAmount, total: round2(subtotal - discountAmount) };
   }
 
   function addPayment(reservation: Reservation, input: Input) {
@@ -161,25 +177,33 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       throw new DemoApiError('MercadoPago está deshabilitado en la demo. Usá efectivo, tarjeta o transferencia simulados.', 403, 'DEMO_EXTERNAL_DISABLED');
     }
     if (frozen) validateStay(input);
-    const { checkIn, checkOut, room, rooms, persons, extraBeds, nights, lines, roomTotal, servicesTotal, total } = frozen ?? quoteStay(input);
+    const { checkIn, checkOut, room, rooms, persons, extraBeds, nights, lines, roomTotal, servicesTotal, subtotal, discount, discountAmount, total } = frozen ?? quoteStay(input);
     const payment = input.payment as Input | undefined;
     if (payment && (round2(positive(payment.amount, 'El anticipo')) <= 0 || round2(Number(payment.amount)) > total || !['CASH', 'CARD', 'TRANSFER'].includes(text(payment.method)))) throw new DemoApiError('El anticipo o el método de pago no es válido.');
     let guest: Guest;
     if (input.guestId) guest = requireRow(store.guests, Number(input.guestId));
     else {
-      const draft = input.guest as Input | undefined;
-      if (!draft || !text(draft.firstName) || !text(draft.lastName) || !text(draft.phone) || !text(draft.email)) throw new DemoApiError('Completá los datos del huésped.');
-      guest = { id: nextId(store.guests), firstName: text(draft.firstName), lastName: text(draft.lastName), phone: text(draft.phone), email: text(draft.email) };
-      store.guests.push(guest);
+      const draft = input.genericGuest === true ? { firstName: 'Huésped', lastName: 'genérico' } : input.guest as Input | undefined;
+      if (!draft) throw new DemoApiError('Completá nombre y apellido del huésped.');
+      const data = guestData(draft);
+      const existing = data.email ? store.guests.find((g) => g.email === data.email) : undefined;
+      if (existing) {
+        Object.assign(existing, { firstName: data.firstName, lastName: data.lastName, ...(data.phone ? { phone: data.phone } : {}) });
+        guest = existing;
+      } else {
+        guest = { id: nextId(store.guests), ...data };
+        store.guests.push(guest);
+      }
     }
     const id = nextId(store.reservations);
     const reservation: Reservation & { createdAt: string } = {
       id, code: `RSV-DEMO${String(id).padStart(4, '0')}`, roomId: room.id, guestId: guest.id,
+      totalAmount: total, discount, depositRequired: payment ? round2(Number(payment.amount)) : computeBookingDeposit(total, company.bookingDepositPercent),
       checkIn, checkOut, persons, extraBeds, status: 'PENDING', source: 'STAFF', checkedInAt: null, checkedOutAt: null,
       cancelledAt: null, refundEligible: false, refundAmount: null, refunded: false, refundedAt: null,
       notes: text(input.notes) || null, room: structuredClone(room), rooms: structuredClone(rooms), guest, services: structuredClone(lines), payments: [],
       createdAt: `${today}T15:00:00Z`,
-      totals: { nights, roomPrice: room.price, roomTotal, servicesTotal, total, amountPaid: 0, balance: total },
+      totals: { nights, roomPrice: room.price, roomTotal, servicesTotal, subtotal, discountAmount, total, amountPaid: 0, balance: total },
     };
     if (payment) addPayment(reservation, payment);
     store.reservations.push(reservation);
@@ -214,10 +238,14 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
         }
         if ('configPage' in input) {
           const config = input.configPage as Input;
-          if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some((key) => !['bookingTheme', 'maxAvailabilityPersons'].includes(key))) throw new DemoApiError('La configuración de la página no es válida.');
+          if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some((key) => !['bookingTheme', 'maxAvailabilityPersons', 'slogan'].includes(key))) throw new DemoApiError('La configuración de la página no es válida.');
+          if ('slogan' in config) {
+            if (typeof config.slogan !== 'string' || config.slogan.trim().length > 120) throw new DemoApiError('El eslogan debe tener hasta 120 caracteres.');
+            updated.configPage.slogan = config.slogan.trim();
+          }
           if ('bookingTheme' in config) {
             const theme = config.bookingTheme as Input;
-            if (!theme || typeof theme !== 'object' || BOOKING_THEME_FIELDS.some(({ key }) => typeof theme[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(theme[key] as string))) throw new DemoApiError('Usá colores en formato hexadecimal #RRGGBB.');
+            if (!theme || typeof theme !== 'object' || BOOKING_THEME_FIELDS.some(({ key }) => (key !== 'backgroundTop' && key !== 'headerSurface' || theme[key] !== undefined) && (typeof theme[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(theme[key] as string)))) throw new DemoApiError('Usá colores en formato hexadecimal #RRGGBB.');
             updated.configPage.bookingTheme = bookingThemeFromConfig({ bookingTheme: theme });
           }
           if ('maxAvailabilityPersons' in config) {
@@ -230,7 +258,7 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       }
       return { data: { ...company, hotelCapacity, maxAvailabilityPersons: Math.min(company.configPage.maxAvailabilityPersons ?? hotelCapacity, hotelCapacity) } };
     }
-    if (method === 'GET' && pathname === '/booking-links') return { data: links.filter((link) => !query.get('status') || link.status === query.get('status')).toReversed() };
+    if (method === 'GET' && pathname === '/booking-links') return page(links.filter((link) => !query.get('status') || link.status === query.get('status')).toReversed(), query);
     if (method === 'POST' && pathname === '/booking-links') {
       const offer = structuredClone(quoteStay(input));
       const deposit = input.deposit === undefined ? computeBookingDeposit(offer.total, company.bookingDepositPercent) : round2(Number(input.deposit));
@@ -242,11 +270,11 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       const url = `/reserva/${token}`;
       const link: BookingLink = {
         id, token, url, status: 'OPEN', checkIn: offer.checkIn, checkOut: offer.checkOut, nights: offer.nights,
-        persons: offer.persons, extraBeds: offer.extraBeds,
+        persons: offer.persons, extraBeds: offer.extraBeds, discount: offer.discount,
         rooms: offer.rooms.map((line) => ({ roomId: line.roomId, persons: line.persons, extraBeds: line.extraBeds, roomPrice: line.roomPrice, roomPricingMode: line.roomPricingMode, number: line.room.number, typeName: line.room.type?.name ?? 'Habitación', capacity: line.room.capacity })),
         room: { ...offer.room, typeName: offer.room.type?.name ?? null, label: `${offer.room.number} · ${offer.room.type?.name ?? ''}` },
         services: offer.lines.map((line) => ({ ...line, name: line.name ?? '', chargeType: line.chargeType! })),
-        totals: { roomTotal: offer.roomTotal, servicesTotal: offer.servicesTotal, total: offer.total, deposit, balance: round2(offer.total - deposit) },
+        totals: { roomTotal: offer.roomTotal, servicesTotal: offer.servicesTotal, subtotal: offer.subtotal, discountAmount: offer.discountAmount, total: offer.total, deposit, balance: round2(offer.total - deposit) },
         expiresAt: `${shiftDay(today, days)}T23:59:59Z`, createdAt: `${today}T15:00:00Z`, completedAt: null, reservation: null,
         share: { message: `¡Hola! Te compartimos tu estadía en ${hotel.name}: ${offer.checkIn} al ${offer.checkOut}. Total: $${offer.total}. Anticipo: $${deposit}. Completá tus datos en ${url}. Mensaje de demostración: no transferir dinero.`, whatsappUrl: '' },
       };
@@ -269,12 +297,14 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       const expired = !!link.expiresAt && link.expiresAt.slice(0, 10) < today;
       if (method === 'GET') return { data: {
         hotel, stay: { checkIn: link.checkIn, checkOut: link.checkOut, nights: link.nights, persons: link.persons, extraBeds: link.extraBeds, roomType: link.room?.typeName ?? 'Habitación', roomCapacity: link.room?.capacity, roomPricingMode: link.room?.pricingMode, rooms: offers.get(link.id)!.rooms.map((line) => ({ roomType: line.room.type?.name ?? 'Habitación', capacity: line.room.capacity, persons: line.persons, extraBeds: line.extraBeds, total: line.total })) },
-        services: link.services, totals: link.totals, expiresAt: link.expiresAt, expired,
+        services: link.services, discount: link.discount, totals: link.totals, expiresAt: link.expiresAt, expired,
       } };
       if (expired) throw new DemoApiError('La solicitud venció.', 409, 'LINK_EXPIRED');
       if (link.totals.deposit > 0 && input.receiptPath !== 'demo-comprobante') throw new DemoApiError('Usá el comprobante ficticio de la demo.');
       const reservation = createReservation({ roomId: link.room!.id, rooms: link.rooms, checkIn: link.checkIn, checkOut: link.checkOut, persons: link.persons, extraBeds: link.extraBeds, guest: input, notes: input.notes }, offers.get(link.id)).data;
       reservation.source = 'PUBLIC_LINK';
+      reservation.totalAmount = link.totals.total;
+      reservation.depositRequired = link.totals.deposit;
       reservation.bookingLink = { id: link.id, token: link.token, status: 'COMPLETED', deposit: link.totals.deposit, expiresAt: link.expiresAt };
       if (link.totals.deposit > 0) reservation.receipt = { id: reservation.id, fileName: 'comprobante-demo.svg', mimeType: 'image/svg+xml', size: 600, externalRef: text(input.externalRef) || 'DEMO-SIN-VALOR', createdAt: `${today}T15:00:00Z` };
       link.status = 'COMPLETED';
@@ -313,15 +343,19 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
         saved = { id: rowId, number, name: name || null, typeId: type.id, type, capacity, maxExtraBeds, price: round2(price), pricingMode: values.pricingMode, amenities: values.amenities, isActive: values.isActive !== false } as Room;
       } else if (kind === 'services') {
         const price = Number(values.price);
-        if (!name || !Number.isFinite(price) || price < 0 || !['PER_PERSON', 'PER_DAY', 'PACK'].includes(text(values.chargeType))) throw new DemoApiError('Completá los datos válidos del servicio.');
-        saved = { id: rowId, name, price: round2(price), chargeType: values.chargeType, isExtraBed: values.isExtraBed === true, isActive: values.isActive !== false } as Service;
+        const description = text(values.description) || null;
+        const intervalDays = values.intervalDays == null ? null : Number(values.intervalDays);
+        if (!name || !Number.isFinite(price) || price < 0 || !['PER_PERSON', 'PER_DAY', 'PACK', 'PER_ROOM_INTERVAL'].includes(text(values.chargeType)) || (description && description.length > 1000)) throw new DemoApiError('Completá los datos válidos del servicio.');
+        if (values.chargeType === 'PER_ROOM_INTERVAL' ? !Number.isInteger(intervalDays) || intervalDays! < 1 || intervalDays! > 365 || values.isExtraBed === true : intervalDays !== null) throw new DemoApiError('La frecuencia del servicio no es válida.');
+        saved = { id: rowId, name, description, intervalDays, price: round2(price), chargeType: values.chargeType, isExtraBed: values.isExtraBed === true, isActive: values.isActive !== false } as Service;
       } else if (kind === 'room-types') {
         if (!name) throw new DemoApiError('Indicá el nombre del tipo de habitación.');
         if (store.roomTypes.some((t) => t.id !== rowId && t.name.toLowerCase() === name.toLowerCase())) throw new DemoApiError('Ya existe ese tipo de habitación.', 409);
         saved = { id: rowId, name } as typeof store.roomTypes[number];
       } else {
-        if (!text(values.firstName) || !text(values.lastName) || !text(values.phone) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values.email))) throw new DemoApiError('Completá los datos y un email válido del huésped.');
-        saved = { id: rowId, firstName: text(values.firstName), lastName: text(values.lastName), phone: text(values.phone), email: text(values.email) } as Guest;
+        const data = guestData(values);
+        if (data.email && store.guests.some((g) => g.id !== rowId && g.email === data.email)) throw new DemoApiError('Ese email ya pertenece a otro huésped.', 409);
+        saved = { id: rowId, ...data } as Guest;
       }
       if (existing) Object.assign(existing, saved);
       else (rows as { id: number }[]).push(saved);
@@ -348,6 +382,19 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
       }).sort((a, b) => b.id - a.id);
       return page(rows, query);
     }
+    if (method === 'POST' && pathname === '/reservations/batch') {
+      const items = input.reservations as Input[];
+      if (!Array.isArray(items) || !items.length || items.length > 50) throw new DemoApiError('Indicá entre 1 y 50 reservas.');
+      const snapshot = structuredClone(store);
+      const previousPaymentId = paymentId;
+      try {
+        return { data: items.map((item) => createReservation(item).data) };
+      } catch (err) {
+        Object.assign(store, snapshot);
+        paymentId = previousPaymentId;
+        throw err;
+      }
+    }
     if (method === 'POST' && pathname === '/reservations') return createReservation(input);
     const reservationMatch = pathname.match(/^\/reservations\/(\d+)(?:\/(.+))?$/);
     if (reservationMatch) {
@@ -362,7 +409,7 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
         if (reservation.source !== 'PUBLIC_LINK' || reservation.status !== 'PENDING') throw new DemoApiError('La solicitud ya no está pendiente de verificación.', 409, 'INVALID_STATE');
         if (action === 'approve') {
           reservation.status = 'RESERVED';
-          const deposit = reservation.bookingLink?.deposit ?? 0;
+          const deposit = reservation.depositRequired;
           if (deposit > 0) addPayment(reservation, { amount: deposit, method: 'TRANSFER', reference: `FORM-${reservation.bookingLink!.token}` });
         } else {
           reservation.status = 'CANCELLED';
@@ -404,7 +451,7 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
     if (method === 'GET' && pathname === '/services') return { data: store.services };
     if (method === 'GET' && pathname === '/guests') {
       const search = (query.get('q') ?? '').toLowerCase();
-      return page(store.guests.filter((g) => `${g.firstName} ${g.lastName} ${g.email} ${g.phone}`.toLowerCase().includes(search)).map((g) => ({ ...g, _count: { reservations: store.reservations.filter((r) => r.guestId === g.id).length } })), query);
+      return page(store.guests.filter((g) => `${g.firstName} ${g.lastName} ${g.email ?? ''} ${g.phone ?? ''}`.toLowerCase().includes(search)).map((g) => ({ ...g, _count: { reservations: store.reservations.filter((r) => r.guestId === g.id).length } })), query);
     }
     const guestMatch = pathname.match(/^\/guests\/(\d+)$/);
     if (method === 'GET' && guestMatch) {

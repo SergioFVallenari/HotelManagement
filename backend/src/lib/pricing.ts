@@ -11,6 +11,7 @@ export interface StayContext {
   persons: number;
   extraBeds: number;
   nights: number;
+  roomCount?: number;
 }
 
 export interface QuoteService {
@@ -36,8 +37,11 @@ export function serviceQuantity(
   ctx: StayContext,
   requested?: number,
   isExtraBed = false,
+  intervalDays?: number | null,
 ): number {
   switch (chargeType) {
+    case 'PER_ROOM_INTERVAL':
+      return intervalServiceOccurrences(ctx.nights, intervalDays) * (ctx.roomCount ?? 1);
     case 'PER_PERSON':
       return (requested ?? (ctx.persons + ctx.extraBeds)) * ctx.nights;
     case 'PER_DAY':
@@ -46,6 +50,11 @@ export function serviceQuantity(
     case 'PACK':
       return requested ?? 1;
   }
+}
+
+export function intervalServiceOccurrences(nights: number, intervalDays?: number | null): number {
+  if (!intervalDays || intervalDays < 1) return 0;
+  return Math.max(0, Math.floor((nights - 1) / intervalDays));
 }
 
 // Total de la estadia: noches por precio de la habitacion mas los servicios.

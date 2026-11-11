@@ -2,6 +2,8 @@ import type { AiAvailabilityDay, AiDayLabel } from './ai.availability.js';
 
 export interface AiServiceInfo {
   name: string;
+  description?: string | null;
+  intervalDays?: number | null;
   price: number;
   chargeType: string;
 }
@@ -31,6 +33,7 @@ const CHARGE_TYPE_LABELS: Record<string, string> = {
   PER_PERSON: 'por persona/noche',
   PER_DAY: 'por día',
   PACK: 'por unidad',
+  PER_ROOM_INTERVAL: 'por habitación e intervención',
 };
 
 export function buildSystemPrompt(input: {
@@ -64,7 +67,8 @@ export function buildSystemPrompt(input: {
     lines.push('', 'Servicios del hotel y precios conocidos (en pesos argentinos):');
     for (const service of input.services) {
       const label = CHARGE_TYPE_LABELS[service.chargeType] ?? service.chargeType;
-      lines.push(`- ${service.name}: $${service.price} ${label}`);
+      const frequency = service.chargeType === 'PER_ROOM_INTERVAL' ? `, cada ${service.intervalDays} días durante la estadía, sin incluir el día de salida` : '';
+      lines.push(`- ${service.name}: $${service.price} ${label}${frequency}${service.description ? `. Incluye: ${service.description}` : ''}`);
     }
   }
   if (input.rooms.length > 0) {

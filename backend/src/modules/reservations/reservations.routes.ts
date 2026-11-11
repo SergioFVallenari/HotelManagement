@@ -1,11 +1,13 @@
 import { Router } from 'express';
-import { requireAuth } from '../../middleware/auth.js';
+import { requireAuth, requireOwnerOrAdmin } from '../../middleware/auth.js';
 import {
   approveReservationHandler,
   cancelReservation,
   checkIn,
   checkOut,
   createReservationHandler,
+  createReservationBatchHandler,
+  deleteReservationHandler,
   getReceiptHandler,
   getReservationHandler,
   listReservations,
@@ -22,7 +24,9 @@ router.use(requireAuth);
 
 router.get('/', listReservations);
 router.post('/', createReservationHandler);
+router.post('/batch', createReservationBatchHandler);
 router.get('/:id', getReservationHandler);
+router.delete('/:id', requireOwnerOrAdmin, deleteReservationHandler);
 router.patch('/:id', updateReservationHandler);
 router.post('/:id/check-in', checkIn);
 router.post('/:id/check-out', checkOut);

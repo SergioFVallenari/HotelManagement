@@ -1,5 +1,6 @@
 import type { Guest, Reservation, Room, RoomType, Service, User } from '../api/types.ts';
 import { round2 } from '../lib/format.ts';
+import { computeBookingDeposit } from '../lib/pricing.ts';
 
 export const demoUser: User = {
   id: 1, username: 'demo', role: 'OWNER', name: 'Recepción Demo',
@@ -63,6 +64,7 @@ export function createDemoData(today: string) {
       const total = room.price * nights;
       const reservation: Reservation & { createdAt: string } = {
         id, code: `RSV-DEMO${String(id).padStart(4, '0')}`, roomId: room.id, guestId: guest.id,
+        totalAmount: total, depositRequired: computeBookingDeposit(total, 20),
         checkIn, checkOut, persons: room.capacity, extraBeds: 0, status, source: 'STAFF',
         checkedInAt: status === 'CHECKED_IN' || status === 'CHECKED_OUT' ? `${checkIn}T14:00:00Z` : null,
         checkedOutAt: status === 'CHECKED_OUT' ? `${checkOut}T13:00:00Z` : null,

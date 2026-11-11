@@ -68,7 +68,7 @@ export function RoomTypesPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Tipos de habitación</h1>
           <p className="text-secondary mb-0">{items.length} tipos configurados</p>
@@ -82,7 +82,6 @@ export function RoomTypesPage() {
 
       <DataTable<RoomType>
         columns={[
-          { header: 'ID', render: (i) => i.id },
           { header: 'Nombre', render: (i) => <strong>{i.name}</strong> },
           { header: 'Habitaciones', render: (i) => i._count?.rooms ?? 0 },
         ]}

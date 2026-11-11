@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { publicBookingContactSchema } from '../lib/contactValidation';
 import type { ChangeEvent, FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
@@ -66,21 +67,21 @@ export function PublicBookingPage() {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const controller = new AbortController();
     setLoading(true);
     setLoadError(null);
-    api<{ data: PublicBookingQuote }>(`/public/booking/${encodeURIComponent(token)}`)
+    api<{ data: PublicBookingQuote }>(`/public/booking/${encodeURIComponent(token)}`, { signal: controller.signal })
       .then((response) => {
-        if (alive) setQuote(response.data);
+        if (!controller.signal.aborted) setQuote(response.data);
       })
       .catch((err: ApiError) => {
-        if (alive) setLoadError(err.message);
+        if (!controller.signal.aborted) setLoadError(err.message);
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [token]);
 
@@ -108,6 +109,12 @@ export function PublicBookingPage() {
     event.preventDefault();
     if (!quote) return;
     setError(null);
+
+    const contactResult = publicBookingContactSchema.safeParse(form);
+    if (!contactResult.success) {
+      setError(contactResult.error.issues[0].message);
+      return;
+    }
 
     const needsReceipt = quote.totals.deposit > 0;
     if (needsReceipt && !(DEMO_MODE ? demoReceipt : receipt)) {
@@ -144,8 +151,7 @@ export function PublicBookingPage() {
         body: {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          phone: form.phone.trim(),
-          email: form.email.trim(),
+          ...contactResult.data,
           externalRef: form.externalRef.trim() || null,
           notes: form.notes.trim() || null,
           receiptPath: uploadedPath,
@@ -287,12 +293,18 @@ export function PublicBookingPage() {
                     <div key={`${line.name}-${index}`}>
                       <span>
                         {line.name} <span className="text-secondary small">× {line.quantity}</span>
+                        {line.description && <span className="d-block small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{line.description}</span>}
+                        {line.chargeType === 'PER_ROOM_INTERVAL' && <span className="d-block small text-secondary">Cada {line.intervalDays} día(s), por habitación, sin incluir el día de salida.</span>}
                       </span>
                       <strong>{money(line.lineTotal)}</strong>
                     </div>
                   ))}
                 </>
               )}
+              {(quote.totals.discountAmount ?? 0) > 0 && <div>
+                <span>Descuento{quote.discount?.type === 'PERCENTAGE' ? ` (${quote.discount.value}%)` : ''}</span>
+                <strong className="text-success">−{money(quote.totals.discountAmount)}</strong>
+              </div>}
               <div>
                 <span>Total de la estadía</span>
                 <strong>{money(quote.totals.total)}</strong>
@@ -377,7 +389,7 @@ export function PublicBookingPage() {
                 </div>
                 <div className="col-sm-6">
                   <label className="form-label" htmlFor="booking-email">
-                    Email *
+                    Email (opcional)
                   </label>
                   <input
                     id="booking-email"
@@ -386,8 +398,11 @@ export function PublicBookingPage() {
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     autoComplete="email"
-                    required
+                    aria-describedby="booking-email-help"
                   />
+                  <div id="booking-email-help" className="form-text">
+                    Te recomendamos ingresar tu email para recibir la confirmación de tu reserva.
+                  </div>
                 </div>
               </div>
 

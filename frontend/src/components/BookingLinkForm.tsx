@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, buildQuery } from '../api/client';
-import type { BookingLink, CompanySettings, Room, Service } from '../api/types';
+import type { BookingLink, CompanySettings, Discount, Room, Service } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
+import { DiscountInput } from './DiscountInput';
 import { Modal } from './Modal';
 import { RoomSelection } from './RoomSelection';
 import { selectedRoomsTotal, type SelectedRoom } from '../lib/reservationRooms';
 import { money, nightsCount, round2, clampAmount, CHARGE_TYPES, CHECK_IN_TIME, CHECK_OUT_TIME } from '../lib/format';
-import { computeBookingDeposit, serviceQuantity } from '../lib/pricing';
+import { computeBookingDeposit, discountPreview, serviceQuantity } from '../lib/pricing';
+import { serviceQuantityLabel } from '../lib/services';
 
 interface Props {
   open: boolean;
@@ -23,6 +26,9 @@ interface SelectedService {
 }
 
 export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDismissError }: Props) {
+  const { user } = useAuth();
+  const canDiscount = user?.role === 'ADMIN' || user?.role === 'OWNER';
+  const [discount, setDiscount] = useState<Discount | null>(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -40,21 +46,21 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
 
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    api<{ data: Service[] }>('/services')
+    const controller = new AbortController();
+    api<{ data: Service[] }>('/services', { signal: controller.signal })
       .then((result) => {
-        if (alive) setServicesList(result.data.filter((s) => s.isActive));
+        if (!controller.signal.aborted) setServicesList(result.data.filter((s) => s.isActive));
       })
-      .catch((err) => onError(err));
-    api<{ data: CompanySettings }>('/companies/current')
+      .catch((err) => { if (!controller.signal.aborted) onError(err); });
+    api<{ data: CompanySettings }>('/companies/current', { signal: controller.signal })
       .then((result) => {
-        if (alive) setDepositPercent(result.data.bookingDepositPercent);
+        if (!controller.signal.aborted) setDepositPercent(result.data.bookingDepositPercent);
       })
       .catch(() => {
         // sin configuracion se usa el 20% por defecto
       });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [open]);
 
@@ -66,23 +72,26 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
     setSelectedRooms([]);
     setServices([]);
     setDepositOverride('');
+    setDiscount(null);
     setExpiresInDays('15');
   }, [open]);
 
   const nights = checkIn && checkOut ? Math.max(1, nightsCount(checkIn, checkOut)) : 1;
-  const maxPersons = Math.max(1, persons + extraBeds);
+  const maxPersons = Math.max(1, persons);
 
   // Las cantidades se derivan en render: si cambian las fechas o las personas,
   // se recalculan solas y no hay estado duplicado que pueda quedar viejo.
   function quantityOf(service: Service, personsCovered: number | null): number {
     const requested = personsCovered === null ? null : Math.min(personsCovered, maxPersons);
-    return serviceQuantity(service.chargeType, { persons, extraBeds, nights }, requested, service.isExtraBed);
+    return serviceQuantity(service.chargeType, { persons, extraBeds, nights, roomCount: selectedRooms.length }, service.chargeType === 'PER_PERSON' ? requested ?? maxPersons : requested, service.isExtraBed, service.intervalDays);
   }
 
   const servicesTotal = round2(
     services.reduce((acc, item) => acc + quantityOf(item.service, item.personsCovered) * item.service.price, 0),
   );
-  const total = round2(selectedRoomsTotal(selectedRooms, nights) + servicesTotal);
+  const subtotal = round2(selectedRoomsTotal(selectedRooms, nights) + servicesTotal);
+  const discountAmount = discountPreview(subtotal, canDiscount ? discount : null);
+  const total = round2(subtotal - discountAmount);
   const suggestedDeposit = computeBookingDeposit(total, depositPercent);
 
   async function searchAvailable() {
@@ -126,7 +135,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
       return;
     }
     const deposit = depositOverride.trim() === '' ? undefined : clampAmount(Number(depositOverride), total);
-    if (deposit !== undefined && deposit <= 0) {
+    if (deposit !== undefined && deposit <= 0 && total > 0) {
       onError(new Error('Indicá un monto de anticipo válido o dejalo vacío para usar el porcentaje del hotel'));
       return;
     }
@@ -144,10 +153,11 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
           extraBeds,
           services: services.map((item) => ({
             serviceId: item.service.id,
-            quantity: quantityOf(item.service, item.personsCovered),
+            quantity: Math.max(1, quantityOf(item.service, item.personsCovered)),
             ...(item.personsCovered !== null ? { personsCovered: item.personsCovered } : {}),
           })),
           ...(deposit !== undefined ? { deposit } : {}),
+          ...(canDiscount && discount ? { discount } : {}),
           ...(Number.isInteger(days) && days > 0 ? { expiresInDays: days } : {}),
         },
       });
@@ -212,6 +222,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
                           {service.name} <span className="text-secondary small">({money(service.price)})</span>
                         </label>
                       </div>
+                      {service.description && <div className="small text-secondary text-break mt-1" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}
                       {selected && (
                         <div className="d-flex align-items-center gap-2 mt-2 flex-wrap">
                           {service.chargeType === 'PER_PERSON' ? (
@@ -241,7 +252,7 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
                             </>
                           ) : (
                             <span className="text-secondary small">
-                              {quantityOf(service, selected.personsCovered)} unidades · {CHARGE_TYPES[service.chargeType]}
+                              {quantityOf(service, selected.personsCovered)} unidades · {service.chargeType === 'PER_ROOM_INTERVAL' ? serviceQuantityLabel({ ...service, quantity: quantityOf(service, selected.personsCovered) }, { persons, nights }, selectedRooms.length) : CHARGE_TYPES[service.chargeType]}
                             </span>
                           )}
                         </div>
@@ -260,7 +271,12 @@ export function BookingLinkForm({ open, onClose, onCreated, onError, error, onDi
             <p className="text-secondary mb-0">Elegí una habitación para ver el total y el anticipo sugerido.</p>
           ) : (
             <>
+              {canDiscount && <DiscountInput value={discount} subtotal={subtotal} onChange={setDiscount} />}
               <div className="totals-box">
+                {canDiscount && discount && <>
+                  <div><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+                  <div><span>Descuento{discount.type === 'PERCENTAGE' ? ` (${discount.value}%)` : ''}</span><strong className="text-success">−{money(discountAmount)}</strong></div>
+                </>}
                 <div>
                   <span>Total de la estadía</span>
                   <strong>{money(total)}</strong>

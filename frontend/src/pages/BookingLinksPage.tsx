@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { FilterPanel } from '../components/FilterPanel';
 import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { BookingLink } from '../api/types';
+import type { BookingLink, Page } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DataTable } from '../components/DataTable';
+import { DATA_TABLE_PAGE_SIZE } from '../lib/pagination';
 import type { Column } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
@@ -20,7 +22,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
 };
 
 const FILTERS = [
-  { value: '', label: 'Todas' },
+  { value: '', label: 'Todas las solicitudes' },
   { value: 'OPEN', label: 'Esperando al huésped' },
   { value: 'COMPLETED', label: 'Enviadas' },
   { value: 'CANCELLED', label: 'Anuladas' },
@@ -28,7 +30,8 @@ const FILTERS = [
 
 export function BookingLinksPage() {
   const [status, setStatus] = useState('');
-  const { data, loading, error, reload } = useApi<{ data: BookingLink[] }>(`/booking-links${buildQuery({ status })}`);
+  const [page, setPage] = useState(1);
+  const { data, loading, error, reload } = useApi<Page<BookingLink>>(`/booking-links${buildQuery({ status, page, pageSize: DATA_TABLE_PAGE_SIZE })}`);
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<BookingLink | null>(null);
   const [cancelling, setCancelling] = useState<BookingLink | null>(null);
@@ -78,9 +81,9 @@ export function BookingLinksPage() {
       header: 'Estadía',
       render: (l) => (
         <>
-          {dateShort(l.checkIn)} → {dateShort(l.checkOut)}
+          <strong>{dateShort(l.checkIn)} → {dateShort(l.checkOut)}</strong>
           <span className="d-block text-secondary small">
-            {l.nights} noche(s) · {l.persons} pers.
+            {l.nights} noche(s) · {l.persons} persona(s)
             {l.extraBeds > 0 ? ` + ${l.extraBeds} cama(s)` : ''}
           </span>
         </>
@@ -96,7 +99,7 @@ export function BookingLinksPage() {
         return (
           <>
             <span className={`badge rounded-pill px-2 py-1 ${badge.cls}`}>{badge.label}</span>
-            {l.reservation && <span className="d-block small mt-1">{l.reservation.code}</span>}
+            {l.reservation && <span className="d-block small mt-1 text-secondary">{l.reservation.code}</span>}
           </>
         );
       },
@@ -104,10 +107,10 @@ export function BookingLinksPage() {
   ];
 
   return (
-    <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div className="booking-links-page">
+      <div className="page-header mb-4">
         <div>
-          <h1 className="h4 mb-1">Reservas por WhatsApp</h1>
+          <h1 className="mb-2">Reservas por WhatsApp</h1>
           <p className="text-secondary mb-0">
             Prepará la estadía y compartí el link: el huésped completa sus datos y sube el comprobante del anticipo.
           </p>
@@ -126,32 +129,31 @@ export function BookingLinksPage() {
 
       {DEMO_MODE && <div className="alert alert-info">Simulación sin envíos a WhatsApp. Creá una solicitud y usá «Ver como huésped» para completar el recorrido en esta misma pestaña. No transfieras dinero ni cargues datos reales.</div>}
 
-      <div className="card shadow-sm mb-4">
-        <div className="card-body py-3">
-          <div className="filter-row">
-            <select className="form-select" style={{ width: 220 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+      <FilterPanel activeCount={status ? 1 : 0}>
+            <select className="form-select filter-select" aria-label="Estado de la solicitud" value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); }}>
               {FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-      </div>
+      </FilterPanel>
 
       <DataTable<BookingLink>
+        className="booking-links-table"
         columns={columns}
         rows={links}
         keyField="id"
         loading={loading}
         error={error}
         onRetry={reload}
+        meta={data?.meta}
+        onPageChange={setPage}
         actions={(link) => (
           <div className="d-inline-flex gap-1 flex-wrap justify-content-end">
             <button
               type="button"
-              className="btn btn-sm btn-outline-secondary"
+              className="btn btn-sm btn-outline-secondary booking-share"
               onClick={() => {
                 clearError();
                 setCreated(link);
@@ -204,6 +206,10 @@ export function BookingLinksPage() {
               <dd>
                 {dateShort(created.checkIn)} → {dateShort(created.checkOut)} ({created.nights} noche(s))
               </dd>
+              {(created.totals.discountAmount ?? 0) > 0 && <>
+                <dt>Descuento{created.discount?.type === 'PERCENTAGE' ? ` (${created.discount.value}%)` : ''}</dt>
+                <dd className="text-success">−{money(created.totals.discountAmount)}</dd>
+              </>}
               <dt>Total</dt>
               <dd>{money(created.totals.total)}</dd>
               <dt>Anticipo</dt>

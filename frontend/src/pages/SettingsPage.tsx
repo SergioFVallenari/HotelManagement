@@ -1,18 +1,21 @@
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { hotelContactSchema, validateContact } from '../lib/contactValidation';
 import { Link } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
-import { IconBrandInstagram, IconBrandWhatsapp, IconCreditCard, IconSparkles } from '@tabler/icons-react';
+import { IconArrowLeft, IconBell, IconBrandInstagram, IconBrandWhatsapp, IconChevronRight, IconCreditCard, IconSparkles } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { api, BACKEND_ORIGIN } from '../api/client';
 import { useApi } from '../api/useApi';
-import type { AiConfig, AiSettings, CompanySettings, MpConnection } from '../api/types';
+import type { AiConfig, AiSettings, CompanySettings, MpConnection, Service } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
 import { useApiError } from '../components/pagination';
+import { RecipientSettings } from '../components/RecipientSettings';
 import { dateTimeShort, generatePublicLink } from '../lib/format';
+import { serviceRateLabel } from '../lib/services';
 import {
   BOOKING_THEME_FIELDS,
   bookingThemeFromConfig,
@@ -34,6 +37,7 @@ function AiAssistantSection() {
   // El form se deriva en render: settings del backend + overrides del usuario.
   // Así no hay setState en effect y un refetch no pisa lo que se está editando.
   const form: AiSettings = {
+    reservationAssistantEnabled: settings?.reservationAssistantEnabled ?? false,
     enabled: settings?.enabled ?? false,
     autoReply: settings?.autoReply ?? true,
     instructions: settings?.instructions ?? null,
@@ -51,6 +55,7 @@ function AiAssistantSection() {
       await api('/ai/settings', {
         method: 'PUT',
         body: {
+          reservationAssistantEnabled: form.reservationAssistantEnabled,
           enabled: form.enabled,
           autoReply: form.autoReply,
           instructions: form.instructions?.trim() || null,
@@ -70,7 +75,7 @@ function AiAssistantSection() {
         {config?.data.configured === false && (
           <div className="alert alert-warning mb-3">
             El asistente no está configurado en el backend (falta <code>GEMINI_API_KEY</code>). Los borradores y las
-            respuestas automáticas no van a funcionar hasta cargarla.
+             respuestas automáticas y el chat de reservas no van a funcionar hasta cargarla.
           </div>
         )}
         {loading || !settings ? (
@@ -84,6 +89,15 @@ function AiAssistantSection() {
           </div>
         ) : (
           <div>
+            <h3 className="h6">Reservas internas</h3>
+            <div className="form-check form-switch mb-4">
+              <input className="form-check-input" type="checkbox" id="ai-reservation-enabled"
+                checked={form.reservationAssistantEnabled}
+                onChange={(e) => patch({ reservationAssistantEnabled: e.target.checked })} />
+              <label className="form-check-label" htmlFor="ai-reservation-enabled">Habilitar el asistente de reservas</label>
+              <div className="form-text">Permite crear reservas manuales desde el chat de Reservas, siempre con confirmación. Es independiente de Instagram. Desactivarlo también bloquea las propuestas pendientes.</div>
+            </div>
+            <h3 className="h6">Bandeja de mensajes</h3>
             <div className="form-check form-switch mb-3">
               <input
                 className="form-check-input"
@@ -93,7 +107,7 @@ function AiAssistantSection() {
                 onChange={(e) => patch({ enabled: e.target.checked })}
               />
               <label className="form-check-label" htmlFor="ai-enabled">
-                Habilitar el asistente de IA
+                Habilitar el asistente de mensajes
               </label>
               <div className="form-text">Muestra el botón de borradores en la bandeja de mensajes.</div>
             </div>
@@ -321,7 +335,7 @@ function InstagramSettingsSection() {
   );
 }
 
-function MercadoPagoSection() {
+function MercadoPagoSection({ onNativeReturn }: { onNativeReturn: () => void }) {
   const { user } = useAuth();
   const { data, loading, error, reload } = useApi<{ data: MpConnection }>('/mp/connection');
   const connection = data?.data;
@@ -335,6 +349,10 @@ function MercadoPagoSection() {
   // Marca que hay un Custom Tab abierto esperando el deep link, para que el
   // watchdog de browserFinished sepa si todavia hay que hacer algo.
   const nativeOauthRef = useRef(false);
+  const onNativeReturnRef = useRef(onNativeReturn);
+  useEffect(() => {
+    onNativeReturnRef.current = onNativeReturn;
+  }, [onNativeReturn]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -436,6 +454,7 @@ function MercadoPagoSection() {
     function handleNativeUrl(url: string) {
       const query = extractOauthQuery(url);
       if (!query) return;
+      onNativeReturnRef.current();
       nativeOauthRef.current = false;
       void closeAuthTab().catch(() => { });
       applyOauthResultRef.current(query);
@@ -615,6 +634,7 @@ function MercadoPagoSection() {
 
 function BookingSettingsSection() {
   const { data, loading, error, reload } = useApi<{ data: CompanySettings }>('/companies/current');
+  const { data: servicesData, loading: servicesLoading, error: servicesError } = useApi<{ data: Service[] }>('/services');
   const settings = data?.data;
   const { error: apiError, handleError, clearError } = useApiError();
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
@@ -626,9 +646,18 @@ function BookingSettingsSection() {
   const themeHexInvalid = BOOKING_THEME_FIELDS.some(({ key }) => !/^#[0-9A-F]{6}$/i.test(themeHexDraft[key] ?? themeDraft[key]));
   const [section, setSection] = useState<'general' | 'anticipos' | 'contacto' | 'apariencia'>('general');
   const [maxPersonsDraft, setMaxPersonsDraft] = useState<string | null>(null);
+  const [sloganDraft, setSloganDraft] = useState<string | null>(null);
+  const [extraBedsDraft, setExtraBedsDraft] = useState<{ enabled: boolean; serviceId: number | null } | null>(null);
+  const publicExtraBeds = extraBedsDraft ?? settings?.configPage.publicExtraBeds ?? { enabled: false, serviceId: null };
+  const [publicServicesDraft, setPublicServicesDraft] = useState<number[] | null>(null);
+  const publicServiceIds = publicServicesDraft ?? settings?.configPage.publicServiceIds ?? [];
+  const optionalServices = servicesData?.data.filter((service) => service.isActive && !service.isExtraBed) ?? [];
+  const extraBedServices = servicesData?.data.filter((service) => service.isActive && service.isExtraBed) ?? [];
+  const extraBedsInvalid = publicExtraBeds.enabled && !extraBedServices.some((service) => service.id === publicExtraBeds.serviceId);
+  const publicCapacity = publicExtraBeds.enabled && !extraBedsInvalid ? settings?.hotelCapacityWithExtraBeds ?? settings?.hotelCapacity ?? 0 : settings?.hotelCapacity ?? 0;
   const maxPersonsValue = maxPersonsDraft ?? String(settings?.configPage.maxAvailabilityPersons ?? '');
   const maxPersonsInvalid = maxPersonsValue !== '' && (
-    !Number.isInteger(Number(maxPersonsValue)) || Number(maxPersonsValue) < 1 || Number(maxPersonsValue) > (settings?.hotelCapacity ?? 0)
+    !Number.isInteger(Number(maxPersonsValue)) || Number(maxPersonsValue) < 1 || Number(maxPersonsValue) > publicCapacity
   );
 
   const form = {
@@ -639,25 +668,32 @@ function BookingSettingsSection() {
   };
 
   async function save() {
-    if (maxPersonsInvalid) return;
+    if (maxPersonsInvalid || extraBedsInvalid || (!DEMO_MODE && (servicesLoading || servicesError))) return;
     setSaving(true);
     clearError();
     try {
+      const contact = validateContact(hotelContactSchema, form);
       const result = await api<{ data: CompanySettings }>('/companies/current', {
         method: 'PATCH',
         body: {
-          whatsapp: form.whatsapp.trim() || null,
-          phone: form.phone.trim() || null,
+          ...contact,
           bookingDepositPercent: Number(form.bookingDepositPercent),
           bookingSlug: form.bookingSlug.trim() || null,
           configPage: {
+            ...settings?.configPage,
             bookingTheme: bookingThemeFromConfig(settings?.configPage),
+            slogan: (sloganDraft ?? settings?.configPage.slogan ?? '').trim(),
             maxAvailabilityPersons: maxPersonsValue === '' ? null : Number(maxPersonsValue),
+            ...(!DEMO_MODE ? { publicExtraBeds } : {}),
+            ...(!DEMO_MODE ? { publicServiceIds: publicServiceIds.filter((id) => optionalServices.some((service) => service.id === id)) } : {}),
           },
         },
       });
       setOverrides({});
       setMaxPersonsDraft(null);
+      setSloganDraft(null);
+      setExtraBedsDraft(null);
+      setPublicServicesDraft(null);
       setToast('Configuración de reservas guardada.');
       if (result.data) reload();
     } catch (err) {
@@ -719,6 +755,11 @@ function BookingSettingsSection() {
             </ul>
             {section === 'general' && <>
               <div className="row g-3">
+              <div className="col-md-8">
+                <label className="form-label" htmlFor="booking-slogan">Eslogan de la página pública</label>
+                <input id="booking-slogan" className="form-control" maxLength={120} value={sloganDraft ?? settings?.configPage.slogan ?? ''} onChange={(event) => setSloganDraft(event.target.value)} placeholder="Opcional" />
+                <div className="form-text">Se muestra debajo del nombre del alojamiento en la página de disponibilidad.</div>
+              </div>
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-slug">Identificador público del hotel</label>
                 <input id="booking-slug" className="form-control" value={form.bookingSlug}
@@ -729,13 +770,45 @@ function BookingSettingsSection() {
               <div className="col-md-4">
                 <label className="form-label" htmlFor="booking-max-persons">Máximo de personas en disponibilidad</label>
                 <input id="booking-max-persons" className={`form-control ${maxPersonsInvalid ? 'is-invalid' : ''}`}
-                  type="number" min={1} max={settings?.hotelCapacity ?? 0} step={1}
-                  value={maxPersonsValue} placeholder={`Automático (${settings?.hotelCapacity ?? 0})`}
+                  type="number" min={1} max={publicCapacity} step={1}
+                  value={maxPersonsValue} placeholder={`Automático (${publicCapacity})`}
                   onChange={(event) => setMaxPersonsDraft(event.target.value)} />
-                <div className="form-text">Capacidad total del hotel: {settings?.hotelCapacity ?? 0} personas. Suma de la capacidad de las habitaciones activas, sin camas extra. Dejá vacío para usar el total automáticamente.</div>
-                {maxPersonsInvalid && <div className="invalid-feedback">Ingresá un entero entre 1 y {settings?.hotelCapacity ?? 0}, o dejá el campo vacío.</div>}
+                <div className="form-text">Capacidad base: {settings?.hotelCapacity ?? 0} personas. {publicExtraBeds.enabled && !extraBedsInvalid ? `Con camas extra: ${publicCapacity} personas.` : 'Las consultas públicas no incluyen camas extra.'} Dejá vacío para usar el total automáticamente.</div>
+                {maxPersonsInvalid && <div className="invalid-feedback">Ingresá un entero entre 1 y {publicCapacity}, o dejá el campo vacío.</div>}
               </div>
               </div>
+              <div className="form-check form-switch mt-3">
+                <input id="booking-public-extra-beds" className="form-check-input" type="checkbox" checked={publicExtraBeds.enabled} disabled={DEMO_MODE || servicesLoading || saving}
+                  onChange={(event) => setExtraBedsDraft({ ...publicExtraBeds, enabled: event.target.checked })} />
+                <label className="form-check-label" htmlFor="booking-public-extra-beds">Permitir consultas con camas extra</label>
+                <div className="form-text">El huésped podrá aceptar camas extra para su búsqueda. Desactivarlo no impide que recepción las agregue y cobre en reservas internas.</div>
+              </div>
+              {servicesError && <div className="text-danger small mt-2">No se pudieron cargar los servicios.</div>}
+              {publicExtraBeds.enabled && (
+                <div className="mt-3">
+                  <label htmlFor="booking-extra-bed-service" className="form-label">Servicio para cotizar las camas extra</label>
+                  <select id="booking-extra-bed-service" className={`form-select ${extraBedsInvalid ? 'is-invalid' : ''}`} value={publicExtraBeds.serviceId ?? ''} disabled={servicesLoading || saving}
+                    onChange={(event) => setExtraBedsDraft({ ...publicExtraBeds, serviceId: event.target.value ? Number(event.target.value) : null })}>
+                    <option value="">Seleccioná un servicio activo de cama extra</option>
+                    {extraBedServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+                  </select>
+                  {extraBedsInvalid && <div className="invalid-feedback">Seleccioná un servicio activo marcado como cama extra. Podés crearlo en Servicios.</div>}
+                  <div className="form-text">Se respeta el máximo de camas extra de cada habitación. PACK: por cama por estadía; por día o persona: por cama por noche.</div>
+                </div>
+              )}
+              <fieldset className="mt-4" disabled={DEMO_MODE || servicesLoading || saving || !!servicesError}>
+                <legend className="h6">Servicios opcionales en la página pública</legend>
+                <p className="small text-secondary">Elegí qué servicios podrá agregar el huésped a la cotización y al mensaje de WhatsApp. Se cobran una vez para todo el grupo según su modalidad.</p>
+                {optionalServices.map((service) => (
+                  <div className="form-check mb-2" key={service.id}>
+                    <input id={`booking-public-service-${service.id}`} className="form-check-input" type="checkbox" checked={publicServiceIds.includes(service.id)}
+                      onChange={(event) => setPublicServicesDraft(event.target.checked ? [...publicServiceIds, service.id] : publicServiceIds.filter((id) => id !== service.id))} />
+                    <label className="form-check-label" htmlFor={`booking-public-service-${service.id}`}>{service.name} · {serviceRateLabel(service)}</label>
+                    {service.description && <div className="small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{service.description}</div>}
+                  </div>
+                ))}
+                {!servicesLoading && !servicesError && optionalServices.length === 0 && <p className="small text-secondary">Creá servicios activos en Servicios para ofrecerlos aquí. Las camas extra se configuran por separado.</p>}
+              </fieldset>
               <div className="form-check form-switch mt-3">
                 <input className="form-check-input" type="checkbox" id="booking-portal-enabled" defaultChecked={!DEMO_MODE} disabled />
                 <label className="form-check-label" htmlFor="booking-portal-enabled">{DEMO_MODE ? 'Portal de disponibilidad no incluido en la demo' : 'Portal de disponibilidad habilitado'}</label>
@@ -811,7 +884,7 @@ function BookingSettingsSection() {
               </button>
             </div>}
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || maxPersonsInvalid}>
+              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || maxPersonsInvalid || extraBedsInvalid || (!DEMO_MODE && (servicesLoading || !!servicesError))}>
                 {saving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
@@ -831,7 +904,7 @@ function BookingSettingsSection() {
       >
         <div className="row g-4">
           <div className="col-lg-6">
-            <p className="text-secondary small">Estos colores se aplican a la página de disponibilidad y al formulario que recibe el huésped. El fondo primario cubre la página y el secundario, el modal y las tarjetas.</p>
+            <p className="text-secondary small">Personalizá la franja superior, el fondo, el encabezado y el formulario de la página pública. La vista previa se actualiza al elegir cada color.</p>
             <div className="d-grid gap-3">
               {BOOKING_THEME_FIELDS.map(({ key, label, usage }) => (
                 <div className="d-flex align-items-center gap-3" key={key}>
@@ -882,15 +955,20 @@ function BookingSettingsSection() {
           <div className="col-lg-6">
             <div className="small text-secondary mb-2">Vista previa</div>
             <div className="booking-theme-preview" style={bookingThemeStyle(themeDraft)}>
+              <div className="booking-theme-preview-header">
+                <span className="booking-theme-preview-logo">{(settings?.name || 'Hotel').trim().charAt(0).toUpperCase()}</span>
+                <span><strong>{settings?.name || 'Tu alojamiento'}</strong>{(sloganDraft ?? settings?.configPage.slogan) && <small>{sloganDraft ?? settings?.configPage.slogan}</small>}</span>
+              </div>
               <div className="booking-theme-preview-card">
-                <span className="booking-theme-preview-accent">POSADA</span>
-                <h3>El nombre de tu hotel</h3>
-                <p>Encontrá una habitación para tu estadía</p>
+                <span className="booking-theme-preview-accent">Reservá tu estadía</span>
+                <h3>Encontrá tu próxima escapada</h3>
+                <p>Elegí tu habitación y las fechas para consultar disponibilidad.</p>
+                <div className="booking-theme-preview-steps"><span>01</span> Habitación y fechas <span>02</span> Personas y servicios</div>
                 <div className="booking-theme-preview-option">
-                  <strong>Habitación doble</strong>
-                  <span>Desde $80.000</span>
+                  <strong>Habitación de ejemplo</strong>
+                  <span>Hasta 2 huéspedes</span>
                 </div>
-                <button type="button" className="booking-theme-preview-button">Consultar disponibilidad</button>
+                <div className="booking-theme-preview-button">Continuar con mi reserva</div>
               </div>
             </div>
           </div>
@@ -907,37 +985,40 @@ function BookingSettingsSection() {
   );
 }
 
-type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia';
+type SettingsTab = 'reservas' | 'pagos' | 'redes' | 'ia' | 'notificaciones';
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
-  { id: 'pagos', label: 'Pagos online', icon: <IconCreditCard size={16} /> },
-  { id: 'reservas', label: 'Reservas', icon: <IconBrandWhatsapp size={16} /> },
-  { id: 'redes', label: 'Redes sociales', icon: <IconBrandInstagram size={16} /> },
-  { id: 'ia', label: 'Asistente de IA', icon: <IconSparkles size={16} /> },
+function WebSettingsNotice({ title }: { title: string }) {
+  return <div>
+    <h2 className="h5 mb-1">{title}</h2>
+    <div className="card shadow-sm mt-3">
+      <div className="card-body">
+        <strong>Disponible en la versión web</strong>
+        <p className="text-secondary mt-2 mb-0">Para configurar esta integración, ingresá a LAIXIA desde un navegador y abrí Configuración.</p>
+      </div>
+    </div>
+  </div>;
+}
+
+const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; description: string; icon: ReactNode }> = [
+  { id: 'pagos', label: 'Pagos online', description: 'Cobros y conexión con MercadoPago', icon: <IconCreditCard size={22} /> },
+  { id: 'reservas', label: 'Reservas', description: 'Portal, anticipos y apariencia', icon: <IconBrandWhatsapp size={22} /> },
+  { id: 'redes', label: 'Redes sociales', description: 'Canales conectados y mensajería', icon: <IconBrandInstagram size={22} /> },
+  { id: 'ia', label: 'Asistente de IA', description: 'Borradores y respuestas automáticas', icon: <IconSparkles size={22} /> },
+  { id: 'notificaciones', label: 'Notificaciones', description: 'Destinatarios y avisos', icon: <IconBell size={22} /> },
 ];
 
 // El callback de Instagram aterriza en /settings?tab=redes (redirect de
 // /settings/instagram). La tab se lee solo al montar para que el
 // history.replaceState que limpia el callback no la pise.
-function initialTab(): SettingsTab {
+function initialTab(): SettingsTab | null {
   if (DEMO_MODE) return 'reservas';
   const value = new URLSearchParams(window.location.search).get('tab');
-  return value === 'redes' || value === 'ia' || value === 'reservas' ? value : 'pagos';
+  return value === 'pagos' || value === 'redes' || value === 'ia' || value === 'reservas' || value === 'notificaciones' ? value : new URLSearchParams(window.location.search).has('mp') ? 'pagos' : null;
 }
 
 export function SettingsPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const offset = event.key === 'ArrowRight' ? 1 : -1;
-    const next = (index + offset + SETTINGS_TABS.length) % SETTINGS_TABS.length;
-    setTab(SETTINGS_TABS[next].id);
-    tabRefs.current[next]?.focus();
-  }
+  const [tab, setTab] = useState<SettingsTab | null>(initialTab);
 
   if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') {
     return (
@@ -949,71 +1030,52 @@ export function SettingsPage() {
 
   if (DEMO_MODE) {
     return (
-      <div>
-        <h1 className="h4 mb-1">Configuración de reservas</h1>
-        <p className="text-secondary mb-3">Anticipos, contacto y apariencia de la página que recibe el huésped.</p>
+      <div className="settings-page">
+        <div className="page-header mb-4"><div>
+          <h1 className="mb-2">Configuración de reservas</h1>
+          <p className="text-secondary mb-0">Anticipos, contacto y apariencia de la página que recibe el huésped.</p>
+        </div></div>
         <div className="alert alert-info">
           Los cambios son de demostración y se pierden al recargar. La paleta inicial es la del CRM.
           Personalizá el estilo en <strong>Apariencia</strong> y probalo con una <Link to="/booking-links">solicitud de reserva</Link> en esta pestaña.
           No se publican sitios ni se habilitan integraciones externas.
         </div>
-        <BookingSettingsSection />
+        <div className="settings-content"><BookingSettingsSection /></div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div className="settings-page">
+      <div className="page-header mb-4">
         <div>
-          <h1 className="h4 mb-1">Configuración</h1>
-          <p className="text-secondary mb-0">Pagos online, reservas por WhatsApp, redes sociales y asistente de IA del hotel.</p>
+          <h1 className="mb-2">{tab ? 'Configuración' : 'Centro de configuración'}</h1>
+          <p className="text-secondary mb-0">{tab ? 'Administrá las opciones de tu alojamiento.' : 'Todas las herramientas para administrar tu alojamiento.'}</p>
         </div>
       </div>
 
-      <ul className="nav nav-tabs settings-tabs mb-4" role="tablist" aria-label="Configuración">
-        {SETTINGS_TABS.map((item, index) => {
-          const active = item.id === tab;
-          return (
-            <li className="nav-item" key={item.id} role="presentation">
-              <button
-                type="button"
-                role="tab"
-                id={`settings-tab-${item.id}`}
-                aria-selected={active}
-                aria-controls={`settings-panel-${item.id}`}
-                tabIndex={active ? 0 : -1}
-                ref={(el) => {
-                  tabRefs.current[index] = el;
-                }}
-                className={`nav-link d-flex align-items-center gap-2 ${active ? 'active' : ''}`}
-                onClick={() => setTab(item.id)}
-                onKeyDown={(event) => onTabKeyDown(event, index)}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {tab ? <button type="button" className="btn settings-back mb-4" onClick={() => setTab(null)}><IconArrowLeft size={18} aria-hidden="true" /> Volver a configuración</button> : (
+        <div className="settings-grid">
+          {SETTINGS_TABS.map((item) => <button type="button" className="settings-tile" key={item.id} onClick={() => setTab(item.id)}>
+            <span className="settings-tile-icon" aria-hidden="true">{item.icon}</span>
+            <span className="settings-tile-copy"><strong>{item.label}</strong><span>{item.description}</span></span>
+            <IconChevronRight className="settings-tile-arrow" size={20} aria-hidden="true" />
+          </button>)}
+        </div>
+      )}
 
       {/* Los paneles quedan montados (ocultos con d-none): no se pierde lo
           editado en el form de IA y siguen vivos los listeners del OAuth de
           MercadoPago. */}
       <div
-        role="tabpanel"
         id="settings-panel-pagos"
-        aria-labelledby="settings-tab-pagos"
-        className={tab === 'pagos' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'pagos' ? '' : 'd-none'}`}
       >
-        <MercadoPagoSection />
+        {isNative ? <WebSettingsNotice title="Pagos online" /> : <MercadoPagoSection onNativeReturn={() => setTab('pagos')} />}
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-reservas"
-        aria-labelledby="settings-tab-reservas"
-        className={tab === 'reservas' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'reservas' ? '' : 'd-none'}`}
       >
         <h2 className="h5 mb-1">Portal de reservas</h2>
         <p className="text-secondary mb-3">
@@ -1022,24 +1084,26 @@ export function SettingsPage() {
         <BookingSettingsSection />
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-redes"
-        aria-labelledby="settings-tab-redes"
-        className={tab === 'redes' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'redes' ? '' : 'd-none'}`}
       >
-        <InstagramSettingsSection />
+        {isNative ? <WebSettingsNotice title="Redes sociales" /> : <InstagramSettingsSection />}
       </div>
       <div
-        role="tabpanel"
         id="settings-panel-ia"
-        aria-labelledby="settings-tab-ia"
-        className={tab === 'ia' ? '' : 'd-none'}
+        className={`settings-panel ${tab === 'ia' ? '' : 'd-none'}`}
       >
         <h2 className="h5 mb-1">Asistente de IA</h2>
         <p className="text-secondary mb-3">
           Borradores y respuestas automáticas en la bandeja de mensajes (Instagram).
         </p>
         <AiAssistantSection />
+      </div>
+      <div
+        id="settings-panel-notificaciones"
+        className={`settings-panel ${tab === 'notificaciones' ? '' : 'd-none'}`}
+      >
+        <RecipientSettings key={user?.companyId} />
       </div>
     </div>
   );

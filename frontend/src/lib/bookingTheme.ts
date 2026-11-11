@@ -7,6 +7,8 @@ export interface BookingTheme {
   text: string;
   background: string;
   surface: string;
+  backgroundTop: string;
+  headerSurface: string;
 }
 
 export const DEFAULT_BOOKING_THEME: BookingTheme = {
@@ -16,6 +18,8 @@ export const DEFAULT_BOOKING_THEME: BookingTheme = {
   text: '#EDF0FA',
   background: '#0B1020',
   surface: '#141929',
+  backgroundTop: '#0B1020',
+  headerSurface: '#141929',
 };
 
 export const BOOKING_THEME_FIELDS: Array<{ key: keyof BookingTheme; label: string; usage: string }> = [
@@ -23,8 +27,10 @@ export const BOOKING_THEME_FIELDS: Array<{ key: keyof BookingTheme; label: strin
   { key: 'secondary', label: 'Color secundario', usage: 'Bordes, detalles e iconos' },
   { key: 'accent', label: 'Color de acento', usage: 'Llamados a la acción y destacados' },
   { key: 'text', label: 'Color de texto', usage: 'Encabezados y textos' },
-  { key: 'background', label: 'Fondo primario', usage: 'Fondo general de toda la página' },
-  { key: 'surface', label: 'Fondo secundario', usage: 'Fondo del modal, formulario y tarjetas' },
+  { key: 'background', label: 'Fondo principal', usage: 'Fondo inferior de la página' },
+  { key: 'backgroundTop', label: 'Fondo superior', usage: 'Franja superior de la página de disponibilidad' },
+  { key: 'headerSurface', label: 'Fondo del encabezado', usage: 'Barra superior con nombre y eslogan' },
+  { key: 'surface', label: 'Fondo de formularios', usage: 'Fondo del formulario y las tarjetas' },
 ];
 
 export function bookingThemeFromConfig(config: unknown): BookingTheme {
@@ -44,6 +50,8 @@ export function bookingThemeFromConfig(config: unknown): BookingTheme {
     text: color('text'),
     background: color('background'),
     surface: color('surface'),
+    backgroundTop: candidate.backgroundTop && /^#[0-9a-f]{6}$/i.test(candidate.backgroundTop) ? candidate.backgroundTop.toUpperCase() : color('background'),
+    headerSurface: candidate.headerSurface && /^#[0-9a-f]{6}$/i.test(candidate.headerSurface) ? candidate.headerSurface.toUpperCase() : color('surface'),
   };
 }
 
@@ -62,6 +70,8 @@ export function bookingThemeStyle(theme: BookingTheme): CSSProperties {
     '--booking-accent': theme.accent,
     '--booking-text': theme.text,
     '--booking-background': theme.background,
+    '--booking-background-top': theme.backgroundTop,
+    '--booking-header-surface': theme.headerSurface,
     '--booking-surface': theme.surface,
     '--booking-primary-contrast': contrast(theme.primary),
     '--booking-secondary-contrast': contrast(theme.secondary),

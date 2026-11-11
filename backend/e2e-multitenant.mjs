@@ -6,6 +6,7 @@ function makeClient() {
     const res = await fetch(`${BASE}${path}`, {
       method: options.method ?? 'GET',
       headers: {
+        'X-GH-CSRF': '1',
         'Content-Type': 'application/json',
         ...(cookie ? { Cookie: cookie } : {}),
         ...(options.headers ?? {}),

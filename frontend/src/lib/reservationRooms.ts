@@ -1,5 +1,5 @@
 import type { Room } from '../api/types';
-import { round2 } from './format';
+import { round2 } from './format.ts';
 
 export interface SelectedRoom {
   room: Room;

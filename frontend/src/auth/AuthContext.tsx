@@ -23,14 +23,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api<{ user: User }>('/auth/me')
-      .then((result) => setUser(result.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    const controller = new AbortController();
+    api<{ user: User }>('/auth/me', { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setUser(result.user); })
+      .catch(() => { if (!controller.signal.aborted) setUser(null); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
 
     const handler = () => setUser(null);
     window.addEventListener('auth:expired', handler);
-    return () => window.removeEventListener('auth:expired', handler);
+    return () => {
+      controller.abort();
+      window.removeEventListener('auth:expired', handler);
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

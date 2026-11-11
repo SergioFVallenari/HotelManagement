@@ -14,10 +14,9 @@ import { money, CHARGE_TYPES } from '../lib/format';
 import type { ServiceChargeType } from '../api/types';
 
 const SERVICES_COLUMNS: Column<Service>[] = [
-  { header: 'ID', render: (s) => s.id },
-  { header: 'Nombre', render: (s) => <strong>{s.name}</strong> },
+  { header: 'Nombre', render: (s) => <><strong>{s.name}</strong>{s.description && <div className="small text-secondary text-break" style={{ whiteSpace: 'pre-line' }}>{s.description}</div>}</> },
   { header: 'Precio', render: (s) => money(s.price) },
-  { header: 'Tipo de cobro', render: (s) => CHARGE_TYPES[s.chargeType] ?? s.chargeType },
+  { header: 'Tipo de cobro', render: (s) => <>{CHARGE_TYPES[s.chargeType] ?? s.chargeType}{s.chargeType === 'PER_ROOM_INTERVAL' && <div className="small text-secondary">Cada {s.intervalDays} día(s), sin incluir el día de salida</div>}</> },
   {
     header: 'Cama extra',
     render: (s) =>
@@ -28,6 +27,8 @@ const SERVICES_COLUMNS: Column<Service>[] = [
 
 interface ServiceForm {
   name: string;
+  description: string;
+  intervalDays: number;
   price: number;
   chargeType: ServiceChargeType;
   isExtraBed: boolean;
@@ -40,7 +41,7 @@ export function ServicesPage() {
   const { data, loading, error, reload } = useApi<{ data: Service[] }>('/services');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState<ServiceForm>({ name: '', price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
+  const [form, setForm] = useState<ServiceForm>({ name: '', description: '', intervalDays: 3, price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Service | null>(null);
   const { error: apiError, handleError, clearError } = useApiError();
@@ -49,14 +50,14 @@ export function ServicesPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ name: '', price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
+    setForm({ name: '', description: '', intervalDays: 3, price: 0, chargeType: 'PACK', isExtraBed: false, isActive: true });
     clearError();
     setOpen(true);
   }
 
   function openEdit(item: Service) {
     setEditing(item);
-    setForm({ name: item.name, price: item.price, chargeType: item.chargeType, isExtraBed: item.isExtraBed, isActive: item.isActive });
+    setForm({ name: item.name, description: item.description ?? '', intervalDays: item.intervalDays ?? 3, price: item.price, chargeType: item.chargeType, isExtraBed: item.isExtraBed, isActive: item.isActive });
     clearError();
     setOpen(true);
   }
@@ -65,7 +66,7 @@ export function ServicesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name: form.name.trim(), price: Number(form.price), chargeType: form.chargeType, isExtraBed: form.isExtraBed, isActive: form.isActive };
+      const body = { name: form.name.trim(), description: form.description.trim() || null, intervalDays: form.chargeType === 'PER_ROOM_INTERVAL' ? form.intervalDays : null, price: Number(form.price), chargeType: form.chargeType, isExtraBed: form.isExtraBed, isActive: form.isActive };
       if (editing) await api(`/services/${editing.id}`, { method: 'PUT', body });
       else await api('/services', { method: 'POST', body });
       setOpen(false);
@@ -93,7 +94,7 @@ export function ServicesPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+      <div className="page-header mb-4">
         <div>
           <h1 className="h4 mb-1">Servicios adicionales</h1>
           <p className="text-secondary mb-0">{items.length} servicios configurados (desayuno, parking, etc.)</p>
@@ -144,6 +145,12 @@ export function ServicesPage() {
             <input className="form-control" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
           </div>
           <div className="mb-3">
+            <label className="form-label" htmlFor="service-description">Descripción de lo que incluye</label>
+            <textarea id="service-description" className="form-control" rows={3} maxLength={1000} value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Ej.: una sesión de spa de 60 minutos para una persona. Requiere coordinar horario." />
+            <div className="form-text">Opcional · {form.description.length}/1000 caracteres. Explicá inclusiones y condiciones; el importe se calcula con el tipo de cobro y la frecuencia configurados.</div>
+          </div>
+          <div className="mb-3">
             <label className="form-label">Precio *</label>
             <input type="number" min={0} step="0.01" className="form-control" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required />
           </div>
@@ -152,7 +159,7 @@ export function ServicesPage() {
             <select
               className="form-select"
               value={form.chargeType}
-              onChange={(e) => setForm({ ...form, chargeType: e.target.value as ServiceChargeType })}
+              onChange={(e) => setForm({ ...form, chargeType: e.target.value as ServiceChargeType, isExtraBed: e.target.value === 'PER_ROOM_INTERVAL' ? false : form.isExtraBed })}
             >
               {Object.entries(CHARGE_TYPES).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -161,9 +168,15 @@ export function ServicesPage() {
               ))}
             </select>
             <div className="form-text">
-              Por persona: (personas + camas extras) × noches · Por día: se cobra por noche · Pack: cargo fijo. Marcá "Cama extra" en un servicio Por día para que se cobre por cama extra × noches.
+              Por persona: huéspedes × noches · Por día: se cobra por noche · Pack: cargo fijo por cantidad elegida · Por habitación e intervención: frecuencia automática durante la estadía. El texto de la descripción no modifica el cálculo.
             </div>
           </div>
+          {form.chargeType === 'PER_ROOM_INTERVAL' && <div className="mb-3">
+            <label className="form-label" htmlFor="service-interval">Realizar cada cuántos días *</label>
+            <input id="service-interval" className="form-control" type="number" min={1} max={365} step={1} required value={form.intervalDays || ''}
+              onChange={(event) => setForm({ ...form, intervalDays: Number(event.target.value) })} />
+            <div className="form-text">Precio por habitación y por intervención. No incluye la llegada ni la salida. Ej.: cada 3 días en 10 noches → 3 intervenciones por habitación (días 3, 6 y 9).</div>
+          </div>}
           <div className="form-check mb-3">
             <input
               id="service-extra-bed"

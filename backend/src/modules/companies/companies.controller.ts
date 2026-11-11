@@ -26,10 +26,20 @@ export async function getCurrentCompany(req: Request, res: Response): Promise<vo
 
 export async function updateCompanySettings(req: Request, res: Response): Promise<void> {
   const input = updateCompanySettingsSchema.parse(req.body) as UpdateCompanySettingsInput;
+  if (input.configPage?.publicServiceIds?.length) {
+    const ids = input.configPage.publicServiceIds;
+    const count = await prisma.service.count({ where: { id: { in: ids }, companyId: req.user!.companyId, isActive: true, isExtraBed: false } });
+    if (count !== ids.length) throw badRequest('Elegí servicios activos de este alojamiento que no sean camas extra');
+  }
+  if (input.configPage?.publicExtraBeds?.enabled) {
+    const service = await prisma.service.findFirst({ where: { id: input.configPage.publicExtraBeds.serviceId!, companyId: req.user!.companyId, isActive: true, isExtraBed: true }, select: { id: true } });
+    if (!service) throw badRequest('Elegí un servicio de cama extra activo de este alojamiento');
+  }
   if (input.configPage?.maxAvailabilityPersons != null) {
-    const { hotelCapacity } = await getBookingCapacity(req.user!.companyId, input.configPage);
-    if (input.configPage.maxAvailabilityPersons > hotelCapacity) {
-      throw badRequest(`El máximo de personas no puede superar la capacidad del hotel (${hotelCapacity}).`);
+    const capacity = await getBookingCapacity(req.user!.companyId, input.configPage);
+    const limit = capacity.publicExtraBedsEnabled ? capacity.hotelCapacityWithExtraBeds : capacity.hotelCapacity;
+    if (input.configPage.maxAvailabilityPersons > limit) {
+      throw badRequest(`El máximo de personas no puede superar la capacidad del hotel (${limit}).`);
     }
   }
   const company = await prisma.company.update({

@@ -45,6 +45,7 @@ test('buildSystemPrompt etiqueta los tipos de cargo conocidos', () => {
       { name: 'Cena', price: 9000, chargeType: 'PER_DAY' },
       { name: 'Tours', price: 15000, chargeType: 'PACK' },
       { name: 'Misterio', price: 100, chargeType: 'OTRO' },
+      { name: 'Limpieza', price: 5000, chargeType: 'PER_ROOM_INTERVAL', intervalDays: 3, description: 'Baño y toallas.' },
     ],
     rooms: [
       { name: 'Dormi 1', typeName: 'Doble', capacity: 2, price: 50000, amenities: ['wifi'] },
@@ -57,6 +58,8 @@ test('buildSystemPrompt etiqueta los tipos de cargo conocidos', () => {
   assert.match(prompt, /Cena: \$9000 por día/);
   assert.match(prompt, /Tours: \$15000 por unidad/);
   assert.match(prompt, /Misterio: \$100 OTRO/);
+  assert.match(prompt, /Limpieza: \$5000 por habitación e intervención, cada 3 días durante la estadía, sin incluir el día de salida/);
+  assert.match(prompt, /Incluye: Baño y toallas\./);
 });
 
 test('buildSystemPrompt incluye la disponibilidad real por noche', () => {

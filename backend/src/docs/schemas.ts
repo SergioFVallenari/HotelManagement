@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { bookingRoomSnapshotsSchema } from '../modules/booking/booking.schema.js';
+import { discountSchema } from '../modules/reservations/reservations.schema.js';
 
 const dateTime = () => z.string().describe('Fecha y hora ISO 8601 en UTC (p. ej. 2026-10-07T14:30:00.000Z)');
 const dateOnly = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD').describe('Fecha YYYY-MM-DD');
@@ -14,7 +15,7 @@ export const reservationStatusSchema = z.enum([
   'CANCELLED',
 ]);
 export const paymentMethodSchema = z.enum(['CASH', 'CARD', 'TRANSFER', 'MERCADOPAGO']);
-export const serviceChargeTypeSchema = z.enum(['PER_PERSON', 'PER_DAY', 'PACK']);
+export const serviceChargeTypeSchema = z.enum(['PER_PERSON', 'PER_DAY', 'PACK', 'PER_ROOM_INTERVAL']);
 
 export const metaSchema = z.object({
   page: z.number().int(),
@@ -38,6 +39,10 @@ export const companySchema = z.object({
 
 export const companySettingsSchema = z.object({
   hotelCapacity: z.number().int().nonnegative(),
+  hotelCapacityWithExtraBeds: z.number().int().nonnegative(),
+  publicExtraBedsEnabled: z.boolean(),
+  maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative(),
+  publicExtraBedService: z.object({ name: z.string(), price: money(), chargeType: z.enum(['PER_DAY', 'PER_PERSON', 'PACK']) }).nullable(),
   maxAvailabilityPersons: z.number().int().nonnegative(),
   id: z.number().int(),
   name: z.string(),
@@ -46,7 +51,10 @@ export const companySettingsSchema = z.object({
   bookingDepositPercent: z.number().int(),
   bookingSlug: z.string().nullable(),
   configPage: z.object({
+    slogan: z.string().max(120).optional(),
+    publicServiceIds: z.array(z.number().int().positive()).optional(),
     maxAvailabilityPersons: z.number().int().positive().nullable().optional(),
+    publicExtraBeds: z.object({ enabled: z.boolean(), serviceId: z.number().int().positive().nullable() }).optional(),
     bookingTheme: z.object({
       primary: z.string(),
       secondary: z.string(),
@@ -54,6 +62,8 @@ export const companySettingsSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).optional(),
   }),
 });
@@ -95,8 +105,8 @@ export const guestSchema = z.object({
   id: z.number().int(),
   firstName: z.string(),
   lastName: z.string(),
-  phone: z.string(),
-  email: z.string(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
   companyId: z.number().int(),
   createdAt: dateTime(),
   updatedAt: dateTime(),
@@ -150,6 +160,8 @@ export const guestDetailSchema = guestSchema.extend({
 export const serviceSchema = z.object({
   id: z.number().int(),
   name: z.string(),
+  description: z.string().nullable(),
+  intervalDays: z.number().int().nullable(),
   price: money(),
   chargeType: serviceChargeTypeSchema,
   isExtraBed: z.boolean(),
@@ -184,8 +196,8 @@ export const reservationGuestSchema = z
     id: z.number().int(),
     firstName: z.string(),
     lastName: z.string(),
-    phone: z.string(),
-    email: z.string(),
+    phone: z.string().nullable(),
+    email: z.string().nullable(),
   })
   .nullable();
 
@@ -194,6 +206,8 @@ export const reservationServicesSchema = z.array(
     id: z.number().int(),
     serviceId: z.number().int(),
     name: z.string().nullable(),
+    description: z.string().nullable(),
+    intervalDays: z.number().int().nullable(),
     chargeType: serviceChargeTypeSchema.nullable(),
     isExtraBed: z.boolean(),
     personsCovered: z.number().int().nullable(),
@@ -204,6 +218,8 @@ export const reservationServicesSchema = z.array(
 );
 
 export const reservationTotalsSchema = z.object({
+  subtotal: money(),
+  discountAmount: money(),
   nights: z.number().int(),
   roomPrice: money(),
   roomTotal: money(),
@@ -228,7 +244,10 @@ export const reservationReceiptSchema = z
   .nullable();
 
 export const reservationSchema = z.object({
+  discount: discountSchema.nullable(),
   id: z.number().int(),
+  totalAmount: money(),
+  depositRequired: money(),
   code: z.string(),
   roomId: z.number().int(),
   rooms: z.array(z.object({ roomId: z.number().int(), persons: z.number().int(), extraBeds: z.number().int(), roomPrice: money(), roomPricingMode: z.enum(['PER_NIGHT', 'PER_PERSON']), total: money(), room: reservationRoomSchema })),
@@ -271,6 +290,8 @@ export const reservationSchema = z.object({
 export const bookingLinkLineSchema = z.object({
   serviceId: z.number().int(),
   name: z.string(),
+  description: z.string().nullable(),
+  intervalDays: z.number().int().nullable(),
   chargeType: serviceChargeTypeSchema,
   quantity: z.number().int(),
   personsCovered: z.number().int().nullable(),
@@ -279,6 +300,7 @@ export const bookingLinkLineSchema = z.object({
 });
 
 export const bookingLinkSchema = z.object({
+  discount: discountSchema.nullable(),
   rooms: bookingRoomSnapshotsSchema,
   id: z.number().int(),
   token: z.string().describe('Token opaco del link publico (/reserva/<token>)'),
@@ -301,6 +323,8 @@ export const bookingLinkSchema = z.object({
     .nullable(),
   services: z.array(bookingLinkLineSchema),
   totals: z.object({
+    subtotal: money(),
+    discountAmount: money(),
     roomTotal: money(),
     servicesTotal: money(),
     total: money(),
@@ -319,6 +343,7 @@ export const bookingLinkSchema = z.object({
 });
 
 export const publicBookingQuoteSchema = z.object({
+  discount: discountSchema.nullable(),
   hotel: z.object({
     name: z.string(),
     whatsapp: z.string().nullable(),
@@ -330,6 +355,8 @@ export const publicBookingQuoteSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).nullable(),
   }),
   stay: z.object({
@@ -345,12 +372,17 @@ export const publicBookingQuoteSchema = z.object({
   services: z.array(
     z.object({
       name: z.string(),
+      description: z.string().nullable(),
+      chargeType: serviceChargeTypeSchema,
+      intervalDays: z.number().int().nullable(),
       quantity: z.number().int(),
       unitPrice: money(),
       lineTotal: money(),
     }),
   ),
   totals: z.object({
+    subtotal: money(),
+    discountAmount: money(),
     roomTotal: money(),
     servicesTotal: money(),
     total: money(),
@@ -363,6 +395,14 @@ export const publicBookingQuoteSchema = z.object({
 
 export const publicBookingPageConfigSchema = z.object({
   hotel: z.object({
+    slogan: z.string(),
+    roomTypes: z.array(z.object({ id: z.number().int().positive(), name: z.string(), roomCount: z.number().int().positive(), maxAvailabilityPersons: z.number().int().nonnegative(), maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative() })),
+    publicServices: z.array(z.object({ id: z.number().int(), name: z.string(), description: z.string().nullable(), intervalDays: z.number().int().nullable(), price: money(), chargeType: serviceChargeTypeSchema })),
+    hotelCapacityWithExtraBeds: z.number().int().nonnegative(),
+    publicExtraBedsEnabled: z.boolean(),
+    maxAvailabilityPersonsWithExtraBeds: z.number().int().nonnegative(),
+    publicExtraBedService: z.object({ name: z.string(), price: money(), chargeType: z.enum(['PER_DAY', 'PER_PERSON', 'PACK']) }).nullable(),
+    roomCount: z.number().int().nonnegative(),
     hotelCapacity: z.number().int().nonnegative(),
     maxAvailabilityPersons: z.number().int().nonnegative(),
     name: z.string(),
@@ -375,6 +415,8 @@ export const publicBookingPageConfigSchema = z.object({
       text: z.string(),
       background: z.string(),
       surface: z.string().optional(),
+      backgroundTop: z.string().optional(),
+      headerSurface: z.string().optional(),
     }).nullable(),
   }),
 });

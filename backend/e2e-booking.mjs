@@ -15,6 +15,7 @@ async function req(path, { method = 'GET', body, headers = {}, raw = false } = {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
+      'X-GH-CSRF': '1',
       ...(body !== undefined && !raw ? { 'content-type': 'application/json' } : {}),
       ...(cookie ? { cookie } : {}),
       ...headers,
