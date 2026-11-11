@@ -44,11 +44,11 @@ jobs:
         run: pnpm typecheck
 
       - name: Run tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/laixia_test
         run: pnpm test
 
       - name: Build
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/laixia_test
         run: pnpm build
 
   frontend:
