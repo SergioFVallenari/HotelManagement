@@ -14,6 +14,14 @@ jobs:
     name: Backend - Tests & Build
     runs-on: ubuntu-latest
 
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/laixia_test
+      JWT_SECRET: laixia-ci-testing-secret-not-for-production-2026
+      JWT_EXPIRES_IN: 12h
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+
     defaults:
       run:
         working-directory: backend
@@ -44,8 +52,6 @@ jobs:
         run: pnpm typecheck
 
       - name: Run tests
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/laixia_test
         run: pnpm test
 
       - name: Build
