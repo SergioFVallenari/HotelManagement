@@ -78,7 +78,31 @@ jobs:
       - name: Remove test environment
         working-directory: backend
         run: rm -f .env
+      - name: Debug GitHub OIDC claims
+        shell: bash
+        run: |
+          TOKEN=$(curl -fsS \
+          -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+          | jq -r '.value')
 
+          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2)
+
+          PAYLOAD="${PAYLOAD//-/+}"
+          PAYLOAD="${PAYLOAD//_/\/}"
+
+          while ((${#PAYLOAD} % 4)); do
+            PAYLOAD="${PAYLOAD}="
+          done
+
+          echo "$PAYLOAD" | base64 -d | jq '{
+            sub,
+            aud,
+            repository,
+            ref,
+            environment,
+            job_workflow_ref
+          }'
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
