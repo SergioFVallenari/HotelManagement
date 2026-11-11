@@ -16,14 +16,6 @@ jobs:
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://test:test@localhost:5432/laixia_test
-      JWT_SECRET: laixia-ci-testing-secret-not-for-production-2026
-      JWT_EXPIRES_IN: 12h
-      CORS_ORIGINS: http://localhost:5173
-      SUPABASE_URL: https://example.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: ci-test-placeholder
-      SUPABASE_ANON_KEY: ci-test-placeholder
-
     defaults:
       run:
         working-directory: backend
@@ -32,6 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare test environment
+        run: cp .env.example .env
+        
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
