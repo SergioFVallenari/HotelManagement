@@ -1,0 +1,220 @@
+
+name: Deploy LAIXIA Production
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: laixia-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: "166493338674"
+  ECR_REPOSITORY: gestion-hotel-backend
+  LAMBDA_FUNCTION: gestion-hotel-backend
+  S3_BUCKET: hotel-frontend-305424
+  CF_DISTRIBUTION: E2155UKYS18LH3
+  BACKEND_URL: https://c4vcczccaxvnboqwwqivbmcsfe0elniz.lambda-url.us-east-1.on.aws
+  FRONTEND_URL: https://d5foovh2z74go.cloudfront.net
+
+jobs:
+  deploy-backend:
+    name: Build, Test and Deploy Backend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        working-directory: backend
+        run: pnpm exec prisma generate
+
+      - name: Typecheck
+        working-directory: backend
+        run: pnpm typecheck
+
+      - name: Tests
+        working-directory: backend
+        run: pnpm test
+
+      - name: Build TypeScript
+        working-directory: backend
+        run: pnpm build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        working-directory: backend
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          docker build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            -t "$IMAGE" \
+            .
+
+          echo "IMAGE_URI=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Push image to ECR
+        run: docker push "$IMAGE_URI"
+
+      - name: Update Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION" \
+            --image-uri "$IMAGE_URI" \
+            --query '{Status:LastUpdateStatus}' \
+            --output json
+
+          aws lambda wait function-updated \
+            --function-name "$LAMBDA_FUNCTION"
+
+      - name: Verify Lambda deployment
+        run: |
+          STATUS=$(aws lambda get-function-configuration \
+            --function-name "$LAMBDA_FUNCTION" \
+            --query 'LastUpdateStatus' \
+            --output text)
+
+          echo "Lambda update status: $STATUS"
+          test "$STATUS" = "Successful"
+
+      - name: Backend smoke test
+        run: |
+          for attempt in {1..6}; do
+            if curl --fail --silent --show-error \
+              --max-time 20 \
+              "$BACKEND_URL/health"; then
+              echo "Backend OK"
+              exit 0
+            fi
+
+            echo "Health check failed ($attempt/6)"
+            sleep 10
+          done
+
+          echo "Backend health check failed"
+          exit 1
+
+  deploy-frontend:
+    name: Build and Deploy Frontend
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build React
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload static assets
+        run: |
+          aws s3 sync frontend/dist/ \
+            "s3://$S3_BUCKET/" \
+            --delete \
+            --exclude "*.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload HTML files
+        run: |
+          aws s3 sync frontend/dist/ \
+            "s3://$S3_BUCKET/" \
+            --exclude "*" \
+            --include "*.html" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "no-cache"
+
+      - name: Invalidate CloudFront
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "$CF_DISTRIBUTION" \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$CF_DISTRIBUTION" \
+            --id "$INVALIDATION_ID"
+
+      - name: Frontend smoke test
+        run: |
+          HTML=$(curl --fail --silent --show-error \
+            "$FRONTEND_URL/")
+
+          echo "$HTML" | grep -q 'assets/index-'
+
+          DEEP_LINK=$(curl --fail --silent --show-error \
+            "$FRONTEND_URL/reserva/__deep-link-check__")
+
+          echo "$DEEP_LINK" | grep -q 'assets/index-'
+
+          echo "Frontend and deep links OK"
