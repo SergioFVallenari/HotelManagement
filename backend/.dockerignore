@@ -1,6 +1,8 @@
 node_modules
+dist
 .env
+.env.*
 .git
-src
 *.log
 pnpm-debug.log*
+coverage
