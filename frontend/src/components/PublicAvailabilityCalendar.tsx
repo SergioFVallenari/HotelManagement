@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api, buildQuery } from '../api/client';
-import { ErrorBanner, Spinner } from './Feedback';
+import { ErrorBanner } from './Feedback';
+import { ContentSkeleton } from './Skeleton';
 import { dateShort } from '../lib/format';
 import { calendarIso as iso, shiftCalendarDay as shift, calendarStayError } from '../lib/availabilityCalendar';
 import type { PublicCalendarRoom } from '../api/types';
@@ -102,7 +103,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
     </select>
     {!roomTypeId && <p className="text-secondary">Elegí un tipo para ver sus habitaciones y fechas disponibles.</p>}
     {!!roomTypeId && <>
-      {loading ? <Spinner /> : error ? <><ErrorBanner message={error} /><button type="button" className="btn btn-outline-primary" onClick={() => setRetry((value) => value + 1)}>Reintentar</button></> : data && <>
+      {loading ? <ContentSkeleton variant="calendar" /> : error ? <><ErrorBanner message={error} /><button type="button" className="btn btn-outline-primary" onClick={() => setRetry((value) => value + 1)}>Reintentar</button></> : data && <>
         {data.rooms.length === 0 ? <p className="text-secondary">No hay habitaciones habilitadas de este tipo.</p> : room && <>
           <h2 className="h6 fw-bold">Seleccioná tu habitación</h2>
           <div className="availability-room-list mb-3" role="group" aria-label="Habitaciones">

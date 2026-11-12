@@ -5,7 +5,8 @@ import { Link, useParams } from 'react-router-dom';
 import { DEMO_MODE } from '../demo/config';
 import { ApiError, api } from '../api/client';
 import type { PublicBookingQuote, ReceiptUploadUrl } from '../api/types';
-import { ErrorBanner, Spinner } from '../components/Feedback';
+import { ErrorBanner } from '../components/Feedback';
+import { ContentSkeleton } from '../components/Skeleton';
 import { money } from '../lib/format';
 import { bookingThemeFromConfig, bookingThemeStyle } from '../lib/bookingTheme';
 
@@ -172,7 +173,7 @@ export function PublicBookingPage() {
   if (loading) {
     return (
       <div className="login-screen">
-        <Spinner />
+        <div className="login-card"><ContentSkeleton variant="page" /></div>
       </div>
     );
   }

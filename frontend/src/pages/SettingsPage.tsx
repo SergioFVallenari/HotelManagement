@@ -12,6 +12,7 @@ import type { AiConfig, AiSettings, CompanySettings, MpConnection, Service } fro
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Feedback';
+import { ContentSkeleton } from '../components/Skeleton';
 import { useApiError } from '../components/pagination';
 import { RecipientSettings } from '../components/RecipientSettings';
 import { dateTimeShort, generatePublicLink } from '../lib/format';
@@ -78,8 +79,8 @@ function AiAssistantSection() {
              respuestas automáticas y el chat de reservas no van a funcionar hasta cargarla.
           </div>
         )}
-        {loading || !settings ? (
-          <p className="text-secondary mb-0">Cargando configuración…</p>
+        {loading ? (
+          <ContentSkeleton />
         ) : error ? (
           <div className="alert alert-danger mb-0 d-flex justify-content-between align-items-center">
             <span>{error}</span>
@@ -88,7 +89,7 @@ function AiAssistantSection() {
             </button>
           </div>
         ) : (
-          <div>
+          settings && <div>
             <h3 className="h6">Reservas internas</h3>
             <div className="form-check form-switch mb-4">
               <input className="form-check-input" type="checkbox" id="ai-reservation-enabled"
@@ -250,7 +251,7 @@ function InstagramSettingsSection() {
       <div className="card shadow-sm">
         <div className="card-body">
           {loading ? (
-            <p className="text-secondary mb-0">Consultando conexión…</p>
+            <ContentSkeleton />
           ) : error ? (
             <div className="alert alert-danger mb-0 d-flex justify-content-between align-items-center">
               <span>{error}</span>
@@ -549,7 +550,7 @@ function MercadoPagoSection({ onNativeReturn }: { onNativeReturn: () => void }) 
       <div className="card shadow-sm">
         <div className="card-body">
           {loading ? (
-            <p className="text-secondary mb-0">Consultando conexión…</p>
+            <ContentSkeleton />
           ) : error ? (
             <div className="alert alert-danger mb-0 d-flex justify-content-between align-items-center">
               <span>{error}</span>
@@ -733,7 +734,7 @@ function BookingSettingsSection() {
     <div className="card shadow-sm">
       <div className="card-body">
         {loading ? (
-          <p className="text-secondary mb-0">Cargando configuración…</p>
+          <ContentSkeleton />
         ) : error ? (
           <div className="alert alert-danger mb-0">{error}</div>
         ) : (

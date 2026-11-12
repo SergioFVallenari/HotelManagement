@@ -24,10 +24,22 @@ export async function summary(req: Request, res: Response): Promise<void> {
     return i >= 0 && i < days ? i : -1;
   };
 
-  const [activeRooms, roomIdsResult] = await Promise.all([
-    prisma.room.count({ where: { isActive: true } }),
+  const [roomIdsResult, payments, statusGroup, createdReservations, checkInReservations, checkOutReservations] = await Promise.all([
     prisma.room.findMany({ where: { isActive: true }, select: { id: true } }),
+    prisma.payment.findMany({
+      where: { paidAt: { gte: from, lt: toExclusive }, reservation: { companyId } },
+      select: { amount: true, method: true, paidAt: true },
+    }),
+    prisma.reservation.groupBy({
+      by: ['status'],
+      where: { AND: [{ checkIn: { lt: toExclusive } }, { checkOut: { gt: from } }] },
+      _count: { _all: true },
+    }),
+    prisma.reservation.findMany({ where: { createdAt: { gte: from, lt: toExclusive } }, select: { createdAt: true } }),
+    prisma.reservation.findMany({ where: { checkedInAt: { gte: from, lt: toExclusive } }, select: { checkedInAt: true } }),
+    prisma.reservation.findMany({ where: { checkedOutAt: { gte: from, lt: toExclusive } }, select: { checkedOutAt: true } }),
   ]);
+  const activeRooms = roomIdsResult.length;
   const roomIds = roomIdsResult.map((r) => r.id);
 
   const reservations = await prisma.reservation.findMany({
@@ -60,33 +72,6 @@ export async function summary(req: Request, res: Response): Promise<void> {
   const occupancyPct = totalRoomNights > 0 ? round2((occupiedNights / totalRoomNights) * 100) : 0;
   const occupancyPctPerDay =
     activeRooms > 0 ? occupiedPerDay.map((n) => round2((n / activeRooms) * 100)) : new Array<number>(days).fill(0);
-
-  const [payments, statusGroup, createdReservations, checkInReservations, checkOutReservations] =
-    await Promise.all([
-      prisma.payment.findMany({
-        where: { paidAt: { gte: from, lt: toExclusive }, reservation: { companyId } },
-        select: { amount: true, method: true, paidAt: true },
-      }),
-      prisma.reservation.groupBy({
-        by: ['status'],
-        where: {
-          AND: [{ checkIn: { lt: toExclusive } }, { checkOut: { gt: from } }],
-        },
-        _count: { _all: true },
-      }),
-      prisma.reservation.findMany({
-        where: { createdAt: { gte: from, lt: toExclusive } },
-        select: { createdAt: true },
-      }),
-      prisma.reservation.findMany({
-        where: { checkedInAt: { gte: from, lt: toExclusive } },
-        select: { checkedInAt: true },
-      }),
-      prisma.reservation.findMany({
-        where: { checkedOutAt: { gte: from, lt: toExclusive } },
-        select: { checkedOutAt: true },
-      }),
-    ]);
 
   const createdCount = createdReservations.length;
   const checkIns = checkInReservations.length;
@@ -149,4 +134,15 @@ export async function summary(req: Request, res: Response): Promise<void> {
       daily,
     },
   });
+}
+
+export async function operations(_req: Request, res: Response): Promise<void> {
+  const from = todayHotel();
+  const to = addDays(from, 1);
+  const [checkIns, checkOuts, pending] = await Promise.all([
+    prisma.reservation.count({ where: { checkedInAt: { gte: from, lt: to } } }),
+    prisma.reservation.count({ where: { checkedOutAt: { gte: from, lt: to } } }),
+    prisma.reservation.count({ where: { status: 'PENDING', source: 'PUBLIC_LINK' } }),
+  ]);
+  res.json({ data: { date: from.toISOString().slice(0, 10), checkIns, checkOuts, pending } });
 }

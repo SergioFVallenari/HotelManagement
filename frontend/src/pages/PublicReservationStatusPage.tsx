@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api } from '../api/client';
 import type { PublicBookingPageConfig } from '../api/types';
-import { ErrorBanner, Spinner } from '../components/Feedback';
+import { ErrorBanner } from '../components/Feedback';
+import { ContentSkeleton } from '../components/Skeleton';
 import { money, dateShort } from '../lib/format';
 import { bookingThemeFromConfig, bookingThemeStyle, type BookingTheme } from '../lib/bookingTheme';
 
@@ -69,7 +70,7 @@ export function PublicReservationStatusPage() {
   }
 
   if (configLoading) {
-    return <div className="login-screen"><Spinner /></div>;
+    return <div className="login-screen"><div className="login-card"><ContentSkeleton variant="page" /></div></div>;
   }
 
   if (!pageConfig) {
