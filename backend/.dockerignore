@@ -1,8 +1,28 @@
+
+# Dependencias
 node_modules
-dist
+.pnpm-store
+
+# Variables de entorno
 .env
 .env.*
+!.env.example
+
+# Git
 .git
-*.log
-pnpm-debug.log*
+.gitignore
+
+# Archivos temporales
 coverage
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# Tests
+tests
+__tests__
+*.test.ts
+*.spec.ts
+
+# Frontend
+frontend

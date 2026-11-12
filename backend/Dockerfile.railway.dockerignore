@@ -1,0 +1,32 @@
+
+# Dependencias locales
+node_modules
+.pnpm-store
+
+# Compilaciones locales
+dist
+build
+coverage
+*.tsbuildinfo
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Archivos temporales
+*.log
+.DS_Store
+
+# Tests
+tests
+__tests__
+*.test.ts
+*.spec.ts
+
+# Archivos de documentación
+README.md
