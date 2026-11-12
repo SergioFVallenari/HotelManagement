@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ContentSkeleton } from '../components/Skeleton';
 import { api, buildQuery } from '../api/client';
 import { useApi } from '../api/useApi';
 import type { AiSettings, Page, Reservation } from '../api/types';
@@ -198,9 +199,7 @@ export function ReservationsPage() {
         error={apiError}
         onDismissError={clearError}
       >
-        <p className="text-secondary mb-0">
-          {apiError ? 'No se pudo cargar el detalle de la reserva.' : 'Cargando detalle de la reserva…'}
-        </p>
+        {apiError ? <p className="text-secondary mb-0">No se pudo cargar el detalle de la reserva.</p> : <ContentSkeleton />}
         <div className="modal-actions">
           <button
             type="button"

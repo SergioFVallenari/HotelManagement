@@ -303,11 +303,12 @@ export function MessagesPage() {
           )}
           <LoadState
             loading={loading}
+            skeleton="list"
             error={listError}
             onRetry={reload}
             empty={conversations.length === 0}
           />
-          {conversations.map((conversation) => (
+          {!loading && conversations.map((conversation) => (
             <button
               key={conversation.id}
               type="button"
@@ -378,6 +379,7 @@ export function MessagesPage() {
             <div className="inbox-thread-body">
               <LoadState
                 loading={threadLoading && messages.length === 0}
+                skeleton="thread"
                 error={threadError}
                 onRetry={() => void refreshThread()}
                 empty={!threadLoading && messages.length === 0}

@@ -1,0 +1,80 @@
+
+# ==================================================
+# ETAPA 1: BUILD
+# ==================================================
+FROM node:22-slim AS build
+
+WORKDIR /app
+
+# Dependencias del sistema
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm
+RUN corepack enable \
+    && corepack prepare pnpm@11.9.0 --activate
+
+# Manifiestos
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Instalar todas las dependencias
+RUN pnpm install --frozen-lockfile
+
+# Archivos necesarios para Prisma
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+
+# Código y configuración TypeScript
+COPY tsconfig*.json ./
+COPY src ./src
+
+# Generar Prisma Client
+RUN pnpm exec prisma generate
+
+# Compilar TypeScript
+RUN pnpm build
+
+# ==================================================
+# ETAPA 2: DEPENDENCIAS DE PRODUCCIÓN
+# ==================================================
+FROM node:22-slim AS deps
+
+WORKDIR /app
+
+RUN corepack enable \
+    && corepack prepare pnpm@11.9.0 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+RUN pnpm install --prod --frozen-lockfile
+
+# ==================================================
+# ETAPA 3: RUNTIME
+# ==================================================
+FROM node:22-slim AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Dependencias necesarias en ejecución
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mantener package.json por "type": "module"
+COPY --from=deps /app/package.json ./package.json
+
+# Dependencias de producción
+COPY --from=deps /app/node_modules ./node_modules
+
+# Código compilado
+COPY --from=build /app/dist ./dist
+
+EXPOSE 3000
+
+CMD ["node", "dist/server.js"]

@@ -7,6 +7,7 @@ import { useApi } from '../api/useApi';
 import type { Company } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ErrorBanner } from '../components/Feedback';
+import { ContentSkeleton } from '../components/Skeleton';
 import { useApiError } from '../components/pagination';
 
 interface CompanyForm {
@@ -115,7 +116,7 @@ export function ProfilePage() {
 
           {switchError && <ErrorBanner message={switchError} onDismiss={() => setSwitchError(null)} />}
 
-          {loading && <div className="p-4 text-center text-secondary">Cargando hoteles…</div>}
+          {loading && <ContentSkeleton variant="list" />}
           {error && !loading && (
             <div className="p-4">
               <ErrorBanner message={error} onDismiss={reload} />

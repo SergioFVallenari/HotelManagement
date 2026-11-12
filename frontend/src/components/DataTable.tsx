@@ -95,13 +95,16 @@ export function DataTable<T>({
     </div>
   );
 
-  if (variant === 'bare') return <>{table}{pagination}</>;
+  if (variant === 'bare') {
+    if (loading || error) return <LoadState loading={loading ?? false} error={error ?? null} onRetry={onRetry} skeleton="table" />;
+    return <>{table}{pagination}</>;
+  }
 
   return (
     <div className="card shadow-sm">
       <div className="card-body p-0">
-        <LoadState loading={loading ?? false} error={error ?? null} onRetry={onRetry} empty={empty ?? rows.length === 0} />
-        {rows.length > 0 && (
+        <LoadState loading={loading ?? false} error={error ?? null} onRetry={onRetry} empty={empty ?? rows.length === 0} skeleton="table" />
+        {!loading && !error && rows.length > 0 && (
           <>
             {table}
             {pagination}

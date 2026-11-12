@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { ApiError, api, buildQuery } from '../api/client';
 import type { PublicAvailability, PublicBookingPageConfig, PublicCalendarRoom } from '../api/types';
-import { ErrorBanner, Spinner } from '../components/Feedback';
+import { ErrorBanner } from '../components/Feedback';
+import { ContentSkeleton } from '../components/Skeleton';
 import { dateShort, money } from '../lib/format';
 import { bookingThemeFromConfig, bookingThemeStyle } from '../lib/bookingTheme';
 import { buildAvailabilityMessage } from '../lib/availabilityShare';
@@ -109,7 +110,7 @@ export function PublicAvailabilityPage() {
   const themeStyle = bookingThemeStyle(theme);
 
   if (loadedConfigSlug !== bookingSlug) {
-    return <div className="login-screen"><Spinner /></div>;
+    return <div className="login-screen"><div className="login-card"><ContentSkeleton variant="page" /></div></div>;
   }
 
   if (!pageConfig) {
@@ -225,7 +226,7 @@ export function PublicAvailabilityPage() {
           </fieldset>
         </form>
 
-        {loading && <div className="mt-4"><Spinner /></div>}
+        {loading && <div className="mt-4"><ContentSkeleton /></div>}
         </div>
         {step === 'quote' && result && quote && !loading && (
           <section aria-live="polite">

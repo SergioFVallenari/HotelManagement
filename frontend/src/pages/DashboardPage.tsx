@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { IconActivity, IconAlertCircle, IconArrowRight, IconBed, IconCalendarCheck, IconChartBar, IconCreditCard, IconDoorEnter, IconDoorExit, IconWallet } from '@tabler/icons-react';
 import { useApi } from '../api/useApi';
 import { buildQuery } from '../api/client';
 import type { Summary } from '../api/types';
 import { LoadState } from '../components/Feedback';
+import { DashboardSkeleton, Skeleton } from '../components/Skeleton';
 import { FilterPanel } from '../components/FilterPanel';
 import { StatusBadge } from '../components/Badge';
 import { dateShort, firstDayOfMonth, lastDayOfMonth, money, PAYMENT_METHODS, today } from '../lib/format';
@@ -18,10 +21,12 @@ import {
 } from 'recharts';
 
 export function DashboardPage() {
-  const [from, setFrom] = useState(today());
+  const [from, setFrom] = useState(firstDayOfMonth());
   const [to, setTo] = useState(lastDayOfMonth());
   const [query, setQuery] = useState(buildQuery({ from: firstDayOfMonth(), to: lastDayOfMonth() }));
   const { data, loading, error, reload } = useApi<{ data: Summary }>(`/summary${query}`);
+  const operations = useApi<{ data: { date: string; checkIns: number; checkOuts: number; pending: number } }>('/summary/operations', { pollMs: 30_000 });
+  const currentDay = operations.data?.data.date ?? today();
   const summary = data?.data;
 
   const occupiedPct = summary?.occupancy.occupancyPct ?? 0;
@@ -58,15 +63,42 @@ export function DashboardPage() {
           </button>
         </FilterPanel>
 
-      <LoadState loading={loading} error={error} onRetry={reload} />
+      {!loading && <LoadState loading={false} error={error} onRetry={reload} />}
 
-      {summary && (
+      <section className="dashboard-operations mb-4" aria-labelledby="dashboard-operations-title">
+        <div className="dashboard-operations-heading">
+          <div>
+            <h2 id="dashboard-operations-title">Recepción hoy</h2>
+            <p>Seguimiento independiente del período seleccionado · {dateShort(currentDay)}</p>
+          </div>
+          <Link to="/reservations" className="dashboard-operations-link">Ver reservas <IconArrowRight size={16} aria-hidden="true" /></Link>
+        </div>
+        <div className="dashboard-operations-grid">
+          <div className="dashboard-operation">
+            <span className="dashboard-operation-icon" aria-hidden="true"><IconDoorEnter size={20} /></span>
+            <div><span>Check-ins realizados</span><strong>{operations.loading && !operations.data ? <><span className="visually-hidden">Cargando</span><Skeleton className="skeleton-operation-value" /></> : operations.error ? '—' : operations.data?.data.checkIns ?? '—'}</strong></div>
+          </div>
+          <div className="dashboard-operation">
+            <span className="dashboard-operation-icon dashboard-operation-icon--blue" aria-hidden="true"><IconDoorExit size={20} /></span>
+            <div><span>Check-outs realizados</span><strong>{operations.loading && !operations.data ? <><span className="visually-hidden">Cargando</span><Skeleton className="skeleton-operation-value" /></> : operations.error ? '—' : operations.data?.data.checkOuts ?? '—'}</strong></div>
+          </div>
+          <div className="dashboard-operation">
+            <span className="dashboard-operation-icon dashboard-operation-icon--warning" aria-hidden="true"><IconAlertCircle size={20} /></span>
+            <div><span>Solicitudes de WhatsApp por verificar</span><strong>{operations.loading && !operations.data ? <><span className="visually-hidden">Cargando</span><Skeleton className="skeleton-operation-value" /></> : operations.error ? '—' : operations.data?.data.pending ?? '—'}</strong></div>
+          </div>
+        </div>
+        {operations.error && <p className="dashboard-operations-error" role="status">No se pudieron actualizar los datos de recepción. <button type="button" onClick={operations.reload}>Reintentar</button></p>}
+        <p className="dashboard-operations-note">Los movimientos indican operaciones realizadas hoy; las solicitudes incluyen todas las pendientes, sin límite de fecha.</p>
+      </section>
+
+      {loading && <DashboardSkeleton />}
+      {!loading && !error && summary && (
         <>
           <div className="row g-3 mb-4 dashboard-metrics">
             <div className="col-sm-6 col-xl-3">
               <div className="card h-100 shadow-sm metric-card">
                 <div className="card-body">
-                  <span className="metric-symbol" aria-hidden="true" />
+                  <span className="metric-symbol" aria-hidden="true"><IconBed size={21} stroke={1.8} /></span>
                   <div className="text-secondary small text-uppercase">Ocupación</div>
                   <div className="card-value">{occupiedPct.toFixed(1)}%</div>
                   <div className="text-secondary small">
@@ -78,7 +110,7 @@ export function DashboardPage() {
             <div className="col-sm-6 col-xl-3">
               <div className="card h-100 shadow-sm metric-card metric-card--cyan">
                 <div className="card-body">
-                  <span className="metric-symbol" aria-hidden="true" />
+                  <span className="metric-symbol" aria-hidden="true"><IconWallet size={21} stroke={1.8} /></span>
                   <div className="text-secondary small text-uppercase">Ingresos</div>
                   <div className="card-value">{money(revenue)}</div>
                   <div className="text-secondary small">
@@ -90,7 +122,7 @@ export function DashboardPage() {
             <div className="col-sm-6 col-xl-3">
               <div className="card h-100 shadow-sm metric-card">
                 <div className="card-body">
-                  <span className="metric-symbol" aria-hidden="true" />
+                  <span className="metric-symbol" aria-hidden="true"><IconActivity size={21} stroke={1.8} /></span>
                   <div className="text-secondary small text-uppercase">Actividad</div>
                   <div className="card-value">
                     {summary.reservationsPage.created}
@@ -104,7 +136,7 @@ export function DashboardPage() {
             <div className="col-sm-6 col-xl-3">
               <div className="card h-100 shadow-sm metric-card">
                 <div className="card-body">
-                  <span className="metric-symbol" aria-hidden="true" />
+                  <span className="metric-symbol" aria-hidden="true"><IconDoorEnter size={21} stroke={1.8} /></span>
                   <div className="text-secondary small text-uppercase">Disponibilidad</div>
                   <div className="card-value">{summary.occupancy.availableRoomNights}</div>
                   <div className="text-secondary small">noches disponibles de {summary.occupancy.totalRoomNights}</div>
@@ -116,7 +148,7 @@ export function DashboardPage() {
           <div className="row g-3 dashboard-breakdown">
             <div className="col-lg-6">
               <div className="card shadow-sm h-100">
-                <div className="card-header bg-white fw-semibold">Distribución por estado</div>
+                <div className="card-header bg-white fw-semibold"><IconChartBar size={19} aria-hidden="true" /> Distribución por estado</div>
                 <div className="card-body">
                   {summary.statusDistribution.length === 0 ? (
                     <p className="text-secondary mb-0">Sin reservas en el período.</p>
@@ -149,7 +181,7 @@ export function DashboardPage() {
             </div>
             <div className="col-lg-6">
               <div className="card shadow-sm h-100">
-                <div className="card-header bg-white fw-semibold">Ingresos por medio de pago</div>
+                <div className="card-header bg-white fw-semibold"><IconCreditCard size={19} aria-hidden="true" /> Ingresos por medio de pago</div>
                 <div className="card-body">
                   {Object.keys(summary.revenue.byMethod).length === 0 ? (
                     <p className="text-secondary mb-0">No hay pagos registrados en el período.</p>
@@ -177,16 +209,16 @@ export function DashboardPage() {
           <div className="row g-3 dashboard-charts">
             <div className="col-lg-4">
               <div className="card shadow-sm h-100">
-                <div className="card-header bg-white fw-semibold">Ocupación diaria</div>
+                <div className="card-header bg-white fw-semibold"><IconBed size={19} aria-hidden="true" /> Ocupación diaria</div>
                 <div className="card-body">
                   {summary.daily.length === 0 ? (
                     <p className="text-secondary mb-0">Sin datos en el período.</p>
                   ) : (
-                    <ResponsiveContainer width="100%" height={150}>
+                    <ResponsiveContainer width="100%" height={210}>
                       <BarChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                        <CartesianGrid vertical={false} />
+                        <CartesianGrid vertical={false} stroke="var(--gh-surface-muted)" strokeDasharray="3 3" />
                         <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 10 }} minTickGap={48} axisLine={false} tickLine={false} />
-                        <YAxis domain={[0, 100]} hide />
+                        <YAxis domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fontSize: 10, fill: 'var(--gh-text-muted)' }} axisLine={false} tickLine={false} width={40} />
                         <Tooltip
                           labelFormatter={(d) => dateShort(String(d))}
                           formatter={(value) => [`${Number(value ?? 0)}%`, 'Ocupación']}
@@ -200,14 +232,14 @@ export function DashboardPage() {
             </div>
             <div className="col-lg-4">
               <div className="card shadow-sm h-100">
-                <div className="card-header bg-white fw-semibold">Ingresos por día</div>
+                <div className="card-header bg-white fw-semibold"><IconWallet size={19} aria-hidden="true" /> Ingresos por día</div>
                 <div className="card-body">
                   {summary.daily.length === 0 ? (
                     <p className="text-secondary mb-0">Sin datos en el período.</p>
                   ) : (
-                    <ResponsiveContainer width="100%" height={150}>
+                    <ResponsiveContainer width="100%" height={210}>
                       <BarChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                        <CartesianGrid vertical={false} />
+                        <CartesianGrid vertical={false} stroke="var(--gh-surface-muted)" strokeDasharray="3 3" />
                         <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 10 }} minTickGap={48} axisLine={false} tickLine={false} />
                         <YAxis hide />
                         <Tooltip
@@ -223,16 +255,16 @@ export function DashboardPage() {
             </div>
             <div className="col-lg-4">
               <div className="card shadow-sm h-100">
-                <div className="card-header bg-white fw-semibold">Actividad diaria</div>
+                <div className="card-header bg-white fw-semibold"><IconCalendarCheck size={19} aria-hidden="true" /> Actividad diaria</div>
                 <div className="card-body">
                   {summary.daily.length === 0 ? (
                     <p className="text-secondary mb-0">Sin datos en el período.</p>
                   ) : (
-                    <ResponsiveContainer width="100%" height={150}>
+                    <ResponsiveContainer width="100%" height={210}>
                       <BarChart data={summary.daily} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                        <CartesianGrid vertical={false} />
+                        <CartesianGrid vertical={false} stroke="var(--gh-surface-muted)" strokeDasharray="3 3" />
                         <XAxis dataKey="date" tickFormatter={(d: string) => dateShort(d).slice(0, 5)} tick={{ fontSize: 10 }} minTickGap={48} axisLine={false} tickLine={false} />
-                        <YAxis allowDecimals={false} hide />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--gh-text-muted)' }} axisLine={false} tickLine={false} width={30} />
                         <Tooltip labelFormatter={(d) => dateShort(String(d))} />
                         <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
                         <Bar dataKey="created" name="Creadas" fill="var(--crm-violet)" radius={[4, 4, 0, 0]} maxBarSize={13} />

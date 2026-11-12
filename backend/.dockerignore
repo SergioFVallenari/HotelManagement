@@ -1,7 +1,8 @@
 node_modules
+dist
 .env
+.env.*
 .git
-src
-prisma
 *.log
 pnpm-debug.log*
+coverage

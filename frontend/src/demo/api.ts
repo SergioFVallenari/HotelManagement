@@ -364,6 +364,12 @@ export function createDemoApi(today = new Date().toLocaleDateString('en-CA', { t
     if (method === 'GET' && pathname === '/auth/me') return { user: demoUser };
     if (method === 'POST' && pathname === '/auth/logout') return { ok: true };
     if (method === 'GET' && pathname === '/summary') return { data: summary(store, query.get('from') ?? `${today.slice(0, 7)}-01`, query.get('to') ?? today) };
+    if (method === 'GET' && pathname === '/summary/operations') return { data: {
+      date: today,
+      checkIns: store.reservations.filter((r) => r.checkedInAt?.slice(0, 10) === today).length,
+      checkOuts: store.reservations.filter((r) => r.checkedOutAt?.slice(0, 10) === today).length,
+      pending: store.reservations.filter((r) => r.source === 'PUBLIC_LINK' && r.status === 'PENDING').length,
+    } };
     if (method === 'GET' && pathname === '/calendar') return { data: calendar(store, query.get('from') ?? today, query.get('to') ?? shiftDay(today, 30)) };
     if (method === 'GET' && pathname === '/rooms/available') {
       const from = query.get('checkIn') ?? '';

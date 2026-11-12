@@ -1,13 +1,13 @@
+import { ContentSkeleton } from './Skeleton';
+
 export function Spinner() {
   return <div className="spinner-border text-primary" role="status" aria-label="Cargando" />;
 }
 
-export function LoadState({ loading, error, empty, onRetry }: { loading: boolean; error: string | null; empty?: boolean; onRetry?: () => void }) {
+export function LoadState({ loading, error, empty, onRetry, skeleton = 'form' }: { loading: boolean; error: string | null; empty?: boolean; onRetry?: () => void; skeleton?: 'form' | 'table' | 'list' | 'thread' | 'calendar' | 'page' }) {
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center py-5">
-        <Spinner />
-      </div>
+      <ContentSkeleton variant={skeleton} />
     );
   }
   if (error) {

@@ -186,9 +186,9 @@ export function CalendarPage() {
         </div>
       </div>
 
-      <LoadState loading={loading} error={error} onRetry={reload} empty={cal?.rooms.length === 0} />
+      <LoadState loading={loading} error={error} onRetry={reload} empty={cal?.rooms.length === 0} skeleton="calendar" />
 
-      {cal && cal.rooms.length > 0 && activeRoom && (
+      {!loading && !error && cal && cal.rooms.length > 0 && activeRoom && (
         <div className="card calendar-grid">
           <div className="card-header p-0 cal-tabs-wrap">
             <ul className="nav nav-tabs cal-tabs" role="tablist" aria-label="Habitaciones">
@@ -304,7 +304,7 @@ export function CalendarPage() {
       </Modal>
 
       <Modal open={detailId !== null && detailLoading} title="Reserva" onClose={handleCloseDetail}>
-        <p className="text-secondary mb-0">Cargando detalle de la reserva…</p>
+        <LoadState loading error={null} />
       </Modal>
 
       <ReservationDetail

@@ -939,6 +939,23 @@ const paths: Record<string, Json> = {
     }),
   },
 
+  '/api/summary/operations': {
+    get: op({
+      tags: ['Resumen'],
+      summary: 'Operaciones de recepción',
+      description: `${noRole} Check-ins y check-outs realizados hoy, y solicitudes públicas pendientes de verificación.`,
+      responses: {
+        '200': ok({ type: 'object', required: ['date', 'checkIns', 'checkOuts', 'pending'], properties: {
+          date: { type: 'string', format: 'date' },
+          checkIns: { type: 'integer' },
+          checkOuts: { type: 'integer' },
+          pending: { type: 'integer' },
+        } }),
+        ...errors(),
+      },
+    }),
+  },
+
   '/api/calendar': {
     get: op({
       tags: ['Calendario'],
