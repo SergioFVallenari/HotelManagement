@@ -70,6 +70,14 @@ export async function loginForCompanies(req: Request, res: Response): Promise<vo
 
 export async function login(req: Request, res: Response): Promise<void> {
   const input = loginSchema.parse(req.body) as LoginInput;
+  const payload = await resolveLoginSession(input);
+  const token = jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn as jwt.SignOptions['expiresIn'] });
+
+  res.cookie(AUTH_COOKIE, token, authCookieOptions());
+  res.json({ user: payload });
+}
+
+export async function resolveLoginSession(input: LoginInput) {
   const authUserId = await resolveAuthUserId(input.token);
 
   const user = await unscoped(() => prisma.user.findUnique({ where: { authUserId } }));
@@ -98,10 +106,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     companyId: membership.companyId,
     companyName: membership.company.name
   };
-  const token = jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn as jwt.SignOptions['expiresIn'] });
-
-  res.cookie(AUTH_COOKIE, token, authCookieOptions());
-  res.json({ user: payload });
+  return payload;
 }
 
 export async function register(req: Request, res: Response): Promise<void> {
