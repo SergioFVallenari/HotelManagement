@@ -9,6 +9,7 @@ import { buildSystemPrompt, buildUserTurns, type AiTurn } from './ai.prompt.js';
 import { parseAiReply, type AiReply } from './ai.reply.js';
 import { loadConversation, replyWindowEndsAt, sendMessage } from '../channels/channels.service.js';
 import type { ChannelDirection } from '../../generated/prisma/enums.js';
+import { assertBillingOperation } from '../billing/billing.guard.js';
 
 const HISTORY_LIMIT = 20;
 
@@ -20,7 +21,7 @@ export interface AiSettingsData {
 }
 
 export function getAiConfig() {
-  return { configured: Boolean(env.ai.geminiApiKey) };
+  return { configured: Boolean(env.ai.geminiApiKey), inboxEnabled: env.instagramMessagingEnabled && env.inboxAiEnabled };
 }
 
 async function loadSettings(companyId: number): Promise<AiSettingsData> {
@@ -133,6 +134,7 @@ async function buildAiContext(conversationId: string) {
 }
 
 export async function generateDraft(conversationId: string): Promise<AiReply & { canReply: boolean }> {
+  if (!env.instagramMessagingEnabled || !env.inboxAiEnabled) throw new AppError(503, 'INBOX_AI_DISABLED', 'Las respuestas de IA de la bandeja están desactivadas.');
   const { conversation, settings, system, userTurns } = await buildAiContext(conversationId);
   if (!settings.enabled) {
     throw new AppError(409, 'AI_DISABLED', 'El asistente de IA está desactivado. Activalo en Ajustes.');
@@ -150,7 +152,12 @@ export async function generateDraft(conversationId: string): Promise<AiReply & {
 // fire-and-forget: cualquier fallo (Gemini caído, cuota agotada, red) se traga
 // con un warning y el webhook igual responde 200 a Meta.
 export async function maybeAutoReply(conversationId: string): Promise<void> {
+  if (!env.instagramMessagingEnabled || !env.inboxAiEnabled) return;
   try {
+    if (env.billingEnforcementTesting) {
+      const candidate = await loadConversation(conversationId);
+      await assertBillingOperation(candidate.companyId, 'MODIFICAR_DATOS');
+    }
     const { conversation, settings, system, userTurns } = await buildAiContext(conversationId);
     if (!settings.enabled || !settings.autoReply) return;
     if (userTurns.length === 0) return;
@@ -173,9 +180,11 @@ export async function maybeAutoReply(conversationId: string): Promise<void> {
       console.log('[ai] respuesta sugerida (sin auto-reply)', { conversationId });
       return;
     }
+    await assertBillingOperation(conversation.companyId, 'MODIFICAR_DATOS');
     await sendMessage(conversationId, parsed.reply);
     console.log('[ai] auto-reply enviado', { conversationId });
   } catch (err) {
+    if (err instanceof AppError && (err.code === 'SUBSCRIPTION_EXPIRED' || err.code === 'HOTEL_NOT_COVERED' || err.code === 'BILLING_HOTEL_SELECTION_REQUIRED')) return;
     console.warn('[ai] auto-reply falló', { conversationId }, err);
   }
 }

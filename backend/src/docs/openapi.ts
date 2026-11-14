@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requiresCsrfHeader } from '../lib/requestSecurity.js';
+import { updateCoverageSchema } from '../modules/billing/billing.schema.js';
 import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '../modules/recipients/recipients.schema.js';
 import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
@@ -126,6 +127,7 @@ const adminOnly = 'Requiere rol `ADMIN`.';
 const ownerOnly = 'Requiere rol `OWNER`.';
 
 const PUBLIC: ReadonlyArray<[string, string]> = [
+  ['/api/billing/webhook', 'post'],
   ['/health', 'get'],
   ['/api/auth/login', 'post'],
   ['/api/auth/login/company', 'post'],
@@ -225,6 +227,60 @@ const paths: Record<string, Json> = {
       responses: {
         '200': ok(ref('Calendar')),
         ...errors({ '401': 'Falta un token Bearer móvil válido o expiró', '400': 'Rango inválido o mayor a 62 días' }),
+      },
+    }),
+  },
+  '/api/billing/webhook': {
+    post: op({
+      tags: ['Facturación'], summary: 'Recibir notificación experimental de facturación',
+      description: 'Solo testing, con firma propia de billing; registra eventos sin activar la suscripción.',
+      security: publicSecurity,
+      responses: { '200': ok({ type: 'object', properties: { received: { type: 'boolean' } } }), ...errors({ '503': 'Webhook de prueba desactivado' }) },
+    }),
+  },
+  '/api/billing/checkout': {
+    post: op({
+      tags: ['Facturación'],
+      summary: 'Iniciar checkout experimental de suscripción',
+      description: `${ownerOnly} Solo habilitable en testing con credenciales y precio de prueba; no activa acceso. Temporalmente no admite contratar durante el trial.`,
+      responses: { '201': ok({ type: 'object', properties: { checkoutUrl: { type: 'string', format: 'uri' }, status: { type: 'string', const: 'PENDING' } } }), ...errors({ '409': 'El trial sigue activo o ya existe una solicitud en curso', '503': 'Checkout de prueba deshabilitado o pendiente de conciliación' }) },
+    }),
+  },
+  '/api/billing/coverage': {
+    get: op({
+      tags: ['Facturación'], summary: 'Consultar los hoteles de la cuenta pagadora',
+      description: ownerOnly,
+      responses: { '200': ok({ type: 'object', properties: {
+        status: { type: 'string', enum: ['TRIALING', 'GRANDFATHERED', 'EXPIRED', 'ACTIVE'] },
+        daysRemaining: { type: ['integer', 'null'] }, trialStartedAt: { type: ['string', 'null'], format: 'date-time' },
+        trialEndsAt: { type: ['string', 'null'], format: 'date-time' }, currentPeriodEnd: { type: ['string', 'null'], format: 'date-time' }, maximumHotels: { type: ['integer', 'null'] },
+        maximumRoomsPerHotel: { type: ['integer', 'null'] }, maximumUsersPerHotel: { type: ['integer', 'null'] },
+        hotels: { type: 'array', items: { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' }, covered: { type: 'boolean' }, activeRooms: { type: 'integer' }, activeUsers: { type: 'integer' } } } },
+      } }), ...errors() },
+    }),
+    put: op({
+      tags: ['Facturación'], summary: 'Elegir hoteles cubiertos por el trial', description: `${ownerOnly} Máximo tres hoteles de la cuenta.`,
+      requestBody: jsonBody(js(updateCoverageSchema, 'input'), 'Hoteles cubiertos'),
+      responses: { '200': ok({ type: 'object' }), ...errors({ '409': 'La cobertura de esta cuenta no se puede modificar' }) },
+    }),
+  },
+  '/api/billing/subscription': {
+    get: op({
+      tags: ['Facturación'],
+      summary: 'Consultar la suscripción de la empresa activa',
+      description: `${ownerOnly} El estado efectivo se calcula al consultar y no restringe operaciones en esta etapa.`,
+      responses: {
+        '200': ok({ type: 'object', required: ['status', 'daysRemaining', 'trialStartedAt', 'trialEndsAt', 'covered', 'plan'], properties: {
+          status: { type: 'string', enum: ['TRIALING', 'GRANDFATHERED', 'EXPIRED', 'ACTIVE'] },
+          daysRemaining: { type: ['integer', 'null'], minimum: 0 },
+          trialStartedAt: { type: ['string', 'null'], format: 'date-time' },
+          trialEndsAt: { type: ['string', 'null'], format: 'date-time' },
+          covered: { type: 'boolean' },
+          needsHotelSelection: { type: 'boolean' },
+          currentPeriodEnd: { type: ['string', 'null'], format: 'date-time' },
+          plan: { type: 'object', required: ['code', 'name'], properties: { code: { type: 'string' }, name: { type: 'string' } } },
+        } }),
+        ...errors(),
       },
     }),
   },
@@ -1494,7 +1550,7 @@ const paths: Record<string, Json> = {
         '`AI_NOT_CONFIGURED` y el auto-reply no funciona.',
       responses: {
         '200': okPlain(
-          { data: { type: 'object', properties: { configured: { type: 'boolean' } } } },
+          { data: { type: 'object', properties: { configured: { type: 'boolean' }, inboxEnabled: { type: 'boolean' } } } },
           'Estado del asistente. Envelope: `{ data }`.',
         ),
         ...errors(),
@@ -2061,6 +2117,7 @@ export const openApiDocument = {
     { name: 'Estado', description: 'Health check' },
     { name: 'Autenticación', description: 'Login de 2 pasos y sesión' },
     { name: 'Mobile', description: 'Login Bearer y calendario interno para React Native / Expo' },
+    { name: 'Facturación', description: 'Suscripciones y cobertura de la cuenta pagadora' },
     { name: 'Empresas', description: 'Hoteles (multi-tenant)' },
     { name: 'Tipos de habitación', description: 'Categorías de habitación' },
     { name: 'Habitaciones', description: 'Habitaciones y disponibilidad' },

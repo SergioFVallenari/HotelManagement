@@ -426,6 +426,7 @@ export interface MessageThread {
 
 export interface AiConfig {
   configured: boolean;
+  inboxEnabled?: boolean;
 }
 
 export interface AiSettings {

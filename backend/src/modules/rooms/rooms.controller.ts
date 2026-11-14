@@ -1,12 +1,15 @@
 import type { Request, Response } from 'express';
 import { Prisma } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
-import { badRequest, conflict, notFound } from '../../lib/AppError.js';
+import { AppError, badRequest, conflict, notFound } from '../../lib/AppError.js';
+import { env } from '../../config/env.js';
+import { assertRoomCapacity, lockCompanyForRoomLimit } from '../billing/billing.roomLimit.js';
 import type { Pagination } from '../../lib/pagination.js';
 import { paginationMeta, parseIdParam, parsePagination, parseBool } from '../../lib/pagination.js';
 import { parseDate } from '../../lib/date.js';
 import type { CreateRoomInput, UpdateRoomInput } from './rooms.schema.js';
 import { createRoomSchema, updateRoomSchema } from './rooms.schema.js';
+import { observeActiveLimit } from '../billing/billing.observe.js';
 
 const reservationInclude = {
   guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -105,7 +108,14 @@ export async function createRoom(req: Request, res: Response): Promise<void> {
   });
   if (existing) throw conflict('DUPLICATE', `La habitación "${input.number}" ya existe`);
 
-  const room = await prisma.room.create({ data: { ...input, companyId }, include: { type: true } });
+  const room = env.billingLimitsTesting && input.isActive
+    ? await prisma.$transaction(async (tx) => {
+        await lockCompanyForRoomLimit(tx, companyId);
+        await assertRoomCapacity(tx, companyId);
+        return tx.room.create({ data: { ...input, companyId }, include: { type: true } });
+      })
+    : await prisma.room.create({ data: { ...input, companyId }, include: { type: true } });
+  if (room.isActive) await observeActiveLimit(companyId, 'MAX_ROOMS');
   res.status(201).json({ data: room });
 }
 
@@ -122,13 +132,19 @@ export async function updateRoom(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    const updated = await prisma.room.update({
-      where: { id },
-      data: input,
-      include: { type: true },
-    });
+    const updated = env.billingLimitsTesting && input.isActive === true
+      ? await prisma.$transaction(async (tx) => {
+          await lockCompanyForRoomLimit(tx, req.user!.companyId);
+          const current = await tx.room.findUnique({ where: { id } });
+          if (!current) throw notFound('Habitación', id);
+          if (!current.isActive) await assertRoomCapacity(tx, req.user!.companyId);
+          return tx.room.update({ where: { id }, data: input, include: { type: true } });
+        })
+      : await prisma.room.update({ where: { id }, data: input, include: { type: true } });
+    if (!room.isActive && updated.isActive) await observeActiveLimit(req.user!.companyId, 'MAX_ROOMS');
     res.json({ data: updated });
-  } catch {
+  } catch (err) {
+    if (err instanceof AppError) throw err;
     throw conflict('DUPLICATE', 'El número de habitación ya está en uso');
   }
 }

@@ -20,6 +20,7 @@ import {
 import { authUrlSchema, regenerateSchema } from './mp.schema.js';
 import { buildReturnUrl, resolveReturnTo } from './mp.return-to.js';
 import { processWebhook } from './mp.webhook.js';
+import { assertBillingOperation } from '../billing/billing.guard.js';
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -125,6 +126,7 @@ export async function oauthCallbackHandler(req: Request, res: Response): Promise
   }
 
   try {
+    await assertBillingOperation(statePayload.companyId, 'MODIFICAR_DATOS');
     const bundle = await exchangeAuthorizationCode(query.code);
     const email = await fetchSellerEmail(bundle.accessToken);
     await connectAccount(statePayload.companyId, bundle, email);

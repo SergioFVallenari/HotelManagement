@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './modules/auth/auth.routes.js';
 import companyRoutes from './modules/companies/companies.routes.js';
+import billingRoutes from './modules/billing/billing.routes.js';
 import roomTypeRoutes from './modules/roomTypes/roomTypes.routes.js';
 import roomRoutes from './modules/rooms/rooms.routes.js';
 import guestRoutes from './modules/guests/guests.routes.js';
@@ -28,6 +29,7 @@ import { writeRateLimiter } from './middleware/rateLimiter.js';
 import { env } from './config/env.js';
 import { performanceDiagnostics } from './middleware/performance.js';
 import { csrfProtection, securityHeaders } from './middleware/requestSecurity.js';
+import { billingWriteGuard } from './middleware/billingGuard.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -61,10 +63,12 @@ export function createApp(): express.Express {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
   app.use(docsRoutes);
+  app.use('/api', billingWriteGuard);
 
   app.use('/api/auth', authRoutes);
   app.use('/api/mobile', mobileRoutes);
   app.use('/api/companies', companyRoutes);
+  app.use('/api/billing', billingRoutes);
   app.use('/api/room-types', roomTypeRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/guests', guestRoutes);

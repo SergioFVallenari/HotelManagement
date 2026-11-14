@@ -29,6 +29,7 @@ import { loadReservationRooms, roomOverlapWhere } from '../reservations/reservat
 import { generateBookingToken } from './booking.token.js';
 import { buildShareMessage, buildWhatsAppUrl } from './booking.share.js';
 import { parseServiceLines, type BookingServiceLine } from './booking.lines.js';
+import { assertBillingOperation } from '../billing/billing.guard.js';
 import {
   ALLOWED_RECEIPT_TYPES,
   createReceiptUploadUrl,
@@ -536,6 +537,8 @@ export async function createReceiptUpload(token: string, input: ReceiptUploadInp
   const companyId = row.company?.id;
   if (!companyId) throw notFound('La solicitud de reserva no existe');
 
+  await assertBillingOperation(companyId, 'CREAR_RESERVA_PUBLICA');
+
   const path = `${receiptPrefix(companyId, row.token)}${randomUUID()}${extensionForMimeType(input.mimeType)}`;
   const { signedUrl, token: uploadToken } = await createReceiptUploadUrl(path);
   return { path, signedUrl, token: uploadToken };
@@ -548,6 +551,8 @@ export async function submitBooking(token: string, guest: PublicBookingInput) {
 
   const companyId = row.company?.id;
   if (!companyId) throw notFound('La solicitud de reserva no existe');
+
+  await assertBillingOperation(companyId, 'CREAR_RESERVA_PUBLICA');
 
   const deposit = decToNum(row.deposit);
   const receiptPath = guest.receiptPath?.trim() || null;
