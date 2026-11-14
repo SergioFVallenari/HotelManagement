@@ -129,6 +129,8 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/health', 'get'],
   ['/api/auth/login', 'post'],
   ['/api/auth/login/company', 'post'],
+  ['/api/mobile/auth/login', 'post'],
+  ['/api/mobile/auth/login/company', 'post'],
   ['/api/auth/logout', 'post'],
   ['/api/mp/oauth/callback', 'get'],
   ['/api/mp/webhook', 'post'],
@@ -176,6 +178,56 @@ const componentSchemas: Record<string, Json> = {
 };
 
 const paths: Record<string, Json> = {
+  '/api/mobile/auth/login': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Paso 1 móvil: credenciales y hoteles disponibles',
+      description: 'Mismas credenciales y reglas de acceso que la web. Devuelve el token de Supabase solo para completar el paso 2; no usarlo como Bearer del calendario. No emite cookies. Límite: 5 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(credentialsSchema, 'input'), 'Email y contraseña'),
+      responses: {
+        '200': okPlain({
+          companies: { type: 'array', items: { type: 'object', properties: {
+            id: { type: 'integer' }, name: { type: 'string' }, role: ref('roleSchema'),
+          } } },
+          token: { type: 'string', description: 'Token temporal para el paso 2' },
+        }),
+        ...errors({ '401': 'Credenciales inválidas', '403': 'Email sin confirmar o cuenta deshabilitada' }),
+      },
+    }),
+  },
+  '/api/mobile/auth/login/company': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Paso 2 móvil: emitir sesión Bearer por hotel',
+      description: 'Valida membresía activa y propiedad del hotel para OWNER. No emite cookies. JWT exclusivo de mobile; expira según JWT_EXPIRES_IN. No hay refresh: volver a iniciar sesión al vencer. Límite: 5 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(loginSchema, 'input'), 'Hotel elegido y token del paso 1'),
+      responses: {
+        '200': ok({ type: 'object', properties: {
+          token: { type: 'string' }, tokenType: { type: 'string', const: 'Bearer' },
+          expiresAt: { type: 'string', format: 'date-time' }, user: ref('AuthUser'),
+        } }),
+        ...errors({ '401': 'Token inválido o sin membresía activa en el hotel' }),
+      },
+    }),
+  },
+  '/api/mobile/calendar': {
+    get: op({
+      tags: ['Mobile'],
+      summary: 'Calendario interno para la app móvil',
+      description: `${noRole} Misma grilla de la web, con reservas, nombres de huéspedes y reservas grupales. Solo lectura del hotel del token; companyId en query no cambia la empresa. Mes actual por defecto; máximo 62 días inclusivos.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [
+        queryParam('from', 'Inicio YYYY-MM-DD', { schema: { type: 'string', format: 'date' } }),
+        queryParam('to', 'Fin YYYY-MM-DD', { schema: { type: 'string', format: 'date' } }),
+      ],
+      responses: {
+        '200': ok(ref('Calendar')),
+        ...errors({ '401': 'Falta un token Bearer móvil válido o expiró', '400': 'Rango inválido o mayor a 62 días' }),
+      },
+    }),
+  },
   '/api/recipients': {
     get: op({
       tags: ['Notificaciones'],
@@ -2008,6 +2060,7 @@ export const openApiDocument = {
     { name: 'Notificaciones', description: 'Destinatarios de avisos por email, aislados por hotel' },
     { name: 'Estado', description: 'Health check' },
     { name: 'Autenticación', description: 'Login de 2 pasos y sesión' },
+    { name: 'Mobile', description: 'Login Bearer y calendario interno para React Native / Expo' },
     { name: 'Empresas', description: 'Hoteles (multi-tenant)' },
     { name: 'Tipos de habitación', description: 'Categorías de habitación' },
     { name: 'Habitaciones', description: 'Habitaciones y disponibilidad' },
@@ -2027,6 +2080,10 @@ export const openApiDocument = {
   ],
   components: {
     securitySchemes: {
+      mobileBearer: {
+        type: 'http', scheme: 'bearer', bearerFormat: 'JWT',
+        description: 'Token exclusivo de POST /api/mobile/auth/login/company. No sirve para las rutas web.',
+      },
       cookieAuth: {
         type: 'apiKey',
         in: 'cookie',

@@ -103,7 +103,8 @@ test('cada operación declara security y coincide con ser pública o no', () => 
       if (publicKeys.has(key)) {
         assert.deepEqual(entry.security, [], `${key} debería ser pública (sin security)`);
       } else {
-        assert.deepEqual(entry.security, [{ cookieAuth: [] }], `${key} debería requerir cookie gh_token`);
+        const expected = path.startsWith('/api/mobile/') ? [{ mobileBearer: [] }] : [{ cookieAuth: [] }];
+        assert.deepEqual(entry.security, expected, `${key} debería requerir su esquema de autenticación`);
       }
     }
   }

@@ -14,6 +14,7 @@ import publicAvailabilityRoutes from './modules/booking/publicAvailability.route
 import paymentRoutes from './modules/payments/payments.routes.js';
 import summaryRoutes from './modules/summary/summary.routes.js';
 import calendarRoutes from './modules/calendar/calendar.routes.js';
+import mobileRoutes from './modules/mobile/mobile.routes.js';
 import mpRoutes from './modules/mercadopago/mp.routes.js';
 import instagramRoutes from './modules/instagram/instagram.routes.js';
 import channelsRoutes from './modules/channels/channels.routes.js';
@@ -62,6 +63,7 @@ export function createApp(): express.Express {
   app.use(docsRoutes);
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/mobile', mobileRoutes);
   app.use('/api/companies', companyRoutes);
   app.use('/api/room-types', roomTypeRoutes);
   app.use('/api/rooms', roomRoutes);
