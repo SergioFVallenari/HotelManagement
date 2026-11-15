@@ -17,6 +17,7 @@ test('rechaza referencias cruzadas, pagos rechazados, importes o modo real', () 
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, id: 35 } }), { valid: false, reason: 'CONTRACT_MISMATCH' });
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, status: 'rejected' } }), { valid: false, reason: 'NOT_APPROVED' });
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, live_mode: true } }), { valid: false, reason: 'MODE_MISMATCH' });
+  assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, live_mode: undefined } }), { valid: false, reason: 'MODE_MISMATCH' });
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, transaction_amount: 151 } }), { valid: false, reason: 'AMOUNT_MISMATCH' });
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, currency_id: 'USD' } }), { valid: false, reason: 'AMOUNT_MISMATCH' });
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, id: Number.MAX_SAFE_INTEGER + 1 } }), { valid: false, reason: 'INCOMPLETE' });

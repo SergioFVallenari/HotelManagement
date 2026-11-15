@@ -13,7 +13,7 @@ export function verifyBillingNotification(input: {
   now: number;
 }) {
   const event = parseMercadoPagoBillingNotification(input.body);
-  if (!event || event.liveMode !== false || typeof input.queryResourceId !== 'string' || input.queryResourceId !== event.resourceId || !input.requestId || !input.signature) {
+  if (!event || event.liveMode === true || typeof input.queryResourceId !== 'string' || input.queryResourceId !== event.resourceId || !input.requestId || !input.signature) {
     throw new AppError(400, 'BILLING_WEBHOOK_INVALID', 'La notificación de prueba no es válida.');
   }
   const ts = readSignatureTs(input.signature);

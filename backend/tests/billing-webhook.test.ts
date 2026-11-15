@@ -18,10 +18,18 @@ test('verifica la firma y genera huella estable para un reintento idéntico', ()
   assert.equal(first.fingerprint.length, 64);
 });
 
+test('acepta una notificación firmada sin live_mode, sin considerarla evidencia de pago', () => {
+  const { live_mode: _liveMode, ...body } = input.body;
+  assert.equal(verifyBillingNotification({ ...input, body }).liveMode, null);
+  assert.throws(() => verifyBillingNotification({ ...input, body, secret: 'otra' }), { code: 'BILLING_WEBHOOK_SIGNATURE' });
+});
+
 test('rechaza firma incorrecta, vencida, recurso inconsistente y modo real', () => {
   assert.throws(() => verifyBillingNotification({ ...input, secret: 'otra' }), { code: 'BILLING_WEBHOOK_SIGNATURE' });
   assert.throws(() => verifyBillingNotification({ ...input, now: now + 301_000 }), { code: 'BILLING_WEBHOOK_SIGNATURE' });
   assert.throws(() => verifyBillingNotification({ ...input, queryResourceId: 'otro' }), { code: 'BILLING_WEBHOOK_INVALID' });
   assert.throws(() => verifyBillingNotification({ ...input, body: { ...input.body, live_mode: true } }), { code: 'BILLING_WEBHOOK_INVALID' });
-  assert.throws(() => verifyBillingNotification({ ...input, body: { ...input.body, live_mode: undefined } }), { code: 'BILLING_WEBHOOK_INVALID' });
+  for (const live_mode of [undefined, null, 'false', 0]) {
+    assert.throws(() => verifyBillingNotification({ ...input, body: { ...input.body, live_mode } }), { code: 'BILLING_WEBHOOK_INVALID' });
+  }
 });

@@ -20,6 +20,7 @@ function identifier(value: unknown): string | null {
 export function parseMercadoPagoBillingNotification(value: unknown): MercadoPagoBillingNotification | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const payload = value as Record<string, unknown>;
+  if ('live_mode' in payload && typeof payload.live_mode !== 'boolean') return null;
   if (payload.type !== 'subscription_preapproval' && payload.type !== 'subscription_authorized_payment' && payload.type !== 'payment') return null;
   if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) return null;
   const resourceId = identifier((payload.data as Record<string, unknown>).id);
