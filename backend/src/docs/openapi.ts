@@ -228,6 +228,40 @@ const paths: Record<string, Json> = {
       },
     }),
   },
+  '/api/mobile/reservations/{id}/check-in': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-in desde la app móvil',
+      description: `${noRole} Solo permite reservas RESERVED del hotel del token, desde la fecha de entrada según el día actual del hotel. Cambia el estado a CHECKED_IN y registra checkedInAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está RESERVED; `CHECKIN_TOO_EARLY`: aún no llegó la fecha de entrada',
+        }),
+      },
+    }),
+  },
+  '/api/mobile/reservations/{id}/check-out': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-out desde la app móvil',
+      description: `${noRole} Solo permite reservas CHECKED_IN del hotel del token. Cambia el estado a CHECKED_OUT y registra checkedOutAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está CHECKED_IN',
+        }),
+      },
+    }),
+  },
   '/api/recipients': {
     get: op({
       tags: ['Notificaciones'],
