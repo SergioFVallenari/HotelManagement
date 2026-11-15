@@ -4,6 +4,7 @@ import { loginForCompanies } from '../auth/auth.controller.js';
 import { calendar } from '../calendar/calendar.controller.js';
 import { mobileLoginCompany } from './mobile.controller.js';
 import { requireMobileAuth } from './mobile.middleware.js';
+import { checkIn, checkOut } from '../reservations/reservations.controller.js';
 
 const router = Router();
 
@@ -15,5 +16,6 @@ router.use((_req, res, next) => {
 router.post('/auth/login', rateLimiter(5, 15 * 60 * 1000), loginForCompanies);
 router.post('/auth/login/company', rateLimiter(5, 15 * 60 * 1000), mobileLoginCompany);
 router.get('/calendar', requireMobileAuth, calendar);
-
+router.post('/reservations/:id/check-in', requireMobileAuth, checkIn);
+router.post('/reservations/:id/check-out', requireMobileAuth, checkOut);
 export default router;
