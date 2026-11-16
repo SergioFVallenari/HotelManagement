@@ -9,3 +9,7 @@ export const mobileSessionSchema = z.object({
   companyId: z.number().int().positive(),
   companyName: z.string(),
 });
+
+export const mobileRefreshSchema = z.object({
+  refreshToken: z.string().regex(/^[A-Za-z0-9_-]{64}$/, 'Refresh token inválido'),
+});
