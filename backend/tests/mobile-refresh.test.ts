@@ -1,14 +1,12 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Request, Response } from 'express';
 import { prisma } from '../src/config/prisma.js';
 import { env } from '../src/config/env.js';
 import { rotateMobileSession, revokeMobileSession, createMobileSession } from '../src/modules/mobile/mobile.service.js';
 import { createRefreshToken, hashRefreshToken, refreshState, MOBILE_REFRESH_TTL_MS } from '../src/modules/mobile/mobile.refresh.js';
 import { mobileRefreshSchema } from '../src/modules/mobile/mobile.schema.js';
 import { verifyMobileToken, signMobileToken } from '../src/modules/mobile/mobile.token.js';
-import { mobileRefresh } from '../src/modules/mobile/mobile.controller.js';
 import { requiresCsrfHeader } from '../src/lib/requestSecurity.js';
 import jwt from 'jsonwebtoken';
 
@@ -84,9 +82,9 @@ test('login crea una sesión de 30 días y access token de 15 minutos', async (t
 
 test('refresh funciona sin access token, rota el secreto y actualiza los datos desde la membresía', async (t) => {
   const { first, session, tokens, tx } = fixture(t);
-  let result: any;
-  await mobileRefresh({ body: { refreshToken: first.refreshToken, companyId: 999, role: 'OWNER' } } as Request,
-    { json: (value: any) => { result = value.data; } } as Response);
+  const input = mobileRefreshSchema.parse({ refreshToken: first.refreshToken, companyId: 999, role: 'OWNER' });
+  assert.deepEqual(input, { refreshToken: first.refreshToken });
+  const result = await rotateMobileSession(input.refreshToken);
   assert.notEqual(result.refreshToken, first.refreshToken);
   assert.ok(tokens.get(first.hash).consumedAt);
   assert.ok(tokens.has(hashRefreshToken(result.refreshToken)));

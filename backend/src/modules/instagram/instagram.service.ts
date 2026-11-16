@@ -6,6 +6,7 @@ import { encryptSecret, splitEncrypted } from '../../lib/secretBox.js';
 import { IG_SCOPES, IG_WEBHOOK_FIELDS, buildAuthorizeUrl, signOauthState, verifyOauthState, type InstagramOauthState } from './instagram.oauth.js';
 import { exchangeCodeForToken, exchangeForLongLivedToken, getIgProfile, subscribeApp } from './instagram.client.js';
 import { unscoped } from '../../lib/tenant.js';
+import { assertBillingOperation } from '../billing/billing.guard.js';
 
 const ADAPTER_CHANNEL = ChannelType.INSTAGRAM;
 
@@ -65,6 +66,7 @@ export async function handleCallback(code: string, state: string, expectedUid?: 
   }
 
   try {
+    await assertBillingOperation(payload.companyId, 'MODIFICAR_DATOS');
     const shortLived = await exchangeCodeForToken(code);
     const longLived = await exchangeForLongLivedToken(shortLived.accessToken);
     const profile = await getIgProfile(longLived.accessToken);

@@ -14,6 +14,7 @@ import { conversationIdSchema, listConversationsSchema, listMessagesSchema, send
 import { maybeAutoReply } from '../ai/ai.service.js';
 import type { NormalizedEvent } from './channels.types.js';
 import type { ChannelType } from '../../generated/prisma/enums.js';
+import { env } from '../../config/env.js';
 
 async function resolveAccount(channel: ChannelType, externalAccountId: string) {
   return unscoped(() =>
@@ -36,6 +37,11 @@ export function createWebhookHandler(channel: ChannelType): RequestHandler {
         bodyTail: rawBody ? rawBody.subarray(-200).toString('utf8') : null,
       });
       res.sendStatus(403);
+      return;
+    }
+
+    if (channel === 'INSTAGRAM' && !env.instagramMessagingEnabled) {
+      res.sendStatus(503);
       return;
     }
 

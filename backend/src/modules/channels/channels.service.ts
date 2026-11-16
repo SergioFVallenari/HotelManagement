@@ -1,4 +1,5 @@
 import { prisma } from '../../config/prisma.js';
+import { env } from '../../config/env.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import type { ChannelAccount, ChannelConversation } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/AppError.js';
@@ -376,6 +377,7 @@ export async function refreshAccountIfNeeded(account: ChannelAccount): Promise<C
 }
 
 export async function sendMessage(conversationId: string, text: string) {
+  if (!env.instagramMessagingEnabled) throw new AppError(503, 'INSTAGRAM_DISABLED', 'La mensajería de Instagram está desactivada.');
   const conversation = await loadConversation(conversationId);
   const account = conversation.account;
 

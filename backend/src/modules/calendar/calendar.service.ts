@@ -54,6 +54,8 @@ export async function getCalendar(options: { from?: unknown; to?: unknown; compa
         roomId: true,
         rooms: { select: { roomId: true } },
         guest: options.publicView ? false : { select: { firstName: true, lastName: true } },
+        depositRequired: true,
+        totalAmount: true
       },
     }),
   ]);
@@ -73,6 +75,8 @@ export async function getCalendar(options: { from?: unknown; to?: unknown; compa
       id: reserve.id, code: reserve.code, status: reserve.status,
       checkIn: dateKey(reserve.checkIn), checkOut: dateKey(reserve.checkOut),
       guestName: reserve.guest ? `${reserve.guest.firstName} ${reserve.guest.lastName}`.trim() : '',
+      depositRequired: reserve.depositRequired,
+      totalAmount: reserve.totalAmount,
     })));
 
     return {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireOwnerOrAdmin } from '../../middleware/auth.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
+import { requireInboxAi, requireInstagramMessaging } from '../../middleware/featureFlags.js';
 import {
   draftHandler,
   reservationChatHandler,
@@ -19,6 +20,6 @@ router.post('/ai/reservations/chat', rateLimiter(10, 60 * 1000), reservationChat
 router.post('/ai/reservations/confirm', rateLimiter(10, 60 * 1000), confirmReservationChatHandler);
 router.get('/ai/settings', getAiSettingsHandler);
 router.put('/ai/settings', requireOwnerOrAdmin, updateAiSettingsHandler);
-router.post('/conversations/:id/ai/draft', rateLimiter(10, 60 * 1000), draftHandler);
+router.post('/conversations/:id/ai/draft', requireInstagramMessaging, requireInboxAi, rateLimiter(10, 60 * 1000), draftHandler);
 
 export default router;

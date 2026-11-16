@@ -1,6 +1,7 @@
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const PUBLIC_WRITES = new Set([
   '/api/mp/webhook',
+  '/api/billing/webhook',
   '/api/integrations/instagram/webhook',
 ]);
 
