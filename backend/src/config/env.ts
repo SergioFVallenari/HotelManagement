@@ -105,6 +105,18 @@ export const env = {
 
   frontendUrl,
   backendUrl,
+  billingEnforcementTesting: appEnv !== 'production' && optional('BILLING_ENFORCEMENT_TESTING') === 'true',
+  billingLimitsTesting: appEnv !== 'production' && optional('BILLING_LIMITS_TESTING') === 'true',
+  billingPaidAccessTesting: appEnv !== 'production' && optional('BILLING_PAID_ACCESS_TESTING') === 'true',
+  instagramMessagingEnabled: optional('INSTAGRAM_MESSAGING_ENABLED') === 'true',
+  inboxAiEnabled: optional('INBOX_AI_ENABLED') === 'true',
+  billingMpTest: {
+    enabled: isTesting && optional('BILLING_MP_TEST_ENABLED') === 'true',
+    accessToken: isTesting ? optional('BILLING_MP_TEST_ACCESS_TOKEN') : '',
+    monthlyPrice: isTesting ? optional('BILLING_MP_TEST_MONTHLY_PRICE') : '',
+    webhookEnabled: isTesting && optional('BILLING_MP_TEST_WEBHOOK_ENABLED') === 'true',
+    webhookSecret: isTesting ? optional('BILLING_MP_TEST_WEBHOOK_SECRET') : '',
+  },
 
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS, appEnv),
 

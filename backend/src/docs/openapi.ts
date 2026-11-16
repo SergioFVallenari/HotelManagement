@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { requiresCsrfHeader } from '../lib/requestSecurity.js';
+import { updateCoverageSchema } from '../modules/billing/billing.schema.js';
 import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '../modules/recipients/recipients.schema.js';
 import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
 import { credentialsSchema, loginSchema, registerSchema, resendSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
+import { mobileRefreshSchema } from '../modules/mobile/mobile.schema.js';
 import { createRoomSchema, updateRoomSchema } from '../modules/rooms/rooms.schema.js';
 import { createRoomTypeSchema, updateRoomTypeSchema } from '../modules/roomTypes/roomTypes.schema.js';
 import { createGuestSchema, updateGuestSchema } from '../modules/guests/guests.schema.js';
@@ -126,11 +128,14 @@ const adminOnly = 'Requiere rol `ADMIN`.';
 const ownerOnly = 'Requiere rol `OWNER`.';
 
 const PUBLIC: ReadonlyArray<[string, string]> = [
+  ['/api/billing/webhook', 'post'],
   ['/health', 'get'],
   ['/api/auth/login', 'post'],
   ['/api/auth/login/company', 'post'],
   ['/api/mobile/auth/login', 'post'],
   ['/api/mobile/auth/login/company', 'post'],
+  ['/api/mobile/auth/refresh', 'post'],
+  ['/api/mobile/auth/logout', 'post'],
   ['/api/auth/logout', 'post'],
   ['/api/mp/oauth/callback', 'get'],
   ['/api/mp/webhook', 'post'],
@@ -200,15 +205,48 @@ const paths: Record<string, Json> = {
     post: op({
       tags: ['Mobile'],
       summary: 'Paso 2 móvil: emitir sesión Bearer por hotel',
-      description: 'Valida membresía activa y propiedad del hotel para OWNER. No emite cookies. JWT exclusivo de mobile; expira según JWT_EXPIRES_IN. No hay refresh: volver a iniciar sesión al vencer. Límite: 5 intentos / 15 min por IP.',
+      description: 'Valida membresía activa y propiedad del hotel para OWNER. No emite cookies. Access token exclusivo de mobile de 15 minutos y refresh token opaco de 30 días. Guardar el refresh token en SecureStore. El campo token es un alias compatible de accessToken. Límite: 5 intentos / 15 min por IP.',
       security: publicSecurity,
       requestBody: jsonBody(js(loginSchema, 'input'), 'Hotel elegido y token del paso 1'),
       responses: {
         '200': ok({ type: 'object', properties: {
           token: { type: 'string' }, tokenType: { type: 'string', const: 'Bearer' },
+          accessToken: { type: 'string' }, refreshToken: { type: 'string' },
+          refreshExpiresAt: { type: 'string', format: 'date-time' },
           expiresAt: { type: 'string', format: 'date-time' }, user: ref('AuthUser'),
         } }),
         ...errors({ '401': 'Token inválido o sin membresía activa en el hotel' }),
+      },
+    }),
+  },
+  '/api/mobile/auth/refresh': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Renovar la sesión móvil con refresh token',
+      description: 'No exige access token ni Bearer vigente. Revalida acceso al hotel y datos actuales. Rota el refresh token en cada uso: reemplazarlo en SecureStore junto con el access token. La reutilización de uno consumido revoca toda esa sesión. Serializar las renovaciones en la app y no reintentar con el token anterior. El access token dura 15 minutos; el refresh conserva el vencimiento absoluto de 30 días desde el login. No cambia de hotel. Límite: 30 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(mobileRefreshSchema, 'input'), 'Refresh token guardado en SecureStore'),
+      responses: {
+        '200': ok({ type: 'object', properties: {
+          token: { type: 'string' }, tokenType: { type: 'string', const: 'Bearer' },
+          accessToken: { type: 'string' }, refreshToken: { type: 'string' },
+          refreshExpiresAt: { type: 'string', format: 'date-time' },
+          expiresAt: { type: 'string', format: 'date-time' }, user: ref('AuthUser'),
+        } }),
+        ...errors({ '401': 'Refresh token desconocido, consumido, vencido, revocado o sin acceso activo al hotel', '429': 'Demasiados intentos' }),
+      },
+    }),
+  },
+  '/api/mobile/auth/logout': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Revocar la sesión móvil',
+      description: 'Revoca toda la familia del refresh token, incluso si se presenta uno ya consumido. Idempotente, sin exigir access token. Borrar las credenciales de SecureStore tras cerrar sesión. Los access tokens ya emitidos siguen siendo válidos hasta su vencimiento (máximo 15 minutos). Límite: 30 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(mobileRefreshSchema, 'input'), 'Refresh token de la sesión a cerrar'),
+      responses: {
+        '200': ok({ type: 'object', properties: { success: { type: 'boolean', const: true } } }),
+        ...errors({ '429': 'Demasiados intentos' }),
       },
     }),
   },
@@ -225,6 +263,94 @@ const paths: Record<string, Json> = {
       responses: {
         '200': ok(ref('Calendar')),
         ...errors({ '401': 'Falta un token Bearer móvil válido o expiró', '400': 'Rango inválido o mayor a 62 días' }),
+      },
+    }),
+  },
+  '/api/mobile/reservations/{id}/check-in': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-in desde la app móvil',
+      description: `${noRole} Solo permite reservas RESERVED del hotel del token, desde la fecha de entrada según el día actual del hotel. Cambia el estado a CHECKED_IN y registra checkedInAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está RESERVED; `CHECKIN_TOO_EARLY`: aún no llegó la fecha de entrada',
+        }),
+      },
+    }),
+  },
+  '/api/mobile/reservations/{id}/check-out': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-out desde la app móvil',
+      description: `${noRole} Solo permite reservas CHECKED_IN del hotel del token. Cambia el estado a CHECKED_OUT y registra checkedOutAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está CHECKED_IN',
+        }),
+      },
+    }),
+  },
+  '/api/billing/webhook': {
+    post: op({
+      tags: ['Facturación'], summary: 'Recibir notificación experimental de facturación',
+      description: 'Solo testing, con firma propia de billing; registra eventos sin activar la suscripción.',
+      security: publicSecurity,
+      responses: { '200': ok({ type: 'object', properties: { received: { type: 'boolean' } } }), ...errors({ '503': 'Webhook de prueba desactivado' }) },
+    }),
+  },
+  '/api/billing/checkout': {
+    post: op({
+      tags: ['Facturación'],
+      summary: 'Iniciar checkout experimental de suscripción',
+      description: `${ownerOnly} Solo habilitable en testing con credenciales y precio de prueba; no activa acceso. Temporalmente no admite contratar durante el trial.`,
+      responses: { '201': ok({ type: 'object', properties: { checkoutUrl: { type: 'string', format: 'uri' }, status: { type: 'string', const: 'PENDING' } } }), ...errors({ '409': 'El trial sigue activo o ya existe una solicitud en curso', '503': 'Checkout de prueba deshabilitado o pendiente de conciliación' }) },
+    }),
+  },
+  '/api/billing/coverage': {
+    get: op({
+      tags: ['Facturación'], summary: 'Consultar los hoteles de la cuenta pagadora',
+      description: ownerOnly,
+      responses: { '200': ok({ type: 'object', properties: {
+        status: { type: 'string', enum: ['TRIALING', 'GRANDFATHERED', 'EXPIRED', 'ACTIVE'] },
+        daysRemaining: { type: ['integer', 'null'] }, trialStartedAt: { type: ['string', 'null'], format: 'date-time' },
+        trialEndsAt: { type: ['string', 'null'], format: 'date-time' }, currentPeriodEnd: { type: ['string', 'null'], format: 'date-time' }, maximumHotels: { type: ['integer', 'null'] },
+        maximumRoomsPerHotel: { type: ['integer', 'null'] }, maximumUsersPerHotel: { type: ['integer', 'null'] },
+        hotels: { type: 'array', items: { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' }, covered: { type: 'boolean' }, activeRooms: { type: 'integer' }, activeUsers: { type: 'integer' } } } },
+      } }), ...errors() },
+    }),
+    put: op({
+      tags: ['Facturación'], summary: 'Elegir hoteles cubiertos por el trial', description: `${ownerOnly} Máximo tres hoteles de la cuenta.`,
+      requestBody: jsonBody(js(updateCoverageSchema, 'input'), 'Hoteles cubiertos'),
+      responses: { '200': ok({ type: 'object' }), ...errors({ '409': 'La cobertura de esta cuenta no se puede modificar' }) },
+    }),
+  },
+  '/api/billing/subscription': {
+    get: op({
+      tags: ['Facturación'],
+      summary: 'Consultar la suscripción de la empresa activa',
+      description: `${ownerOnly} El estado efectivo se calcula al consultar y no restringe operaciones en esta etapa.`,
+      responses: {
+        '200': ok({ type: 'object', required: ['status', 'daysRemaining', 'trialStartedAt', 'trialEndsAt', 'covered', 'plan'], properties: {
+          status: { type: 'string', enum: ['TRIALING', 'GRANDFATHERED', 'EXPIRED', 'ACTIVE'] },
+          daysRemaining: { type: ['integer', 'null'], minimum: 0 },
+          trialStartedAt: { type: ['string', 'null'], format: 'date-time' },
+          trialEndsAt: { type: ['string', 'null'], format: 'date-time' },
+          covered: { type: 'boolean' },
+          needsHotelSelection: { type: 'boolean' },
+          currentPeriodEnd: { type: ['string', 'null'], format: 'date-time' },
+          plan: { type: 'object', required: ['code', 'name'], properties: { code: { type: 'string' }, name: { type: 'string' } } },
+        } }),
+        ...errors(),
       },
     }),
   },
@@ -1494,7 +1620,7 @@ const paths: Record<string, Json> = {
         '`AI_NOT_CONFIGURED` y el auto-reply no funciona.',
       responses: {
         '200': okPlain(
-          { data: { type: 'object', properties: { configured: { type: 'boolean' } } } },
+          { data: { type: 'object', properties: { configured: { type: 'boolean' }, inboxEnabled: { type: 'boolean' } } } },
           'Estado del asistente. Envelope: `{ data }`.',
         ),
         ...errors(),
@@ -2061,6 +2187,7 @@ export const openApiDocument = {
     { name: 'Estado', description: 'Health check' },
     { name: 'Autenticación', description: 'Login de 2 pasos y sesión' },
     { name: 'Mobile', description: 'Login Bearer y calendario interno para React Native / Expo' },
+    { name: 'Facturación', description: 'Suscripciones y cobertura de la cuenta pagadora' },
     { name: 'Empresas', description: 'Hoteles (multi-tenant)' },
     { name: 'Tipos de habitación', description: 'Categorías de habitación' },
     { name: 'Habitaciones', description: 'Habitaciones y disponibilidad' },

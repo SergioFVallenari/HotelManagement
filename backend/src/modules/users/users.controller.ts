@@ -6,6 +6,9 @@ import { adminCreateUser } from '../../lib/supabaseAuth.js';
 import { buildInternalMetadata } from '../auth/auth.metadata.js';
 import type { CreateUserInput } from './users.schema.js';
 import { createUserSchema } from './users.schema.js';
+import { observeActiveLimit } from '../billing/billing.observe.js';
+import { assertBillingOperation } from '../billing/billing.guard.js';
+import { preflightUserLimit } from '../billing/billing.userLimit.js';
 
 const USER_SELECT = {
   username: true,
@@ -77,6 +80,9 @@ export async function createUser(req: Request, res: Response): Promise<void> {
   } else {
     companyId = me.companyId;
   }
+
+  await assertBillingOperation(companyId, 'MODIFICAR_DATOS', me.role);
+  if (input.isActive) await preflightUserLimit(companyId);
 
   const existingByUsername = await unscoped(() =>
     prisma.userCompany.findUnique({
@@ -158,8 +164,16 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       throw new AppError(500, 'AUTH_ERROR', 'No se pudo crear el usuario');
     }
 
+    if (row.isActive) await observeActiveLimit(companyId, 'MAX_USERS');
     res.status(201).json({ data: toResponse(row) });
   } catch (err) {
+    if (input.isActive && (!(err instanceof AppError) || err.code === 'AUTH_ERROR')) {
+      try {
+        await preflightUserLimit(companyId);
+      } catch (limitError) {
+        if (limitError instanceof AppError && limitError.code === 'USER_LIMIT_REACHED') throw limitError;
+      }
+    }
     const code = (err as { code?: string }).code;
     if (code === 'P2002') {
       throw conflict('DUPLICATE', `El usuario "${input.username}" ya existe`);

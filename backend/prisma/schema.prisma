@@ -35,6 +35,64 @@ model Company {
   bookingReceipts        ReservationReceipt[]
   configPage             Json                           @default("{}")
   notificationRecipients CompanyNotificationRecipient[]
+  billingAccount         BillingAccount?
+  ownerBillingCoverage   OwnerBillingCoverage?
+}
+
+enum BillingSubscriptionStatus {
+  TRIALING
+  GRANDFATHERED
+  EXPIRED
+}
+
+model BillingLimitControl {
+  id               Int     @id
+  userLimitEnabled Boolean @default(false)
+}
+
+model BillingAccount {
+  id           Int                  @id @default(autoincrement())
+  companyId    Int                  @unique
+  createdAt    DateTime             @default(now())
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  subscription BillingSubscription?
+}
+
+model BillingProduct {
+  id    Int                       @id @default(autoincrement())
+  code  String                    @unique
+  name  String
+  items BillingSubscriptionItem[]
+}
+
+model BillingSubscription {
+  id             Int                       @id @default(autoincrement())
+  accountId      Int                       @unique
+  status         BillingSubscriptionStatus
+  trialStartedAt DateTime?
+  trialEndsAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  account        BillingAccount            @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items          BillingSubscriptionItem[]
+  events         BillingSubscriptionEvent[]
+}
+
+model BillingSubscriptionItem {
+  id             Int                 @id @default(autoincrement())
+  subscriptionId Int                 @unique
+  productId      Int
+  subscription   BillingSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  product        BillingProduct      @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+}
+
+model BillingSubscriptionEvent {
+  id             Int                 @id @default(autoincrement())
+  subscriptionId Int
+  type           String
+  createdAt      DateTime            @default(now())
+  subscription   BillingSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([subscriptionId, createdAt])
 }
 
 model CompanyAiSetting {
@@ -56,6 +114,124 @@ model User {
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   companies  UserCompany[]
+  ownerBillingAccount OwnerBillingAccount?
+}
+
+model OwnerBillingAccount {
+  id             Int                       @id @default(autoincrement())
+  ownerId        Int                       @unique
+  status         BillingSubscriptionStatus
+  trialStartedAt DateTime?
+  trialEndsAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  owner          User                      @relation(fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  hotels         OwnerBillingCoverage[]
+  contracts      OwnerBillingContract[]
+}
+
+enum OwnerBillingContractStatus {
+  PENDING
+  AUTHORIZED
+  PAUSED
+  CANCELED
+}
+
+enum OwnerBillingPaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+enum OwnerBillingWebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model OwnerBillingContract {
+  id                     Int                        @id @default(autoincrement())
+  accountId              Int
+  provider               String
+  providerSubscriptionId String?
+  requestKey             String                     @unique
+  checkoutUrl            String?
+  status                 OwnerBillingContractStatus @default(PENDING)
+  amount                 Decimal                    @db.Decimal(12, 2)
+  currency               String                     @db.VarChar(3)
+  intervalMonths         Int                        @default(1)
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  account                OwnerBillingAccount        @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  periods                OwnerBillingPeriod[]
+  payments               OwnerBillingPayment[]
+
+  @@unique([provider, providerSubscriptionId])
+  @@index([accountId, createdAt])
+}
+
+model OwnerBillingPeriod {
+  id         Int                  @id @default(autoincrement())
+  contractId Int
+  startsAt   DateTime
+  endsAt     DateTime
+  amount     Decimal              @db.Decimal(12, 2)
+  currency   String               @db.VarChar(3)
+  paymentId  Int?                 @unique
+  providerInstallmentId String?
+  providerScheduledAt DateTime?
+  createdAt  DateTime             @default(now())
+  contract   OwnerBillingContract @relation(fields: [contractId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  payment    OwnerBillingPayment? @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([contractId, startsAt])
+  @@unique([contractId, providerInstallmentId])
+}
+
+model OwnerBillingPayment {
+  id                Int                       @id @default(autoincrement())
+  contractId        Int
+  provider          String
+  providerPaymentId String?
+  status            OwnerBillingPaymentStatus @default(PENDING)
+  amount            Decimal                   @db.Decimal(12, 2)
+  currency          String                    @db.VarChar(3)
+  paidAt            DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  contract          OwnerBillingContract      @relation(fields: [contractId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  period            OwnerBillingPeriod?
+
+  @@unique([provider, providerPaymentId])
+  @@index([contractId, createdAt])
+}
+
+model OwnerBillingWebhookEvent {
+  id                     Int                       @id @default(autoincrement())
+  provider               String
+  providerNotificationId String?
+  topic                  String
+  resourceId             String
+  status                 OwnerBillingWebhookStatus @default(RECEIVED)
+  attempts               Int                       @default(0)
+  lastError              String?                   @db.Text
+  createdAt              DateTime                  @default(now())
+  processedAt            DateTime?
+
+  @@unique([provider, providerNotificationId])
+  @@index([status, createdAt])
+}
+
+model OwnerBillingCoverage {
+  id        Int                 @id @default(autoincrement())
+  accountId Int
+  companyId Int                 @unique
+  covered   Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  account   OwnerBillingAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([accountId])
 }
 
 model UserCompany {
@@ -70,6 +246,7 @@ model UserCompany {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
   type        UserType @relation(fields: [typeId], references: [id])
+  mobileSessions MobileSession[]
 
   @@id([userId, companyId])
   @@unique([companyId, username])
@@ -82,6 +259,30 @@ enum UserRole {
   ADMIN
   RECEPCIONISTA
   OWNER
+}
+
+model MobileSession {
+  id         String @id @default(uuid())
+  userId     Int
+  companyId  Int
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  membership UserCompany @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Cascade)
+  tokens     MobileRefreshToken[]
+
+  @@index([userId, companyId])
+  @@index([expiresAt])
+}
+
+model MobileRefreshToken {
+  hash       String @id
+  sessionId  String
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+  session    MobileSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
 }
 
 model UserType {

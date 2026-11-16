@@ -15,9 +15,9 @@ test('las lecturas y el preflight no necesitan cabecera CSRF', () => {
   }
 });
 
-test('solo se exceptúan los dos webhooks y las escrituras públicas por token', () => {
+test('solo se exceptúan los webhooks conocidos y las escrituras públicas por token', () => {
   for (const path of [
-    '/api/mp/webhook', '/api/integrations/instagram/webhook',
+    '/api/mp/webhook', '/api/billing/webhook', '/api/integrations/instagram/webhook',
     '/api/public/booking/token', '/api/public/booking/token/receipt',
     '/API/MP/WEBHOOK/',
   ]) assert.equal(requiresCsrfHeader('POST', path), false, path);

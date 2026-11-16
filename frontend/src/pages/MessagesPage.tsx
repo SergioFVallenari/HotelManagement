@@ -133,7 +133,7 @@ export function MessagesPage() {
   );
 
   const { data: aiConfigData } = useApi<{ data: AiConfig }>('/ai/config');
-  const aiConfigured = aiConfigData?.data.configured ?? false;
+  const aiConfigured = Boolean(aiConfigData?.data.configured && aiConfigData.data.inboxEnabled);
 
   const conversations = data?.data ?? [];
   const active = activeId ? conversations.find((c) => c.id === activeId) ?? null : null;
