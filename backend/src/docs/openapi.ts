@@ -5,6 +5,7 @@ import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '.
 import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
 import { credentialsSchema, loginSchema, registerSchema, resendSchema, switchCompanySchema } from '../modules/auth/auth.schema.js';
+import { mobileRefreshSchema } from '../modules/mobile/mobile.schema.js';
 import { createRoomSchema, updateRoomSchema } from '../modules/rooms/rooms.schema.js';
 import { createRoomTypeSchema, updateRoomTypeSchema } from '../modules/roomTypes/roomTypes.schema.js';
 import { createGuestSchema, updateGuestSchema } from '../modules/guests/guests.schema.js';
@@ -133,6 +134,8 @@ const PUBLIC: ReadonlyArray<[string, string]> = [
   ['/api/auth/login/company', 'post'],
   ['/api/mobile/auth/login', 'post'],
   ['/api/mobile/auth/login/company', 'post'],
+  ['/api/mobile/auth/refresh', 'post'],
+  ['/api/mobile/auth/logout', 'post'],
   ['/api/auth/logout', 'post'],
   ['/api/mp/oauth/callback', 'get'],
   ['/api/mp/webhook', 'post'],
@@ -202,15 +205,48 @@ const paths: Record<string, Json> = {
     post: op({
       tags: ['Mobile'],
       summary: 'Paso 2 móvil: emitir sesión Bearer por hotel',
-      description: 'Valida membresía activa y propiedad del hotel para OWNER. No emite cookies. JWT exclusivo de mobile; expira según JWT_EXPIRES_IN. No hay refresh: volver a iniciar sesión al vencer. Límite: 5 intentos / 15 min por IP.',
+      description: 'Valida membresía activa y propiedad del hotel para OWNER. No emite cookies. Access token exclusivo de mobile de 15 minutos y refresh token opaco de 30 días. Guardar el refresh token en SecureStore. El campo token es un alias compatible de accessToken. Límite: 5 intentos / 15 min por IP.',
       security: publicSecurity,
       requestBody: jsonBody(js(loginSchema, 'input'), 'Hotel elegido y token del paso 1'),
       responses: {
         '200': ok({ type: 'object', properties: {
           token: { type: 'string' }, tokenType: { type: 'string', const: 'Bearer' },
+          accessToken: { type: 'string' }, refreshToken: { type: 'string' },
+          refreshExpiresAt: { type: 'string', format: 'date-time' },
           expiresAt: { type: 'string', format: 'date-time' }, user: ref('AuthUser'),
         } }),
         ...errors({ '401': 'Token inválido o sin membresía activa en el hotel' }),
+      },
+    }),
+  },
+  '/api/mobile/auth/refresh': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Renovar la sesión móvil con refresh token',
+      description: 'No exige access token ni Bearer vigente. Revalida acceso al hotel y datos actuales. Rota el refresh token en cada uso: reemplazarlo en SecureStore junto con el access token. La reutilización de uno consumido revoca toda esa sesión. Serializar las renovaciones en la app y no reintentar con el token anterior. El access token dura 15 minutos; el refresh conserva el vencimiento absoluto de 30 días desde el login. No cambia de hotel. Límite: 30 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(mobileRefreshSchema, 'input'), 'Refresh token guardado en SecureStore'),
+      responses: {
+        '200': ok({ type: 'object', properties: {
+          token: { type: 'string' }, tokenType: { type: 'string', const: 'Bearer' },
+          accessToken: { type: 'string' }, refreshToken: { type: 'string' },
+          refreshExpiresAt: { type: 'string', format: 'date-time' },
+          expiresAt: { type: 'string', format: 'date-time' }, user: ref('AuthUser'),
+        } }),
+        ...errors({ '401': 'Refresh token desconocido, consumido, vencido, revocado o sin acceso activo al hotel', '429': 'Demasiados intentos' }),
+      },
+    }),
+  },
+  '/api/mobile/auth/logout': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Revocar la sesión móvil',
+      description: 'Revoca toda la familia del refresh token, incluso si se presenta uno ya consumido. Idempotente, sin exigir access token. Borrar las credenciales de SecureStore tras cerrar sesión. Los access tokens ya emitidos siguen siendo válidos hasta su vencimiento (máximo 15 minutos). Límite: 30 intentos / 15 min por IP.',
+      security: publicSecurity,
+      requestBody: jsonBody(js(mobileRefreshSchema, 'input'), 'Refresh token de la sesión a cerrar'),
+      responses: {
+        '200': ok({ type: 'object', properties: { success: { type: 'boolean', const: true } } }),
+        ...errors({ '429': 'Demasiados intentos' }),
       },
     }),
   },
@@ -227,6 +263,40 @@ const paths: Record<string, Json> = {
       responses: {
         '200': ok(ref('Calendar')),
         ...errors({ '401': 'Falta un token Bearer móvil válido o expiró', '400': 'Rango inválido o mayor a 62 días' }),
+      },
+    }),
+  },
+  '/api/mobile/reservations/{id}/check-in': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-in desde la app móvil',
+      description: `${noRole} Solo permite reservas RESERVED del hotel del token, desde la fecha de entrada según el día actual del hotel. Cambia el estado a CHECKED_IN y registra checkedInAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está RESERVED; `CHECKIN_TOO_EARLY`: aún no llegó la fecha de entrada',
+        }),
+      },
+    }),
+  },
+  '/api/mobile/reservations/{id}/check-out': {
+    post: op({
+      tags: ['Mobile'],
+      summary: 'Realizar check-out desde la app móvil',
+      description: `${noRole} Solo permite reservas CHECKED_IN del hotel del token. Cambia el estado a CHECKED_OUT y registra checkedOutAt. No requiere body.`,
+      security: [{ mobileBearer: [] }],
+      parameters: [pathIdParam('ID de la reserva')],
+      responses: {
+        '200': ok(ref('Reservation')),
+        ...errors({
+          '401': 'Falta un token Bearer móvil válido o expiró',
+          '404': 'Reserva inexistente o perteneciente a otro hotel',
+          '409': '`INVALID_STATE`: la reserva no está CHECKED_IN',
+        }),
       },
     }),
   },

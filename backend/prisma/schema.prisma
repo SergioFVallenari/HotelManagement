@@ -246,6 +246,7 @@ model UserCompany {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
   type        UserType @relation(fields: [typeId], references: [id])
+  mobileSessions MobileSession[]
 
   @@id([userId, companyId])
   @@unique([companyId, username])
@@ -258,6 +259,30 @@ enum UserRole {
   ADMIN
   RECEPCIONISTA
   OWNER
+}
+
+model MobileSession {
+  id         String @id @default(uuid())
+  userId     Int
+  companyId  Int
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  membership UserCompany @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Cascade)
+  tokens     MobileRefreshToken[]
+
+  @@index([userId, companyId])
+  @@index([expiresAt])
+}
+
+model MobileRefreshToken {
+  hash       String @id
+  sessionId  String
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+  session    MobileSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
 }
 
 model UserType {
