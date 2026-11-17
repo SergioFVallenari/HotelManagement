@@ -20,7 +20,7 @@ export async function inspectPendingCheckout(
   ownerId: number,
   dependencies: {
     findPending: (ownerId: number) => Promise<PendingCheckoutForInspection | null>;
-    search: () => Promise<{ candidates: unknown[]; singlePage: boolean }>;
+    search: () => Promise<{ candidates: unknown[]; complete: boolean }>;
   },
 ): Promise<CheckoutInspection> {
   if (!Number.isSafeInteger(ownerId) || ownerId <= 0) return { result: 'REVIEW', reason: 'NOT_ELIGIBLE' };
@@ -30,6 +30,6 @@ export async function inspectPendingCheckout(
   }
   if (!contract.payerEmail) return { result: 'REVIEW', reason: 'INCOMPLETE' };
   const page = await dependencies.search();
-  const match = reconcilePendingCheckout({ contractId: contract.id, expectedEmail: contract.payerEmail, expectedAmount: contract.amount, candidates: page.candidates, complete: page.singlePage });
+  const match = reconcilePendingCheckout({ contractId: contract.id, expectedEmail: contract.payerEmail, expectedAmount: contract.amount, candidates: page.candidates, complete: page.complete });
   return match.result === 'RECOVERED' ? { result: 'REVIEW', reason: 'POSSIBLE_MATCH' } : match;
 }
