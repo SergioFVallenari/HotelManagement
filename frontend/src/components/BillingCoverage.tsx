@@ -26,6 +26,7 @@ export function BillingCoverage() {
   const [checkoutConfirm, setCheckoutConfirm] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [payerEmail, setPayerEmail] = useState('');
   const coverage = data?.data;
   const selected = selection ?? coverage?.hotels.filter((hotel) => hotel.covered).map((hotel) => hotel.id) ?? [];
 
@@ -49,7 +50,7 @@ export function BillingCoverage() {
     setCheckoutBusy(true);
     setCheckoutError(null);
     try {
-      const result = await api<{ data: { checkoutUrl: string } }>('/billing/checkout', { method: 'POST' });
+      const result = await api<{ data: { checkoutUrl: string } }>('/billing/checkout', { method: 'POST', body: { payerEmail: payerEmail.trim() } });
       const url = new URL(result.data.checkoutUrl);
       if (url.protocol !== 'https:' || url.username || url.password || (url.hostname !== 'mercadopago.com.ar' && !url.hostname.endsWith('.mercadopago.com.ar'))) throw new Error('La dirección de pago no es válida.');
       window.location.assign(url.toString());
@@ -76,7 +77,8 @@ export function BillingCoverage() {
         : <p className="text-secondary mb-2">Precio y contratación todavía no disponibles.</p>}
       {coverage.testCheckout?.available && <p className="text-warning-emphasis mb-2">Checkout experimental: usar exclusivamente cuentas y medios de pago de prueba. El acceso pago no está habilitado para clientes.</p>}
       {coverage.status === 'TRIALING' && <p className="text-secondary mb-2">La contratación de prueba estará disponible cuando finalice el período gratuito.</p>}
-      <button type="button" className="btn btn-primary" disabled={!coverage.testCheckout?.available || coverage.status !== 'EXPIRED'} onClick={() => { setCheckoutError(null); setCheckoutConfirm(true); }}>Continuar con Mercado Pago</button>
+      {coverage.testCheckout?.available && coverage.status === 'EXPIRED' && <div className="mb-3"><label htmlFor="billing-payer-email" className="form-label">Email de la cuenta de Mercado Pago del pagador</label><input id="billing-payer-email" type="email" className="form-control" value={payerEmail} maxLength={254} onChange={(event) => setPayerEmail(event.target.value)} /><div className="form-text">Debe coincidir con el email usado en Mercado Pago. Para esta prueba usá solo datos de la cuenta compradora de prueba.</div></div>}
+      <button type="button" className="btn btn-primary" disabled={!coverage.testCheckout?.available || coverage.status !== 'EXPIRED' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail.trim())} onClick={() => { setCheckoutError(null); setCheckoutConfirm(true); }}>Continuar con Mercado Pago</button>
     </section>
     {saved && <div className="alert alert-success">Cobertura actualizada.</div>}
     <fieldset disabled={coverage.maximumHotels === null || saving}>

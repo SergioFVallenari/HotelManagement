@@ -10,7 +10,7 @@ export interface PendingCheckoutForInspection {
   amount: string;
   currency: string;
   intervalMonths: number;
-  currentOwnerEmail: string;
+  payerEmail: string | null;
 }
 
 export type CheckoutInspection =
@@ -28,7 +28,8 @@ export async function inspectPendingCheckout(
   if (!contract || contract.ownerId !== ownerId || contract.status !== 'PENDING' || contract.provider !== 'MERCADOPAGO' || contract.providerSubscriptionId !== null || contract.checkoutUrl !== null || contract.currency !== 'ARS' || contract.intervalMonths !== 1) {
     return { result: 'REVIEW', reason: 'NOT_ELIGIBLE' };
   }
+  if (!contract.payerEmail) return { result: 'REVIEW', reason: 'INCOMPLETE' };
   const page = await dependencies.search();
-  const match = reconcilePendingCheckout({ contractId: contract.id, expectedEmail: contract.currentOwnerEmail, expectedAmount: contract.amount, candidates: page.candidates, complete: page.singlePage });
+  const match = reconcilePendingCheckout({ contractId: contract.id, expectedEmail: contract.payerEmail, expectedAmount: contract.amount, candidates: page.candidates, complete: page.singlePage });
   return match.result === 'RECOVERED' ? { result: 'REVIEW', reason: 'POSSIBLE_MATCH' } : match;
 }

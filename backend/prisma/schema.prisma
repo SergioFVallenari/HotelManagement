@@ -156,6 +156,7 @@ model OwnerBillingContract {
   providerSubscriptionId String?
   requestKey             String                     @unique
   checkoutUrl            String?
+  payerEmail             String?                    @db.VarChar(254)
   status                 OwnerBillingContractStatus @default(PENDING)
   amount                 Decimal                    @db.Decimal(12, 2)
   currency               String                     @db.VarChar(3)

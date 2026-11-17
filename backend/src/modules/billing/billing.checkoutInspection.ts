@@ -9,9 +9,9 @@ export async function inspectTestPendingCheckout(ownerId: number, transport: typ
     findPending: async (id) => {
       const contract = await prisma.ownerBillingContract.findFirst({
         where: { account: { ownerId: id }, status: 'PENDING' },
-        select: { id: true, status: true, provider: true, providerSubscriptionId: true, checkoutUrl: true, amount: true, currency: true, intervalMonths: true, account: { select: { ownerId: true, owner: { select: { email: true } } } } },
+        select: { id: true, status: true, provider: true, providerSubscriptionId: true, checkoutUrl: true, payerEmail: true, amount: true, currency: true, intervalMonths: true, account: { select: { ownerId: true } } },
       });
-      return contract ? { ...contract, ownerId: contract.account.ownerId, currentOwnerEmail: contract.account.owner.email, amount: contract.amount.toFixed(2) } : null;
+      return contract ? { ...contract, ownerId: contract.account.ownerId, amount: contract.amount.toFixed(2) } : null;
     },
     search: () => inspectMercadoPagoSubscriptions({ enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport }),
   });

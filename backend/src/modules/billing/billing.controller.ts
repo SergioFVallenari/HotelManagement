@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { prisma } from '../../config/prisma.js';
 import { AppError } from '../../lib/AppError.js';
 import { resolveOwnerBillingStatus, validPaidPeriod } from './billing.effective.js';
-import { updateCoverageSchema } from './billing.schema.js';
+import { checkoutSchema, updateCoverageSchema } from './billing.schema.js';
 import { TRIAL_MAX_HOTELS } from './billing.coverage.js';
 import { TRIAL_LIMITS } from './billing.entitlements.js';
 import { unscoped } from '../../lib/tenant.js';
@@ -88,6 +88,7 @@ export async function updateCoverage(req: Request, res: Response): Promise<void>
 }
 
 export async function checkout(req: Request, res: Response): Promise<void> {
-  const result = await beginTestCheckout(req.user!.id);
+  const { payerEmail } = checkoutSchema.parse(req.body);
+  const result = await beginTestCheckout(req.user!.id, payerEmail);
   res.status(201).json({ data: result });
 }

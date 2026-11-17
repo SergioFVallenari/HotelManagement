@@ -7,14 +7,11 @@ import { BillingProviderOutcomeUnknown, BillingProviderRejected, createMercadoPa
 import { trialIsActive } from './billing.period.js';
 import { testCheckoutAvailable } from './billing.checkoutAvailability.js';
 
-export async function beginTestCheckout(ownerId: number) {
+export async function beginTestCheckout(ownerId: number, payerEmail: string) {
   const config = env.billingMpTest;
   if (!testCheckoutAvailable(config)) {
     throw new AppError(503, 'BILLING_CHECKOUT_DISABLED', 'El checkout de prueba no está configurado.');
   }
-  const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { email: true } });
-  if (!owner) throw new AppError(404, 'BILLING_NOT_FOUND', 'No se encontró el titular de la suscripción');
-  const payerEmail = owner.email;
   const returnUrl = new URL('/settings?tab=suscripcion', env.frontendUrl).toString();
   try {
     buildMercadoPagoPendingSubscription({ accountId: 1, contractId: 1, payerEmail, amount: config.monthlyPrice, currency: 'ARS', returnUrl, idempotencyKey: 'validacion' });
@@ -31,11 +28,11 @@ export async function beginTestCheckout(ownerId: number) {
     }
     const existing = await tx.ownerBillingContract.findFirst({ where: { accountId: account.id, status: { in: ['PENDING', 'AUTHORIZED'] } }, orderBy: { id: 'desc' } });
     if (existing) {
-      if (existing.status === 'PENDING' && existing.checkoutUrl) return { contract: existing, created: false };
+      if (existing.status === 'PENDING' && existing.checkoutUrl && existing.payerEmail?.toLowerCase() === payerEmail.toLowerCase()) return { contract: existing, created: false };
       throw new AppError(409, 'BILLING_CHECKOUT_PENDING', 'Ya existe una suscripción en curso. Esperá la conciliación antes de volver a intentar.');
     }
     const contract = await tx.ownerBillingContract.create({ data: {
-      accountId: account.id, provider: 'MERCADOPAGO', amount: config.monthlyPrice, currency: 'ARS', requestKey: randomUUID(),
+      accountId: account.id, provider: 'MERCADOPAGO', amount: config.monthlyPrice, currency: 'ARS', requestKey: randomUUID(), payerEmail,
     } });
     return { contract, created: true };
   });

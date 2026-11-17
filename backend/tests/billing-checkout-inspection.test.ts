@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectPendingCheckout, type PendingCheckoutForInspection } from '../src/modules/billing/providers/billingCheckoutInspection.js';
 
-const contract: PendingCheckoutForInspection = { id: 42, ownerId: 7, status: 'PENDING', provider: 'MERCADOPAGO', providerSubscriptionId: null, checkoutUrl: null, amount: '150.00', currency: 'ARS', intervalMonths: 1, currentOwnerEmail: 'owner@example.test' };
+const contract: PendingCheckoutForInspection = { id: 42, ownerId: 7, status: 'PENDING', provider: 'MERCADOPAGO', providerSubscriptionId: null, checkoutUrl: null, amount: '150.00', currency: 'ARS', intervalMonths: 1, payerEmail: 'owner@example.test' };
 const candidate = { id: 'sub-123', status: 'pending', init_point: 'https://www.mercadopago.com.ar/subscriptions/checkout?id=123', external_reference: 'LAIXIA-CONTRACT-42', payer_email: 'owner@example.test', auto_recurring: { transaction_amount: 150, currency_id: 'ARS', frequency: 1, frequency_type: 'months' } };
 
 test('un candidato coherente solo queda para revisión, sin devolver URL ni modificar el contrato', async () => {
@@ -21,4 +21,9 @@ test('una búsqueda parcial, vacía o sin email no recupera el contrato', async 
   for (const [candidates, singlePage, reason] of [[[candidate], false, 'INCOMPLETE'], [[], true, 'NOT_FOUND'], [[{ ...candidate, payer_email: undefined }], true, 'MISMATCH']] as const) {
     assert.deepEqual(await inspectPendingCheckout(7, { findPending: async () => contract, search: async () => ({ candidates: [...candidates], singlePage }) }), { result: 'REVIEW', reason });
   }
+});
+
+test('los contratos antiguos sin email congelado requieren revisión sin consultar al proveedor', async () => {
+  const result = await inspectPendingCheckout(7, { findPending: async () => ({ ...contract, payerEmail: null }), search: async () => { throw new Error('Consulta inesperada'); } });
+  assert.deepEqual(result, { result: 'REVIEW', reason: 'INCOMPLETE' });
 });

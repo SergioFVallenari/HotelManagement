@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { requiresCsrfHeader } from '../lib/requestSecurity.js';
-import { updateCoverageSchema } from '../modules/billing/billing.schema.js';
+import { checkoutSchema, updateCoverageSchema } from '../modules/billing/billing.schema.js';
 import { createRecipientSchema, recipientSchema, updateRecipientSchema } from '../modules/recipients/recipients.schema.js';
 import { reservationChatSchema, confirmAiReservationSchema } from '../modules/ai/aiReservation.schema.js';
 import * as schemas from './schemas.js';
@@ -313,6 +313,7 @@ const paths: Record<string, Json> = {
       tags: ['Facturación'],
       summary: 'Iniciar checkout experimental de suscripción',
       description: `${ownerOnly} Solo habilitable en testing con credenciales y precio de prueba; no activa acceso. Temporalmente no admite contratar durante el trial.`,
+      requestBody: jsonBody(js(checkoutSchema, 'input'), 'Email de la cuenta de Mercado Pago del pagador'),
       responses: { '201': ok({ type: 'object', properties: { checkoutUrl: { type: 'string', format: 'uri' }, status: { type: 'string', const: 'PENDING' } } }), ...errors({ '409': 'El trial sigue activo o ya existe una solicitud en curso', '503': 'Checkout de prueba deshabilitado o pendiente de conciliación' }) },
     }),
   },
