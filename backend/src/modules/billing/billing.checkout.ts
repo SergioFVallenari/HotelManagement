@@ -5,10 +5,11 @@ import { AppError } from '../../lib/AppError.js';
 import { buildMercadoPagoPendingSubscription } from './providers/mercadoPagoCheckout.js';
 import { BillingProviderOutcomeUnknown, createMercadoPagoPendingSubscription } from './providers/mercadoPagoClient.js';
 import { trialIsActive } from './billing.period.js';
+import { testCheckoutAvailable } from './billing.checkoutAvailability.js';
 
 export async function beginTestCheckout(ownerId: number) {
   const config = env.billingMpTest;
-  if (!config.enabled || !config.accessToken || !config.monthlyPrice) {
+  if (!testCheckoutAvailable(config)) {
     throw new AppError(503, 'BILLING_CHECKOUT_DISABLED', 'El checkout de prueba no está configurado.');
   }
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { email: true } });

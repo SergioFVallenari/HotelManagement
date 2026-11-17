@@ -8,6 +8,7 @@ import { TRIAL_LIMITS } from './billing.entitlements.js';
 import { unscoped } from '../../lib/tenant.js';
 import { beginTestCheckout } from './billing.checkout.js';
 import { env } from '../../config/env.js';
+import { testCheckoutAvailable } from './billing.checkoutAvailability.js';
 
 export async function getSubscription(req: Request, res: Response): Promise<void> {
   const coverage = await prisma.ownerBillingCoverage.findUnique({
@@ -54,6 +55,7 @@ export async function getCoverage(req: Request, res: Response): Promise<void> {
     maximumHotels: account.status === 'GRANDFATHERED' ? null : effective.status === 'ACTIVE' ? 1 : TRIAL_MAX_HOTELS,
     maximumRoomsPerHotel: account.status === 'GRANDFATHERED' ? null : TRIAL_LIMITS.MAX_ROOMS,
     maximumUsersPerHotel: account.status === 'GRANDFATHERED' ? null : TRIAL_LIMITS.MAX_USERS,
+    testCheckout: testCheckoutAvailable(env.billingMpTest) ? { available: true, monthlyPrice: env.billingMpTest.monthlyPrice, currency: 'ARS' } : { available: false, monthlyPrice: null, currency: null },
     hotels: account.hotels.map((hotel) => ({ id: hotel.companyId, name: hotel.company.name, covered: hotel.covered, activeRooms: roomCounts.get(hotel.companyId) ?? 0, activeUsers: userCounts.get(hotel.companyId) ?? 0 })),
   } });
 }

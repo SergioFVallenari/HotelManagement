@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client';
 import { useApi } from '../api/useApi';
-import { dateTimeShort } from '../lib/format';
+import { dateTimeShort, money } from '../lib/format';
 import { ConfirmDialog } from './ConfirmDialog';
 
 type Coverage = {
@@ -12,6 +12,7 @@ type Coverage = {
   maximumHotels: number | null;
   maximumRoomsPerHotel: number | null;
   maximumUsersPerHotel: number | null;
+  testCheckout?: { available: boolean; monthlyPrice: string | null; currency: string | null };
   hotels: Array<{ id: number; name: string; covered: boolean; activeRooms: number; activeUsers: number }>;
 };
 
@@ -22,6 +23,9 @@ export function BillingCoverage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [checkoutConfirm, setCheckoutConfirm] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const coverage = data?.data;
   const selected = selection ?? coverage?.hotels.filter((hotel) => hotel.covered).map((hotel) => hotel.id) ?? [];
 
@@ -41,6 +45,20 @@ export function BillingCoverage() {
     }
   }
 
+  async function startCheckout() {
+    setCheckoutBusy(true);
+    setCheckoutError(null);
+    try {
+      const result = await api<{ data: { checkoutUrl: string } }>('/billing/checkout', { method: 'POST' });
+      const url = new URL(result.data.checkoutUrl);
+      if (url.protocol !== 'https:' || url.username || url.password || (url.hostname !== 'mercadopago.com.ar' && !url.hostname.endsWith('.mercadopago.com.ar'))) throw new Error('La dirección de pago no es válida.');
+      window.location.assign(url.toString());
+    } catch (err) {
+      setCheckoutError((err as Error).message);
+      setCheckoutBusy(false);
+    }
+  }
+
   if (loading) return <p>Cargando suscripción…</p>;
   if (error || !coverage) return <div className="alert alert-danger">{error ?? 'No se pudo cargar la suscripción.'} <button type="button" className="btn btn-sm btn-outline-danger" onClick={reload}>Reintentar</button></div>;
 
@@ -50,7 +68,16 @@ export function BillingCoverage() {
       <p>{coverage.status === 'EXPIRED' ? 'Tu prueba venció.' : coverage.status === 'ACTIVE' ? `Suscripción activa${coverage.currentPeriodEnd ? ` hasta ${dateTimeShort(coverage.currentPeriodEnd)}` : ''}.` : `Prueba gratuita: ${coverage.daysRemaining} días restantes.`} {coverage.status !== 'ACTIVE' && coverage.trialEndsAt && <>Vencimiento: {dateTimeShort(coverage.trialEndsAt)}.</>}</p>
       <p>Podés seleccionar hasta {coverage.maximumHotels} hoteles. Los demás conservan sus datos.</p>
     </>}
-    <div className="alert alert-info">La contratación de planes y los pagos todavía no están disponibles. Las restricciones operativas están en etapa de prueba.</div>
+    <section className="border rounded p-3 mb-3" aria-labelledby="billing-plan-title">
+      <h3 id="billing-plan-title" className="h6">Plan LAIXIA</h3>
+      <p className="mb-2">Incluye un hotel, hasta 5 habitaciones y 3 usuarios activos.</p>
+      {coverage.testCheckout?.available
+        ? <p className="mb-2">Importe de prueba: {money(Number(coverage.testCheckout.monthlyPrice))} por mes. No es el precio definitivo.</p>
+        : <p className="text-secondary mb-2">Precio y contratación todavía no disponibles.</p>}
+      {coverage.testCheckout?.available && <p className="text-warning-emphasis mb-2">Checkout experimental: usar exclusivamente cuentas y medios de pago de prueba. El acceso pago no está habilitado para clientes.</p>}
+      {coverage.status === 'TRIALING' && <p className="text-secondary mb-2">La contratación de prueba estará disponible cuando finalice el período gratuito.</p>}
+      <button type="button" className="btn btn-primary" disabled={!coverage.testCheckout?.available || coverage.status !== 'EXPIRED'} onClick={() => { setCheckoutError(null); setCheckoutConfirm(true); }}>Continuar con Mercado Pago</button>
+    </section>
     {saved && <div className="alert alert-success">Cobertura actualizada.</div>}
     <fieldset disabled={coverage.maximumHotels === null || saving}>
       <legend className="h6">Hoteles cubiertos</legend>
@@ -66,5 +93,6 @@ export function BillingCoverage() {
       {coverage.maximumHotels !== null && <button type="button" className="btn btn-primary mt-3" disabled={selection === null || selected.length > coverage.maximumHotels} onClick={() => { setSaveError(null); setConfirm(true); }}>Guardar cobertura</button>}
     </fieldset>
     <ConfirmDialog open={confirm} title="Cambiar cobertura" message="Los hoteles que desmarques conservarán sus datos, pero no estarán cubiertos por tu suscripción." confirmLabel="Guardar cobertura" busy={saving} error={saveError} onCancel={() => setConfirm(false)} onConfirm={() => { void save(); }} />
+    <ConfirmDialog open={checkoutConfirm} title="Continuar con el checkout de prueba" message={`Se abrirá Mercado Pago para una suscripción de prueba de ${money(Number(coverage.testCheckout?.monthlyPrice))} por mes. Usá exclusivamente cuentas y medios de pago de prueba. La confirmación no activa automáticamente el acceso.`} confirmLabel="Continuar" busy={checkoutBusy} error={checkoutError} onCancel={() => setCheckoutConfirm(false)} onConfirm={() => { void startCheckout(); }} />
   </div></div>;
 }

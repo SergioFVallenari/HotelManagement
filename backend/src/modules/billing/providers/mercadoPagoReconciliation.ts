@@ -13,6 +13,10 @@ export function reconcilePendingCheckout(input: {
   complete: boolean;
 }): CheckoutReconciliation {
   if (!input.complete) return { result: 'REVIEW', reason: 'INCOMPLETE' };
+  if (!Number.isSafeInteger(input.contractId) || input.contractId <= 0 || !input.expectedEmail.trim()) return { result: 'REVIEW', reason: 'MISMATCH' };
+  if (input.candidates.some((candidate) => !candidate || typeof candidate !== 'object' || Array.isArray(candidate) || typeof (candidate as Record<string, unknown>).external_reference !== 'string')) {
+    return { result: 'REVIEW', reason: 'INCOMPLETE' };
+  }
   const reference = `LAIXIA-CONTRACT-${input.contractId}`;
   const matches = input.candidates.filter((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate) && (candidate as Record<string, unknown>).external_reference === reference);
   if (matches.length === 0) return { result: 'REVIEW', reason: 'NOT_FOUND' };

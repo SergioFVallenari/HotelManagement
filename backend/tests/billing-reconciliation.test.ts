@@ -28,3 +28,11 @@ test('rechaza pagos, frecuencia o titular que no coinciden', () => {
     { ...candidate, status: 'authorized' },
   ]) assert.deepEqual(reconcilePendingCheckout({ ...input, candidates: [changed] }), { result: 'REVIEW', reason: 'MISMATCH' });
 });
+
+test('no recupera si falta la referencia de un candidato o la identidad del pagador', () => {
+  assert.deepEqual(reconcilePendingCheckout({ ...input, candidates: [candidate, { id: 'otro' }] }), { result: 'REVIEW', reason: 'INCOMPLETE' });
+  assert.deepEqual(reconcilePendingCheckout({ ...input, candidates: [candidate, null] }), { result: 'REVIEW', reason: 'INCOMPLETE' });
+  assert.deepEqual(reconcilePendingCheckout({ ...input, candidates: [{ ...candidate, payer_email: undefined }] }), { result: 'REVIEW', reason: 'MISMATCH' });
+  assert.deepEqual(reconcilePendingCheckout({ ...input, expectedEmail: ' ', candidates: [{ ...candidate, payer_email: ' ' }] }), { result: 'REVIEW', reason: 'MISMATCH' });
+  assert.deepEqual(reconcilePendingCheckout({ ...input, contractId: 0 }), { result: 'REVIEW', reason: 'MISMATCH' });
+});

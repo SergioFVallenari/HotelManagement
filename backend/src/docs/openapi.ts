@@ -325,6 +325,7 @@ const paths: Record<string, Json> = {
         daysRemaining: { type: ['integer', 'null'] }, trialStartedAt: { type: ['string', 'null'], format: 'date-time' },
         trialEndsAt: { type: ['string', 'null'], format: 'date-time' }, currentPeriodEnd: { type: ['string', 'null'], format: 'date-time' }, maximumHotels: { type: ['integer', 'null'] },
         maximumRoomsPerHotel: { type: ['integer', 'null'] }, maximumUsersPerHotel: { type: ['integer', 'null'] },
+        testCheckout: { type: 'object', properties: { available: { type: 'boolean' }, monthlyPrice: { type: ['string', 'null'] }, currency: { type: ['string', 'null'] } } },
         hotels: { type: 'array', items: { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' }, covered: { type: 'boolean' }, activeRooms: { type: 'integer' }, activeUsers: { type: 'integer' } } } },
       } }), ...errors() },
     }),
