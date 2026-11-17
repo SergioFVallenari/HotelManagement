@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BillingProviderOutcomeUnknown, createMercadoPagoPendingSubscription } from '../src/modules/billing/providers/mercadoPagoClient.js';
+import { BillingProviderOutcomeUnknown, BillingProviderRejected, createMercadoPagoPendingSubscription } from '../src/modules/billing/providers/mercadoPagoClient.js';
 import type { CreateBillingSubscriptionInput } from '../src/modules/billing/providers/billingProvider.js';
 
 const input: CreateBillingSubscriptionInput = {
@@ -42,7 +42,7 @@ test('una respuesta ambigua nunca se reintenta automáticamente', async () => {
 
 test('errores del proveedor no exponen cuerpo ni credenciales', async () => {
   const transport: typeof fetch = async () => new Response('secreto-proveedor', { status: 400 });
-  await assert.rejects(createMercadoPagoPendingSubscription(input, { enabled: true, environment: 'testing', accessToken: 'token-secreto', transport }), (err: unknown) => err instanceof Error && !err.message.includes('secreto') && /400/.test(err.message));
+  await assert.rejects(createMercadoPagoPendingSubscription(input, { enabled: true, environment: 'testing', accessToken: 'token-secreto', transport }), (err: unknown) => err instanceof BillingProviderRejected && err.status === 400 && !err.message.includes('secreto'));
 });
 
 test('una respuesta exitosa ilegible o un error temporal requiere conciliación', async () => {

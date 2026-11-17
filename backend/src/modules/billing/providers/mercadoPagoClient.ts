@@ -8,6 +8,13 @@ export class BillingProviderOutcomeUnknown extends Error {
   }
 }
 
+export class BillingProviderRejected extends Error {
+  constructor(readonly status: number) {
+    super(`Mercado Pago rechazó la solicitud de suscripción (${status})`);
+    this.name = 'BillingProviderRejected';
+  }
+}
+
 export interface MercadoPagoTestClientOptions {
   enabled: boolean;
   environment: 'development' | 'testing' | 'production';
@@ -37,7 +44,7 @@ export async function createMercadoPagoPendingSubscription(
   }
   if (!response.ok) {
     if (response.status >= 500 || response.status === 408 || response.status === 409 || response.status === 429) throw new BillingProviderOutcomeUnknown();
-    throw new Error(`Mercado Pago rechazó la solicitud de suscripción (${response.status})`);
+    throw new BillingProviderRejected(response.status);
   }
   let payload: unknown;
   try { payload = await response.json(); } catch { throw new BillingProviderOutcomeUnknown(); }

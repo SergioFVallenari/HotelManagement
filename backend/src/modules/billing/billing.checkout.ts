@@ -3,7 +3,7 @@ import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { AppError } from '../../lib/AppError.js';
 import { buildMercadoPagoPendingSubscription } from './providers/mercadoPagoCheckout.js';
-import { BillingProviderOutcomeUnknown, createMercadoPagoPendingSubscription } from './providers/mercadoPagoClient.js';
+import { BillingProviderOutcomeUnknown, BillingProviderRejected, createMercadoPagoPendingSubscription } from './providers/mercadoPagoClient.js';
 import { trialIsActive } from './billing.period.js';
 import { testCheckoutAvailable } from './billing.checkoutAvailability.js';
 
@@ -42,14 +42,20 @@ export async function beginTestCheckout(ownerId: number) {
 
   const { contract } = result;
   if (!result.created) return { checkoutUrl: contract.checkoutUrl!, status: 'PENDING' as const };
+  let provider: Awaited<ReturnType<typeof createMercadoPagoPendingSubscription>>;
   try {
-    const provider = await createMercadoPagoPendingSubscription({
+    provider = await createMercadoPagoPendingSubscription({
       accountId: contract.accountId, contractId: contract.id, payerEmail, amount: contract.amount.toFixed(2), currency: 'ARS', returnUrl, idempotencyKey: contract.requestKey,
     }, { enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport: fetch });
-    await prisma.ownerBillingContract.update({ where: { id: contract.id }, data: { providerSubscriptionId: provider.externalId, checkoutUrl: provider.authorizationUrl } });
-    return { checkoutUrl: provider.authorizationUrl, status: 'PENDING' as const };
   } catch (err) {
-    console.warn('[billing] Checkout pendiente de conciliación', { contractId: contract.id, outcomeUnknown: err instanceof BillingProviderOutcomeUnknown });
+    console.warn('[billing] Checkout pendiente de conciliación', { contractId: contract.id, phase: 'PROVEEDOR', outcomeUnknown: err instanceof BillingProviderOutcomeUnknown, providerHttpStatus: err instanceof BillingProviderRejected ? err.status : null });
     throw new AppError(503, 'BILLING_CHECKOUT_PENDING', 'No se pudo completar el checkout. La solicitud quedó pendiente de conciliación; no se inició un segundo intento.');
   }
+  try {
+    await prisma.ownerBillingContract.update({ where: { id: contract.id }, data: { providerSubscriptionId: provider.externalId, checkoutUrl: provider.authorizationUrl } });
+  } catch {
+    console.warn('[billing] Checkout pendiente de conciliación', { contractId: contract.id, phase: 'PERSISTENCIA', outcomeUnknown: true, providerHttpStatus: null });
+    throw new AppError(503, 'BILLING_CHECKOUT_PENDING', 'No se pudo completar el checkout. La solicitud quedó pendiente de conciliación; no se inició un segundo intento.');
+  }
+  return { checkoutUrl: provider.authorizationUrl, status: 'PENDING' as const };
 }
