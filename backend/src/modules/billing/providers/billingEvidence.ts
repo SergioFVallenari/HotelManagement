@@ -22,14 +22,25 @@ export type BillingPaymentEvidence =
   | { valid: true; paymentId: string; paidAt: Date; scheduledAt: Date }
   | { valid: false; reason: 'INCOMPLETE' | 'CONTRACT_MISMATCH' | 'NOT_APPROVED' | 'AMOUNT_MISMATCH' | 'MODE_MISMATCH' };
 
-export function verifyBillingPaymentEvidence(input: {
+export interface BillingEvidenceInput {
   contractId: number;
   providerSubscriptionId: string;
   authorizedPaymentId: string;
   expectedAmount: string;
   authorizedPayment: unknown;
   payment: unknown;
-}): BillingPaymentEvidence {
+}
+
+export function verifyBillingPaymentEvidence(input: BillingEvidenceInput): BillingPaymentEvidence {
+  return verifyEvidence(input, false);
+}
+
+export function verifyDeclaredTestBillingPaymentEvidence(input: BillingEvidenceInput, accountsVerified: boolean): BillingPaymentEvidence {
+  if (!accountsVerified) return { valid: false, reason: 'MODE_MISMATCH' };
+  return verifyEvidence(input, true);
+}
+
+function verifyEvidence(input: BillingEvidenceInput, declaredTestAccounts: boolean): BillingPaymentEvidence {
   const authorized = object(input.authorizedPayment);
   const payment = object(input.payment);
   const nestedPayment = object(authorized?.payment);
@@ -37,7 +48,7 @@ export function verifyBillingPaymentEvidence(input: {
   if (!Number.isSafeInteger(input.contractId) || input.contractId <= 0 || !input.providerSubscriptionId || id(authorized.id) !== input.authorizedPaymentId || authorized.preapproval_id !== input.providerSubscriptionId || authorized.external_reference !== `LAIXIA-CONTRACT-${input.contractId}` || id(nestedPayment.id) !== id(payment.id)) {
     return { valid: false, reason: 'CONTRACT_MISMATCH' };
   }
-  if (payment.live_mode !== false) return { valid: false, reason: 'MODE_MISMATCH' };
+  if (payment.live_mode !== false && !(declaredTestAccounts && payment.live_mode === true)) return { valid: false, reason: 'MODE_MISMATCH' };
   if (authorized.status !== 'processed' || nestedPayment.status !== 'approved' || payment.status !== 'approved' || payment.status_detail !== 'accredited') return { valid: false, reason: 'NOT_APPROVED' };
   const authorizedAmount = amount(authorized.transaction_amount);
   const paymentAmount = amount(payment.transaction_amount);

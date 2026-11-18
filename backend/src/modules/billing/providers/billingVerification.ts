@@ -1,4 +1,5 @@
-import { verifyBillingPaymentEvidence, type BillingPaymentEvidence } from './billingEvidence.js';
+import { verifyBillingPaymentEvidence, verifyDeclaredTestBillingPaymentEvidence, type BillingPaymentEvidence, type BillingEvidenceInput } from './billingEvidence.js';
+import { verifyBillingTestAccounts, type DeclaredTestAccounts } from './billingTestAccounts.js';
 
 type ProviderResource = 'authorizedPayment' | 'payment';
 
@@ -25,12 +26,29 @@ function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-export async function verifyAuthorizedBillingPayment(
+interface VerificationDependencies {
+  read: (resource: ProviderResource, id: string) => Promise<unknown>;
+  findContract: (providerSubscriptionId: string) => Promise<BillingContractForVerification | null>;
+}
+
+export async function verifyAuthorizedBillingPayment(authorizedPaymentId: string, dependencies: VerificationDependencies): Promise<VerifiedBillingResult> {
+  return verifyPayment(authorizedPaymentId, dependencies, async (input) => verifyBillingPaymentEvidence(input));
+}
+
+export async function verifyDeclaredTestAuthorizedBillingPayment(authorizedPaymentId: string, dependencies: VerificationDependencies & {
+  declared: DeclaredTestAccounts;
+  readIdentity: (id: string) => Promise<unknown>;
+}): Promise<VerifiedBillingResult> {
+  return verifyPayment(authorizedPaymentId, dependencies, async (input) => {
+    const accounts = await verifyBillingTestAccounts(input.payment, dependencies.readIdentity, dependencies.declared);
+    return verifyDeclaredTestBillingPaymentEvidence(input, accounts.verified);
+  });
+}
+
+async function verifyPayment(
   authorizedPaymentId: string,
-  dependencies: {
-    read: (resource: ProviderResource, id: string) => Promise<unknown>;
-    findContract: (providerSubscriptionId: string) => Promise<BillingContractForVerification | null>;
-  },
+  dependencies: VerificationDependencies,
+  validateEvidence: (input: BillingEvidenceInput) => Promise<BillingPaymentEvidence>,
 ): Promise<VerifiedBillingResult> {
   if (!numericId(authorizedPaymentId)) return { result: 'REVIEW', reason: 'INVALID_RESOURCE' };
   const authorized = record(await dependencies.read('authorizedPayment', authorizedPaymentId));
@@ -45,7 +63,7 @@ export async function verifyAuthorizedBillingPayment(
   const paymentId = numericId(record(authorized.payment)?.id);
   if (!paymentId) return { result: 'REVIEW', reason: 'PAYMENT_NOT_AVAILABLE' };
   const payment = await dependencies.read('payment', paymentId);
-  const evidence: BillingPaymentEvidence = verifyBillingPaymentEvidence({
+  const evidence = await validateEvidence({
     contractId: contract.id, providerSubscriptionId, authorizedPaymentId, expectedAmount: contract.amount, authorizedPayment: authorized, payment,
   });
   if (!evidence.valid) return { result: 'REVIEW', reason: evidence.reason };
