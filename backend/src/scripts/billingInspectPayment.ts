@@ -13,8 +13,12 @@ async function main(): Promise<void> {
   try {
     const { inspectBillingPayment } = await import('../modules/billing/providers/billingPaymentInspection.js');
     const { readMercadoPagoBillingResource } = await import('../modules/billing/providers/mercadoPagoRead.js');
+    const { readMercadoPagoBillingIdentity } = await import('../modules/billing/providers/mercadoPagoIdentity.js');
+    const { verifyBillingTestAccounts } = await import('../modules/billing/providers/billingTestAccounts.js');
+    const options = { enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport: fetch };
     const result = await inspectBillingPayment(paymentId, {
-      read: (resource, id) => readMercadoPagoBillingResource(resource, id, { enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport: fetch }),
+      read: (resource, id) => readMercadoPagoBillingResource(resource, id, options),
+      verifyTestAccounts: (payment) => verifyBillingTestAccounts(payment, (id) => readMercadoPagoBillingIdentity(id, options)),
       findContract: async (id) => {
         const contract = await prisma.ownerBillingContract.findUnique({ where: { id }, select: { id: true, provider: true, providerSubscriptionId: true, amount: true, currency: true } });
         return contract ? { ...contract, amount: contract.amount.toFixed(2) } : null;

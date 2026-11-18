@@ -66,6 +66,34 @@ test('no consulta otra suscripción si el contrato o importe del pago no coincid
   }
 });
 
+test('permite solo el diagnóstico de un pago LIVE con identidades de prueba verificadas', async () => {
+  let checks = 0;
+  const result = await inspectBillingPayment('123', {
+    read: async (resource) => resource === 'payment' ? { ...payment, live_mode: true } : subscription,
+    verifyTestAccounts: async (value) => { assert.deepEqual(value, { ...payment, live_mode: true }); checks++; return { verified: true }; },
+    findContract: async () => contract,
+  });
+  assert.equal(checks, 1);
+  assert.deepEqual(result, { result: 'REVIEW', reason: 'INSTALLMENT_REQUIRED', contractId: 42, providerSubscriptionId: 'sub-test' });
+});
+
+test('bloquea LIVE sin evidencia y no intenta validar identidades si el modo falta o es inválido', async () => {
+  const result = await inspectBillingPayment('123', {
+    read: async () => ({ ...payment, live_mode: true }),
+    verifyTestAccounts: async () => ({ verified: false, reason: 'TEST_TAG_UNAVAILABLE' }),
+    findContract: async () => { throw new Error('No debe consultar'); },
+  });
+  assert.deepEqual(result, { result: 'REVIEW', reason: 'MODE_MISMATCH', mode: 'LIVE', accounts: 'TEST_TAG_UNAVAILABLE' });
+  for (const live_mode of [null, 'false', undefined]) {
+    const blocked = await inspectBillingPayment('123', {
+      read: async () => ({ ...payment, live_mode }),
+      verifyTestAccounts: async () => { throw new Error('No debe validar'); },
+      findContract: async () => { throw new Error('No debe consultar'); },
+    });
+    assert.deepEqual(blocked, { result: 'REVIEW', reason: 'MODE_MISMATCH', mode: 'INVALID' });
+  }
+});
+
 test('deja en revisión suscripciones ajenas, canceladas o con otras condiciones', async () => {
   for (const changed of [null, { ...subscription, id: 'other' }, { ...subscription, external_reference: 'LAIXIA-CONTRACT-43' }, { ...subscription, status: 'cancelled' }, { ...subscription, auto_recurring: null }, { ...subscription, auto_recurring: { ...subscription.auto_recurring, frequency: 12 } }, { ...subscription, auto_recurring: { ...subscription.auto_recurring, transaction_amount: 151 } }]) {
     const result = await inspectBillingPayment('123', { read: async (resource) => resource === 'payment' ? payment : changed, findContract: async () => contract });
