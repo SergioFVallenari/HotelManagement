@@ -58,3 +58,24 @@ node dist/scripts/billingInspectPayment.js <paymentId>
 ```
 
 `railway shell` y `railway run` ejecutan comandos locales con variables de Railway; no equivalen a entrar al contenedor con `railway ssh`. No compartir las variables ni ejecutar estos diagnósticos con credenciales reales de cobro. El retorno del checkout y una simulación de webhook exitosa no activan una suscripción.
+
+## Conciliación manual controlada
+
+Disponible únicamente en el proyecto de testing verificado, con billing experimental habilitado. No requiere activar el webhook. Los IDs de vendedor y comprador deben verificarse primero en el panel de cuentas de prueba. Esta declaración del operador no es una certificación automática de sandbox.
+
+Por defecto solo simula:
+
+```bash
+pnpm billing:reconcile-payment <contractId> <installmentId> <paymentId> <sellerTestUserId> <buyerTestUserId>
+node dist/scripts/billingReconcilePayment.js <contractId> <installmentId> <paymentId> <sellerTestUserId> <buyerTestUserId>
+```
+
+Consulta de nuevo la cuota autorizada y el pago individual mediante GET, comprueba estados, IDs, referencia, contrato, periodicidad mensual, importes, moneda y fechas. Contrasta las cuentas declaradas con el pago y `/users/me`. Una simulación coherente devuelve `VERIFIED_NOT_APPLIED` con las fechas de aprobación y débito recibidas, no con un período garantizado: la comprobación transaccional de conflictos sigue pendiente. No se modifican webhooks ni datos de facturación durante la simulación.
+
+Después de revisar la simulación y autorizar expresamente la escritura, repetir el mismo comando con `--apply` al final. No reutiliza una evidencia cacheada: vuelve a consultar al proveedor y a verificar todo. La aplicación se rechaza si `BILLING_PAID_ACCESS_TESTING` está activo; no cambiar flags para forzar el comando.
+
+`--apply` reutiliza la persistencia transaccional del procesador, bloquea contrato y cuenta, revalida condiciones y registra pago y período juntos. Los IDs únicos de pago y cuota, la comprobación de datos existentes y la serialización evitan duplicados; una repetición coherente devuelve `ALREADY_RECORDED` sin agregar otro período. Una cuota fuera de orden, un conflicto o un cambio de contrato revierte la transacción. Se conservan los cálculos de períodos existentes: comienzan como mínimo después del trial y del período previo, tomando la fecha mayor entre aprobación y débito programado.
+
+El comando no crea notificaciones falsas ni marca como procesados eventos de webhook anteriores. No modifica la cobertura, el estado del contrato, las flags ni la política de acceso. El webhook mantiene su verificación estricta de `live_mode=false`; la excepción de identidades declaradas solo entra por esta herramienta administrativa de testing. El registro manual no implementa renovaciones automáticas, cancelaciones, devoluciones ni conciliación general.
+
+Las pruebas unitarias de conciliación usan dependencias simuladas, no una base real. La prueba existente `tests/billing-payment-processor.manual.ts` sigue cubriendo concurrencia de la persistencia y requiere ejecución controlada adicional en testing después del refactor. No debe ejecutarse automáticamente ni confundirse con validación de pagos reales del proveedor.

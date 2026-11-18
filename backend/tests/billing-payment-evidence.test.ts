@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyBillingPaymentEvidence } from '../src/modules/billing/providers/billingEvidence.js';
+import { verifyBillingPaymentEvidence, verifyDeclaredTestBillingPaymentEvidence } from '../src/modules/billing/providers/billingEvidence.js';
 import { readMercadoPagoBillingResource } from '../src/modules/billing/providers/mercadoPagoRead.js';
 
 const authorized = { id: 12, preapproval_id: 'sub-1', external_reference: 'LAIXIA-CONTRACT-42', status: 'processed', debit_date: '2026-11-14T12:00:00Z', transaction_amount: '150.00', currency_id: 'ARS', payment: { id: 34, status: 'approved' } };
@@ -32,6 +32,18 @@ test('no acredita pagos reembolsados, pendientes ni evidencia con fechas ausente
     assert.deepEqual(verifyBillingPaymentEvidence({ ...input, authorizedPayment: { ...authorized, debit_date } }), { valid: false, reason: 'INCOMPLETE' });
   }
   assert.deepEqual(verifyBillingPaymentEvidence({ ...input, payment: { ...payment, date_approved: undefined } }), { valid: false, reason: 'INCOMPLETE' });
+});
+
+test('la evidencia con identidades declaradas no altera el modo del pago ni elimina otras comprobaciones', () => {
+  const liveInput = { ...input, payment: { ...payment, live_mode: true } };
+  assert.equal(verifyDeclaredTestBillingPaymentEvidence(liveInput, true).valid, true);
+  assert.deepEqual(verifyDeclaredTestBillingPaymentEvidence(liveInput, false), { valid: false, reason: 'MODE_MISMATCH' });
+  assert.deepEqual(verifyBillingPaymentEvidence(liveInput), { valid: false, reason: 'MODE_MISMATCH' });
+  assert.equal(liveInput.payment.live_mode, true);
+  for (const live_mode of [null, undefined, 'true', 'false', 1]) {
+    assert.deepEqual(verifyDeclaredTestBillingPaymentEvidence({ ...input, payment: { ...payment, live_mode } }, true), { valid: false, reason: 'MODE_MISMATCH' });
+  }
+  assert.deepEqual(verifyDeclaredTestBillingPaymentEvidence({ ...liveInput, payment: { ...liveInput.payment, transaction_amount: 151 } }, true), { valid: false, reason: 'AMOUNT_MISMATCH' });
 });
 
 test('consulta solo endpoints fijos de prueba, sin seguir redirecciones', async () => {
