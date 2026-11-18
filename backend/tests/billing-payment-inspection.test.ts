@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectBillingPayment } from '../src/modules/billing/providers/billingPaymentInspection.js';
+import { verifyBillingTestAccounts } from '../src/modules/billing/providers/billingTestAccounts.js';
 
 const contract = { id: 42, provider: 'MERCADOPAGO', providerSubscriptionId: 'sub-test', amount: '150.00', currency: 'ARS' };
 const payment = { id: 123, status: 'approved', status_detail: 'accredited', live_mode: false, external_reference: 'LAIXIA-CONTRACT-42', transaction_amount: 150, currency_id: 'ARS' };
@@ -75,6 +76,19 @@ test('permite solo el diagnóstico de un pago LIVE con identidades de prueba ver
   });
   assert.equal(checks, 1);
   assert.deepEqual(result, { result: 'REVIEW', reason: 'INSTALLMENT_REQUIRED', contractId: 42, providerSubscriptionId: 'sub-test' });
+});
+
+test('el diagnóstico con cuentas declaradas conserva las validaciones de contrato e importe', async () => {
+  for (const expectedAmount of ['150.00', '151.00']) {
+    const result = await inspectBillingPayment('123', {
+      read: async (resource) => resource === 'payment' ? { ...payment, live_mode: true, collector_id: 10, payer: { id: 20 } } : subscription,
+      verifyTestAccounts: (value) => verifyBillingTestAccounts(value, async () => ({ id: 10 }), { sellerId: '10', buyerId: '20' }),
+      findContract: async () => ({ ...contract, amount: expectedAmount }),
+    });
+    assert.deepEqual(result, expectedAmount === '150.00'
+      ? { result: 'REVIEW', reason: 'INSTALLMENT_REQUIRED', contractId: 42, providerSubscriptionId: 'sub-test' }
+      : { result: 'REVIEW', reason: 'AMOUNT_MISMATCH' });
+  }
 });
 
 test('bloquea LIVE sin evidencia y no intenta validar identidades si el modo falta o es inválido', async () => {

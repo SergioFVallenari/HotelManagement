@@ -1,7 +1,7 @@
+import { parsePaymentInspectionArgs } from '../modules/billing/providers/billingInspectionInput.js';
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const paymentId = args[0] ?? '';
-  if (args.length !== 1 || !/^[1-9]\d{0,199}$/.test(paymentId)) throw new Error('El ID de pago no es válido.');
+  const { paymentId, declared } = parsePaymentInspectionArgs(process.argv.slice(2));
   const { env } = await import('../config/env.js');
   const config = env.billingMpTest;
   if (env.appEnv !== 'testing' || !config.enabled || !config.accessToken) throw new Error('La consulta de prueba no está habilitada.');
@@ -18,19 +18,19 @@ async function main(): Promise<void> {
     const options = { enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport: fetch };
     const result = await inspectBillingPayment(paymentId, {
       read: (resource, id) => readMercadoPagoBillingResource(resource, id, options),
-      verifyTestAccounts: (payment) => verifyBillingTestAccounts(payment, (id) => readMercadoPagoBillingIdentity(id, options)),
+      verifyTestAccounts: (payment) => verifyBillingTestAccounts(payment, (id) => readMercadoPagoBillingIdentity(id, options), declared),
       findContract: async (id) => {
         const contract = await prisma.ownerBillingContract.findUnique({ where: { id }, select: { id: true, provider: true, providerSubscriptionId: true, amount: true, currency: true } });
         return contract ? { ...contract, amount: contract.amount.toFixed(2) } : null;
       },
     });
-    console.log(JSON.stringify(result));
+    console.log(JSON.stringify({ ...result, ...(declared ? { testIdentitySource: 'OPERATOR_DECLARATION' } : {}) }));
   } finally {
     await prisma.$disconnect();
   }
 }
 
 main().catch(() => {
-  console.error('[billing] No se pudo inspeccionar el pago. Revisá la configuración de testing, el ID y la disponibilidad del proveedor. Uso: pnpm billing:inspect-payment <paymentId>');
+  console.error('[billing] No se pudo inspeccionar el pago. Revisá la configuración de testing, los IDs y la disponibilidad del proveedor. Uso: pnpm billing:inspect-payment <paymentId> [sellerTestUserId buyerTestUserId]');
   process.exitCode = 1;
 });

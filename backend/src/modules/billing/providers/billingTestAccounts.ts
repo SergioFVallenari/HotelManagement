@@ -12,18 +12,27 @@ function numericId(value: unknown): string | null {
 
 export type TestAccountEvidence =
   | { verified: true }
-  | { verified: false; reason: 'IDENTITY_UNAVAILABLE' | 'SELLER_MISMATCH' | 'BUYER_MISMATCH' | 'TEST_TAG_UNAVAILABLE' };
+  | { verified: false; reason: 'IDENTITY_UNAVAILABLE' | 'SELLER_MISMATCH' | 'BUYER_MISMATCH' | 'TEST_TAG_UNAVAILABLE' | 'EXPECTED_ACCOUNTS_MISMATCH' };
 
-export async function verifyBillingTestAccounts(paymentValue: unknown, readIdentity: (id: string) => Promise<unknown>): Promise<TestAccountEvidence> {
+export interface DeclaredTestAccounts {
+  sellerId: string;
+  buyerId: string;
+}
+
+export async function verifyBillingTestAccounts(paymentValue: unknown, readIdentity: (id: string) => Promise<unknown>, declared?: DeclaredTestAccounts): Promise<TestAccountEvidence> {
   const payment = record(paymentValue);
   const collectorId = numericId(payment?.collector_id);
   const payerId = numericId(record(payment?.payer)?.id);
   if (!collectorId || !payerId || collectorId === payerId) return { verified: false, reason: 'IDENTITY_UNAVAILABLE' };
+  if (declared && (numericId(declared.sellerId) !== collectorId || numericId(declared.buyerId) !== payerId)) {
+    return { verified: false, reason: 'EXPECTED_ACCOUNTS_MISMATCH' };
+  }
   let seller: JsonObject | null;
   let buyer: JsonObject | null;
   try {
     seller = record(await readIdentity('me'));
     if (!seller || numericId(seller.id) !== collectorId) return { verified: false, reason: 'SELLER_MISMATCH' };
+    if (declared) return { verified: true };
     if (!Array.isArray(seller.tags) || !seller.tags.includes('test_user')) return { verified: false, reason: 'TEST_TAG_UNAVAILABLE' };
     buyer = record(await readIdentity(payerId));
   } catch {
