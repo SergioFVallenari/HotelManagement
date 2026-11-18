@@ -29,8 +29,6 @@ test('no busca contratos para pagos reales, desconocidos, rechazados o sin refer
   const cases = [
     [null, 'INVALID_PAYMENT'],
     [{ ...payment, id: 124 }, 'INVALID_PAYMENT'],
-    [{ ...payment, live_mode: true }, 'MODE_MISMATCH'],
-    [{ ...payment, live_mode: undefined }, 'MODE_MISMATCH'],
     [{ ...payment, status: 'rejected' }, 'NOT_APPROVED'],
     [{ ...payment, status_detail: 'pending' }, 'NOT_APPROVED'],
     [{ ...payment, external_reference: null }, 'REFERENCE_UNAVAILABLE'],
@@ -38,6 +36,25 @@ test('no busca contratos para pagos reales, desconocidos, rechazados o sin refer
   ] as const;
   for (const [value, reason] of cases) {
     assert.deepEqual(await inspectBillingPayment('123', { read: async () => value, findContract: async () => { throw new Error('No debe consultar'); } }), { result: 'REVIEW', reason });
+  }
+});
+
+test('distingue modo real, campo ausente y valores inválidos sin exponerlos ni consultar contratos', async () => {
+  const missingMode: Record<string, unknown> = { ...payment };
+  delete missingMode.live_mode;
+  const cases = [
+    [{ ...payment, live_mode: true }, 'LIVE'],
+    [missingMode, 'MISSING'],
+    ...[null, undefined, 'false', 'true', 0, 1, { token: 'dato-sensible' }, []].map((live_mode) => [{ ...payment, live_mode }, 'INVALID'] as const),
+  ] as const;
+  for (const [value, mode] of cases) {
+    let reads = 0;
+    const result = await inspectBillingPayment('123', {
+      read: async (resource, id) => { assert.equal(++reads, 1); assert.equal(resource, 'payment'); assert.equal(id, '123'); return value; },
+      findContract: async () => { throw new Error('No debe consultar contratos'); },
+    });
+    assert.deepEqual(result, { result: 'REVIEW', reason: 'MODE_MISMATCH', mode });
+    assert.ok(!JSON.stringify(result).includes('dato-sensible'));
   }
 });
 

@@ -10,7 +10,8 @@ type Contract = {
 };
 
 export type PaymentInspection =
-  | { result: 'REVIEW'; reason: 'INVALID_PAYMENT' | 'MODE_MISMATCH' | 'NOT_APPROVED' | 'REFERENCE_UNAVAILABLE' | 'CONTRACT_UNAVAILABLE' | 'AMOUNT_MISMATCH' | 'SUBSCRIPTION_MISMATCH' }
+  | { result: 'REVIEW'; reason: 'INVALID_PAYMENT' | 'NOT_APPROVED' | 'REFERENCE_UNAVAILABLE' | 'CONTRACT_UNAVAILABLE' | 'AMOUNT_MISMATCH' | 'SUBSCRIPTION_MISMATCH' }
+  | { result: 'REVIEW'; reason: 'MODE_MISMATCH'; mode: 'LIVE' | 'MISSING' | 'INVALID' }
   | { result: 'REVIEW'; reason: 'INSTALLMENT_REQUIRED'; contractId: number; providerSubscriptionId: string };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -27,7 +28,10 @@ export async function inspectBillingPayment(paymentId: string, dependencies: {
   if (!payment || !((typeof returnedId === 'string' && returnedId === paymentId) || (typeof returnedId === 'number' && Number.isSafeInteger(returnedId) && String(returnedId) === paymentId))) {
     return { result: 'REVIEW', reason: 'INVALID_PAYMENT' };
   }
-  if (payment.live_mode !== false) return { result: 'REVIEW', reason: 'MODE_MISMATCH' };
+  if (payment.live_mode !== false) {
+    const mode = payment.live_mode === true ? 'LIVE' : Object.hasOwn(payment, 'live_mode') ? 'INVALID' : 'MISSING';
+    return { result: 'REVIEW', reason: 'MODE_MISMATCH', mode };
+  }
   if (payment.status !== 'approved' || payment.status_detail !== 'accredited') return { result: 'REVIEW', reason: 'NOT_APPROVED' };
   const reference = typeof payment.external_reference === 'string' ? /^LAIXIA-CONTRACT-([1-9]\d*)$/.exec(payment.external_reference) : null;
   const contractId = reference ? Number(reference[1]) : null;
