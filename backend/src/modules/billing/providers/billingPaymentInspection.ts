@@ -1,5 +1,6 @@
 import { billingAmountMatches } from './billingAmount.js';
 import type { BillingReadResource } from './mercadoPagoRead.js';
+import type { TestAccountEvidence } from './billingTestAccounts.js';
 
 type Contract = {
   id: number;
@@ -11,7 +12,7 @@ type Contract = {
 
 export type PaymentInspection =
   | { result: 'REVIEW'; reason: 'INVALID_PAYMENT' | 'NOT_APPROVED' | 'REFERENCE_UNAVAILABLE' | 'CONTRACT_UNAVAILABLE' | 'AMOUNT_MISMATCH' | 'SUBSCRIPTION_MISMATCH' }
-  | { result: 'REVIEW'; reason: 'MODE_MISMATCH'; mode: 'LIVE' | 'MISSING' | 'INVALID' }
+  | { result: 'REVIEW'; reason: 'MODE_MISMATCH'; mode: 'LIVE' | 'MISSING' | 'INVALID'; accounts?: Exclude<TestAccountEvidence, { verified: true }>['reason'] }
   | { result: 'REVIEW'; reason: 'INSTALLMENT_REQUIRED'; contractId: number; providerSubscriptionId: string };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -21,6 +22,7 @@ function record(value: unknown): Record<string, unknown> | null {
 export async function inspectBillingPayment(paymentId: string, dependencies: {
   read: (resource: BillingReadResource, id: string) => Promise<unknown>;
   findContract: (id: number) => Promise<Contract | null>;
+  verifyTestAccounts?: (payment: unknown) => Promise<TestAccountEvidence>;
 }): Promise<PaymentInspection> {
   if (!/^[1-9]\d{0,199}$/.test(paymentId)) return { result: 'REVIEW', reason: 'INVALID_PAYMENT' };
   const payment = record(await dependencies.read('payment', paymentId));
@@ -30,7 +32,9 @@ export async function inspectBillingPayment(paymentId: string, dependencies: {
   }
   if (payment.live_mode !== false) {
     const mode = payment.live_mode === true ? 'LIVE' : Object.hasOwn(payment, 'live_mode') ? 'INVALID' : 'MISSING';
-    return { result: 'REVIEW', reason: 'MODE_MISMATCH', mode };
+    if (mode !== 'LIVE' || !dependencies.verifyTestAccounts) return { result: 'REVIEW', reason: 'MODE_MISMATCH', mode };
+    const accounts = await dependencies.verifyTestAccounts(payment);
+    if (!accounts.verified) return { result: 'REVIEW', reason: 'MODE_MISMATCH', mode, accounts: accounts.reason };
   }
   if (payment.status !== 'approved' || payment.status_detail !== 'accredited') return { result: 'REVIEW', reason: 'NOT_APPROVED' };
   const reference = typeof payment.external_reference === 'string' ? /^LAIXIA-CONTRACT-([1-9]\d*)$/.exec(payment.external_reference) : null;
