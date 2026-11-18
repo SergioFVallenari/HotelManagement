@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyBillingTestAccounts } from '../src/modules/billing/providers/billingTestAccounts.js';
 import { readMercadoPagoBillingIdentity } from '../src/modules/billing/providers/mercadoPagoIdentity.js';
+import { parsePaymentInspectionArgs } from '../src/modules/billing/providers/billingInspectionInput.js';
 
 const payment = { collector_id: 10, payer: { id: '20' } };
 const seller = { id: 10, tags: ['test_user'], email: 'privado@example.test' };
@@ -36,6 +37,38 @@ test('no consulta identidades inexistentes, iguales, inseguras o inválidas', as
 test('un fallo de consulta bloquea sin revelar datos de la respuesta o credencial', async () => {
   const result = await verifyBillingTestAccounts(payment, async () => { throw new Error('secreto'); });
   assert.deepEqual(result, { verified: false, reason: 'IDENTITY_UNAVAILABLE' });
+});
+
+test('contrasta las cuentas declaradas por el operador con el pago y el titular de la credencial sin exigir tags', async () => {
+  const reads: string[] = [];
+  assert.deepEqual(await verifyBillingTestAccounts(payment, async (id) => {
+    reads.push(id);
+    return { id: '10' };
+  }, { sellerId: '10', buyerId: '20' }), { verified: true });
+  assert.deepEqual(reads, ['me']);
+});
+
+test('no acepta cuentas declaradas distintas, incompletas o inválidas aunque los tags sean de prueba', async () => {
+  for (const declared of [
+    { sellerId: '11', buyerId: '20' }, { sellerId: '10', buyerId: '21' }, { sellerId: '20', buyerId: '10' },
+    { sellerId: '10', buyerId: '10' }, { sellerId: '', buyerId: '20' }, { sellerId: '010', buyerId: '20' },
+  ]) {
+    assert.deepEqual(await verifyBillingTestAccounts(payment, async () => { throw new Error('No debe consultar'); }, declared), { verified: false, reason: 'EXPECTED_ACCOUNTS_MISMATCH' });
+  }
+});
+
+test('las cuentas declaradas no reemplazan la consulta de identidad de la credencial', async () => {
+  const declared = { sellerId: '10', buyerId: '20' };
+  assert.deepEqual(await verifyBillingTestAccounts(payment, async () => ({ id: 11 }), declared), { verified: false, reason: 'SELLER_MISMATCH' });
+  assert.deepEqual(await verifyBillingTestAccounts(payment, async () => { throw new Error('secreto'); }, declared), { verified: false, reason: 'IDENTITY_UNAVAILABLE' });
+});
+
+test('acepta una invocación normal o con las dos cuentas declaradas, nunca argumentos parciales', () => {
+  assert.deepEqual(parsePaymentInspectionArgs(['123']), { paymentId: '123' });
+  assert.deepEqual(parsePaymentInspectionArgs(['123', '10', '20']), { paymentId: '123', declared: { sellerId: '10', buyerId: '20' } });
+  for (const args of [[], ['123', '10'], ['123', '10', '20', '30'], ['123', '10', '10'], ['123', '0', '20'], ['123', '10', '020'], ['url'], ['123', '10', 'abc'], ['1'.repeat(201)]]) {
+    assert.throws(() => parsePaymentInspectionArgs(args));
+  }
 });
 
 test('consulta identidades solo por GET, sin redirecciones y exclusivamente en testing', async () => {
