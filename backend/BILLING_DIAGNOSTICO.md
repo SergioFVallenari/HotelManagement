@@ -31,6 +31,8 @@ pnpm billing:inspect-payment <paymentId>
 
 Consulta el pago por GET y exige `live_mode=false`, estado aprobado y acreditado y una referencia exacta `LAIXIA-CONTRACT-<id>`. Busca ese contrato en testing, compara importe y moneda y consulta la suscripción cuyo identificador ya está persistido. No interpreta el ID de una URL de actividad como un `preapproval_id`.
 
+Ante `REVIEW/MODE_MISMATCH`, el campo `mode` distingue `LIVE` (`live_mode=true`), `MISSING` (campo ausente) e `INVALID` (presente con un valor que no es booleano). No se imprime el valor recibido. Los tres casos detienen el diagnóstico antes de consultar contratos o suscripciones; únicamente `live_mode=false` permite continuar. Una cuenta con nombre de prueba no reemplaza esta comprobación.
+
 Si la suscripción está autorizada y sus condiciones coinciden, devuelve `REVIEW/INSTALLMENT_REQUIRED`, el ID interno del contrato y el ID de suscripción persistido. Todavía falta verificar la cuota autorizada y sus fechas antes de registrar un período. La consulta no demuestra por sí sola la relación entre cuota, pago y suscripción. Si falta la referencia o las respuestas no coinciden, se detiene para revisión, sin completar datos mediante supuestos.
 
 ## Servicio desplegado
