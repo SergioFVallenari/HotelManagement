@@ -2,13 +2,16 @@ import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { AppError } from '../../lib/AppError.js';
 import { readMercadoPagoBillingResource } from './providers/mercadoPagoRead.js';
-import { verifyAuthorizedBillingPayment } from './providers/billingVerification.js';
+import { verifyConfiguredTestBillingPayment } from './providers/billingVerification.js';
+import { readMercadoPagoBillingIdentity } from './providers/mercadoPagoIdentity.js';
+import { billingTestAccountPolicy } from './billing.testAccountPolicy.js';
 import { recordTestBillingPayment } from './billing.paymentPersistence.js';
 import { BILLING_LEASE_MS, billingRetryAt, billingRetryWhere } from './billing.retry.js';
 
 export async function processTestBillingPayment(eventId: number, transport: typeof fetch = fetch): Promise<'RECORDED' | 'DEFERRED'> {
   const config = env.billingMpTest;
   if (!config.enabled || !config.webhookEnabled || !config.accessToken) throw new AppError(503, 'BILLING_PROCESSOR_DISABLED', 'El procesador de prueba está desactivado.');
+  const configuredAccounts = billingTestAccountPolicy();
   const now = new Date();
   const claimed = await prisma.ownerBillingWebhookEvent.updateMany({
     where: { id: eventId, ...billingRetryWhere(now, 'subscription_authorized_payment') },
@@ -20,8 +23,10 @@ export async function processTestBillingPayment(eventId: number, transport: type
   if (event.status === 'PROCESSED' || event.topic !== 'subscription_authorized_payment') return 'DEFERRED';
   try {
     const options = { enabled: config.enabled, environment: env.appEnv, accessToken: config.accessToken, transport };
-    const verified = await verifyAuthorizedBillingPayment(event.resourceId, {
+    const verified = await verifyConfiguredTestBillingPayment(event.resourceId, {
+      configuredAccounts,
       read: (resource, id) => readMercadoPagoBillingResource(resource, id, options),
+      readIdentity: (id) => readMercadoPagoBillingIdentity(id, options),
       findContract: async (providerSubscriptionId) => {
         const contract = await prisma.ownerBillingContract.findUnique({
           where: { provider_providerSubscriptionId: { provider: 'MERCADOPAGO', providerSubscriptionId } },
@@ -34,6 +39,7 @@ export async function processTestBillingPayment(eventId: number, transport: type
       throw new AppError(503, 'BILLING_PAYMENT_REVIEW', 'El pago requiere conciliación antes de procesarse.');
     }
     await recordTestBillingPayment(verified, eventId);
+    if (configuredAccounts) console.info('[billing] Pago de prueba verificado con cuentas configuradas', { eventId, contractId: verified.contractId, testIdentitySource: 'OPERATOR_CONFIGURATION' });
     return 'RECORDED';
   } catch (error) {
     const nextAttemptAt = billingRetryAt(event.attempts, new Date());

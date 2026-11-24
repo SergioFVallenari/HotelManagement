@@ -33,3 +33,23 @@ test('rechaza firma incorrecta, vencida, recurso inconsistente y modo real', () 
     assert.throws(() => verifyBillingNotification({ ...input, body: { ...input.body, live_mode } }), { code: 'BILLING_WEBHOOK_INVALID' });
   }
 });
+
+test('la excepción configurada solo admite el tópico de cuota autorizada y sigue exigiendo firma', () => {
+  const body = { ...input.body, type: 'subscription_authorized_payment', live_mode: true };
+  assert.throws(() => verifyBillingNotification({ ...input, body }), { code: 'BILLING_WEBHOOK_INVALID' });
+  assert.equal(verifyBillingNotification({ ...input, body, allowLiveAuthorizedPayment: true }).topic, 'subscription_authorized_payment');
+  assert.throws(() => verifyBillingNotification({ ...input, body, allowLiveAuthorizedPayment: true, secret: 'otra' }), { code: 'BILLING_WEBHOOK_SIGNATURE' });
+  assert.throws(() => verifyBillingNotification({ ...input, body, allowLiveAuthorizedPayment: true, now: now + 301_000 }), { code: 'BILLING_WEBHOOK_SIGNATURE' });
+  assert.throws(() => verifyBillingNotification({ ...input, body, allowLiveAuthorizedPayment: true, queryResourceId: 'otro' }), { code: 'BILLING_WEBHOOK_INVALID' });
+  for (const type of ['payment', 'subscription_preapproval']) {
+    assert.throws(() => verifyBillingNotification({ ...input, body: { ...body, type }, allowLiveAuthorizedPayment: true }), { code: 'BILLING_WEBHOOK_INVALID' });
+  }
+});
+
+test('una declaración en el payload nunca habilita la excepción ni reemplaza los campos firmados', () => {
+  const body = { ...input.body, type: 'subscription_authorized_payment', live_mode: true, allowLiveAuthorizedPayment: true, sellerId: '10', buyerId: '20' };
+  assert.throws(() => verifyBillingNotification({ ...input, body }), { code: 'BILLING_WEBHOOK_INVALID' });
+  for (const live_mode of [null, 'true', 1]) {
+    assert.throws(() => verifyBillingNotification({ ...input, body: { ...body, live_mode }, allowLiveAuthorizedPayment: true }), { code: 'BILLING_WEBHOOK_INVALID' });
+  }
+});

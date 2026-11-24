@@ -116,6 +116,11 @@ export const env = {
     monthlyPrice: isTesting ? optional('BILLING_MP_TEST_MONTHLY_PRICE') : '',
     webhookEnabled: isTesting && optional('BILLING_MP_TEST_WEBHOOK_ENABLED') === 'true',
     webhookSecret: isTesting ? optional('BILLING_MP_TEST_WEBHOOK_SECRET') : '',
+    configuredAccounts: {
+      enabled: isTesting && optional('BILLING_MP_TEST_ACCOUNTS_ENABLED') === 'true',
+      sellerId: isTesting ? optional('BILLING_MP_TEST_SELLER_ID') : '',
+      buyerId: isTesting ? optional('BILLING_MP_TEST_BUYER_ID') : '',
+    },
   },
 
   corsOrigins: parseOrigins(process.env.CORS_ORIGINS, appEnv),

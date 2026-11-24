@@ -76,7 +76,7 @@ Después de revisar la simulación y autorizar expresamente la escritura, repeti
 
 `--apply` reutiliza la persistencia transaccional del procesador, bloquea contrato y cuenta, revalida condiciones y registra pago y período juntos. Los IDs únicos de pago y cuota, la comprobación de datos existentes y la serialización evitan duplicados; una repetición coherente devuelve `ALREADY_RECORDED` sin agregar otro período. Una cuota fuera de orden, un conflicto o un cambio de contrato revierte la transacción. Se conservan los cálculos de períodos existentes: comienzan como mínimo después del trial y del período previo, tomando la fecha mayor entre aprobación y débito programado.
 
-El comando no crea notificaciones falsas ni marca como procesados eventos de webhook anteriores. No modifica la cobertura, el estado del contrato, las flags ni la política de acceso. El webhook mantiene su verificación estricta de `live_mode=false`; la excepción de identidades declaradas solo entra por esta herramienta administrativa de testing. El registro manual no implementa renovaciones automáticas, cancelaciones, devoluciones ni conciliación general.
+El comando no crea notificaciones falsas ni marca como procesados eventos de webhook anteriores. No modifica la cobertura, el estado del contrato, las flags ni la política de acceso. El webhook mantiene por defecto su verificación estricta de `live_mode=false`; la declaración de IDs en este comando no habilita la excepción automática de cuentas configuradas descrita al final. El registro manual no implementa renovaciones automáticas, cancelaciones, devoluciones ni conciliación general.
 
 Las pruebas unitarias de conciliación usan dependencias simuladas, no una base real. La prueba existente `tests/billing-payment-processor.manual.ts` sigue cubriendo concurrencia de la persistencia y requiere ejecución controlada adicional en testing después del refactor. No debe ejecutarse automáticamente ni confundirse con validación de pagos reales del proveedor.
 
@@ -104,7 +104,7 @@ Procesa hasta 20 eventos secuencialmente, reconsultando cuota y pago. Un fallo n
 
 Este comando se puede configurar posteriormente como un proceso programado de Railway cada cinco minutos con las mismas variables de testing, ejecutando `node dist/scripts/billingRetryEvents.js --apply`; no se agrega ningún intervalo al servidor ni se configura el scheduler desde el repositorio. No habilitar la programación antes de aplicar y validar la migración y la concurrencia en testing. La prueba manual del procesador ahora verifica también reclamación única, contador y limpieza de lease.
 
-Alcance: recupera notificaciones ya almacenadas. No busca cobros que nunca notificó el proveedor, no procesa el tópico genérico `payment` y mantiene el rechazo de notificaciones firmadas con `live_mode=true` y de pagos LIVE en el procesador automático. El caso de pagos con cuentas de prueba declaradas continúa por conciliación manual, no se autoriza automáticamente por IDs aportados en HTTP. Este entregable por sí solo no completa las renovaciones automáticas del flujo de prueba validado ni habilita producción.
+Alcance: recupera notificaciones ya almacenadas. No busca cobros que nunca notificó el proveedor y no procesa el tópico genérico `payment`. Por defecto rechaza notificaciones firmadas con `live_mode=true` y pagos LIVE en el procesador automático. La excepción opcional de cuentas configuradas del backend se describe al final; nunca se autoriza por IDs aportados en HTTP. Este entregable por sí solo no completa las renovaciones automáticas ni habilita producción.
 
 ## Estado de contratos por `subscription_preapproval`
 
@@ -138,3 +138,36 @@ La vista previa reconsulta GET `/preapproval/<id>` y `/users/me` con las mismas 
 Solo después de revisar el resultado y autorizar la escritura, repetir con `--apply` al final. Vuelve a consultar los recursos y utiliza la persistencia transaccional compartida con el webhook. Devuelve `UPDATED`, `UNCHANGED` o `STALE`, con el estado y versión efectivos que conserva el contrato. Una repetición coherente no actualiza otra vez el contrato; versiones antiguas no lo hacen retroceder. No reinicia intentos, no crea eventos de webhook ficticios y no modifica ni marca como procesadas las simulaciones ya almacenadas.
 
 No crea ni modifica pagos o períodos ni extiende acceso. El período aprobado ya registrado se conserva independientemente del estado contractual. No completa el circuito automático de cobros y no cancela o reactiva la suscripción en Mercado Pago. Usa la columna `providerUpdatedAt` de la migración anterior; no agrega migraciones nuevas. La extracción de la transacción es compartida con el procesador existente: las pruebas unitarias usan persistencia simulada y no sustituyen una validación controlada de concurrencia en PostgreSQL.
+
+## Automatización opcional para cuentas de prueba configuradas
+
+Apagada por defecto. Solo habilitable por el operador del backend en `APP_ENV=testing`, con billing de prueba activo y `DATABASE_URL` del proyecto verificado `sowbuvdeampxsbpgtgvo`. No admite otros proyectos ni permite elegir cuentas desde una solicitud HTTP. Antes de configurar IDs, comprobar en el panel de cuentas de prueba de Mercado Pago que vendedor y comprador sean realmente las cuentas de prueba previstas. Una coincidencia de IDs no certifica por sí sola que una operación sea sandbox; esa clasificación continúa siendo una declaración operativa.
+
+Variables nuevas, exclusivamente en el backend de testing:
+
+```text
+BILLING_MP_TEST_ACCOUNTS_ENABLED=false
+BILLING_MP_TEST_SELLER_ID=<User ID del vendedor de prueba verificado>
+BILLING_MP_TEST_BUYER_ID=<User ID del comprador de prueba verificado>
+```
+
+Mantener la flag apagada hasta revisar las cuentas y autorizar la prueba controlada. En producción se ignoran estas variables. Si la flag está habilitada pero faltan IDs válidos, son iguales, billing está apagado o la base no corresponde a testing, el webhook y reprocesador fallan cerrados antes de reclamar eventos o registrar pagos.
+
+Con esta opción activa, solo las notificaciones `subscription_authorized_payment` pueden admitir `live_mode=true`, y siempre necesitan firma válida, ventana temporal y recurso coherente. Las notificaciones genéricas `payment` y `subscription_preapproval` con `live_mode=true` siguen rechazadas. La aceptación del webhook no acredita un pago: solo permite guardar la notificación para verificarla.
+
+El procesador vuelve a consultar cuota y pago y exige que `collector_id` sea el vendedor configurado, que `payer.id` sea el comprador configurado y que `/users/me` identifique al mismo vendedor. Hace esto también para pagos con `live_mode=false` cuando la política está activa. Luego conserva todos los controles existentes de contrato, referencia, cuota, estados, importe, moneda y fechas. Los modos ausentes o no booleanos siguen rechazados. Reutiliza los bloqueos de contrato/cuenta, la transacción y las claves únicas para registrar pago y período; un evento duplicado no debe duplicar el período.
+
+No modifica el campo `live_mode` recibido ni rellena tags o estados. No consulta etiquetas del comprador que ya se comprobó que no están disponibles. En procesamiento exitoso registra un mensaje `[billing]` con evento, contrato y `testIdentitySource: OPERATOR_CONFIGURATION`, sin IDs de cuentas, emails, tokens ni respuestas completas. La política se revalida en cada intento: apagarla vuelve a la comprobación estricta incluso para eventos LIVE ya almacenados. No se usan los argumentos de los comandos manuales como configuración automática.
+
+### Primera validación sin escrituras
+
+La vista previa del reprocesador ahora incluye `configuredTestAccounts: true/false`, sin IDs. Para comprobar directamente una cuota individual con la misma política del procesador, sin crear eventos, pagos o períodos:
+
+```bash
+pnpm billing:preview-payment <authorizedPaymentId>
+node dist/scripts/billingPreviewPayment.js <authorizedPaymentId>
+```
+
+No admite `--apply`. Consulta cuota, pago, contrato e identidad; devuelve `VERIFIED_NOT_APPLIED` o `REVIEW`. Indica `testIdentitySource: OPERATOR_CONFIGURATION` si usó las cuentas configuradas, o `STRICT_TEST_MODE` si la política está apagada. No exige apagar el período pagado ni activar el webhook para esta vista previa. Revisar el resultado antes de reenviar desde Mercado Pago una notificación del recurso existente; no generar otro cobro para probar recepción.
+
+No configurar cron ni poner esta flag en producción. El cambio no implementa búsqueda de cobros nunca notificados, actualización de devoluciones/contracargos, cancelación desde la UI ni automatización general de suscripciones. Las pruebas locales simulan recursos y firma; queda pendiente probar recepción real, concurrencia e idempotencia transaccional en testing con la opción activa. No hay migraciones nuevas y la implementación no activa variables remotas.
