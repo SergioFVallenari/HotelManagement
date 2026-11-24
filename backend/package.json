@@ -10,6 +10,7 @@
     "billing:inspect-checkout": "tsx src/scripts/billingInspectCheckout.ts",
     "billing:inspect-payment": "tsx src/scripts/billingInspectPayment.ts",
     "billing:reconcile-payment": "tsx src/scripts/billingReconcilePayment.ts",
+    "billing:retry-events": "tsx src/scripts/billingRetryEvents.ts",
     "e2e:booking": "node e2e-booking.mjs",
     "e2e:drop": "tsx prisma/e2e.drop.ts",
     "build": "tsc",

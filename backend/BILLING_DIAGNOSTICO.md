@@ -79,3 +79,29 @@ Después de revisar la simulación y autorizar expresamente la escritura, repeti
 El comando no crea notificaciones falsas ni marca como procesados eventos de webhook anteriores. No modifica la cobertura, el estado del contrato, las flags ni la política de acceso. El webhook mantiene su verificación estricta de `live_mode=false`; la excepción de identidades declaradas solo entra por esta herramienta administrativa de testing. El registro manual no implementa renovaciones automáticas, cancelaciones, devoluciones ni conciliación general.
 
 Las pruebas unitarias de conciliación usan dependencias simuladas, no una base real. La prueba existente `tests/billing-payment-processor.manual.ts` sigue cubriendo concurrencia de la persistencia y requiere ejecución controlada adicional en testing después del refactor. No debe ejecutarse automáticamente ni confundirse con validación de pagos reales del proveedor.
+
+## Recuperación de eventos recibidos
+
+Aplicar primero la migración aditiva `20261123120000_billing_webhook_retries` en testing. Agrega `nextAttemptAt` y `lockedUntil`, conserva los eventos y excluye del reprocesamiento los ya procesados. Generar el cliente Prisma y compilar antes de desplegar; el backend actualizado depende de esas columnas. No aplicar automáticamente a producción.
+
+El webhook y el reprocesador comparten una reclamación atómica del evento con lease de dos minutos. Solo se procesan eventos `subscription_authorized_payment`, proveedor Mercado Pago, estados `RECEIVED`/`FAILED`, con fecha de intento vencida y sin otro lease vigente. El contador se incrementa al reclamar, no al completar. Un fallo libera el lease y programa esperas de 1, 2, 4, 8, 16, 32 y 60 minutos; tras ocho intentos queda para revisión. Si el proceso muere, el lease vence y permite recuperar el evento, salvo que haya agotado los intentos. Las escrituras del pago y período siguen protegidas por los bloqueos transaccionales y claves únicas, incluso si vence un lease durante una operación lenta.
+
+Desde el servicio de testing, primero inspeccionar sin escribir:
+
+```bash
+node dist/scripts/billingRetryEvents.js
+```
+
+Devuelve cantidades seleccionadas (máximo 20), agotadas y de tópicos aún no soportados, sin recursos ni datos personales. No consulta al proveedor ni reclama eventos. Requiere el proyecto de testing verificado, `BILLING_MP_TEST_ENABLED`, `BILLING_MP_TEST_WEBHOOK_ENABLED` y la credencial configurada.
+
+Solo con autorización para reprocesar:
+
+```bash
+node dist/scripts/billingRetryEvents.js --apply
+```
+
+Procesa hasta 20 eventos secuencialmente, reconsultando cuota y pago. Un fallo no cancela el resto del lote; las cantidades de salida resumen el resultado de esa ejecución. Un evento que ya fue reclamado, aún no vence o ya está procesado se difiere sin crear pagos. Se guardan códigos de error, nunca respuestas completas del proveedor. No se reinician intentos automáticamente ni se liberan bloqueos para forzar otro intento.
+
+Este comando se puede configurar posteriormente como un proceso programado de Railway cada cinco minutos con las mismas variables de testing, ejecutando `node dist/scripts/billingRetryEvents.js --apply`; no se agrega ningún intervalo al servidor ni se configura el scheduler desde el repositorio. No habilitar la programación antes de aplicar y validar la migración y la concurrencia en testing. La prueba manual del procesador ahora verifica también reclamación única, contador y limpieza de lease.
+
+Alcance: recupera notificaciones ya almacenadas. No busca cobros que nunca notificó el proveedor, no procesa otros tópicos y mantiene el rechazo automático de `live_mode=true`. El caso de suscripciones con cuentas de prueba declaradas continúa por conciliación manual, no se autoriza automáticamente por IDs aportados en HTTP. Este entregable por sí solo no completa las renovaciones automáticas del flujo de prueba validado ni habilita producción.
