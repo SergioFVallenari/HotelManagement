@@ -3,8 +3,8 @@ import { env } from '../../config/env.js';
 import { AppError } from '../../lib/AppError.js';
 import { readMercadoPagoBillingResource } from './providers/mercadoPagoRead.js';
 import { readMercadoPagoBillingIdentity } from './providers/mercadoPagoIdentity.js';
-import { billingAmountMatches } from './providers/billingAmount.js';
-import { subscriptionTransition, verifyBillingSubscription } from './providers/billingSubscription.js';
+import { verifyBillingSubscription } from './providers/billingSubscription.js';
+import { recordTestSubscriptionState } from './billing.subscriptionPersistence.js';
 import { BILLING_LEASE_MS, billingRetryAt, billingRetryWhere } from './billing.retry.js';
 
 export async function processTestBillingSubscription(eventId: number, transport: typeof fetch = fetch): Promise<'RECORDED' | 'DEFERRED'> {
@@ -31,21 +31,7 @@ export async function processTestBillingSubscription(eventId: number, transport:
       reviewReason = verified.reason;
       throw new AppError(409, 'BILLING_SUBSCRIPTION_REVIEW', 'La suscripción requiere revisión antes de actualizar el contrato.');
     }
-    const subscription = verified.subscription;
-    await prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM "OwnerBillingContract" WHERE id = ${subscription.contractId} FOR UPDATE`;
-      if (!locked[0]) throw new AppError(409, 'BILLING_CONTRACT_CHANGED', 'El contrato ya no está disponible.');
-      const contract = await tx.ownerBillingContract.findUnique({ where: { id: subscription.contractId } });
-      if (!contract || contract.provider !== 'MERCADOPAGO' || contract.providerSubscriptionId !== subscription.providerSubscriptionId || contract.intervalMonths !== 1 || !billingAmountMatches({ expectedAmount: contract.amount.toFixed(2), expectedCurrency: contract.currency, receivedAmount: subscription.amount, receivedCurrency: subscription.currency })) {
-        throw new AppError(409, 'BILLING_CONTRACT_CHANGED', 'El contrato cambió durante la verificación.');
-      }
-      const transition = subscriptionTransition({ ...contract, amount: contract.amount.toFixed(2) }, subscription);
-      if (transition.result === 'REVIEW') throw new AppError(409, 'BILLING_SUBSCRIPTION_REVIEW', 'El estado de la suscripción requiere revisión.');
-      if (transition.result === 'UPDATE') {
-        await tx.ownerBillingContract.update({ where: { id: contract.id }, data: { status: subscription.status, providerUpdatedAt: subscription.providerUpdatedAt } });
-      }
-      await tx.ownerBillingWebhookEvent.updateMany({ where: { id: eventId, status: { not: 'PROCESSED' } }, data: { status: 'PROCESSED', processedAt: new Date(), lockedUntil: null, nextAttemptAt: null, lastError: null } });
-    });
+    await recordTestSubscriptionState(verified.subscription, eventId);
     return 'RECORDED';
   } catch (error) {
     const code = reviewReason ? `BILLING_SUBSCRIPTION_REVIEW:${reviewReason}` : error instanceof AppError && /^BILLING_[A-Z_]+$/.test(error.code) ? error.code : 'BILLING_PROVIDER_OR_PROCESSING_FAILED';

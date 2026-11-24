@@ -121,3 +121,20 @@ La transacción bloquea el contrato y vuelve a validar sus condiciones y transic
 Autorizar un contrato no crea `OwnerBillingPayment` ni `OwnerBillingPeriod`, no activa acceso y no extiende fechas. Pausar o cancelar tampoco elimina pagos ni períodos ya registrados: el acceso por un período aprobado conserva la política existente hasta su vencimiento. No implementa cancelación desde la UI, devolución, contracargo ni regularización automática de cobros anteriores a una cancelación. La conciliación de pagos sobre contratos ya cancelados sigue requiriendo revisión y no debe forzarse cambiando estados.
 
 Después de desplegar, `billingRetryEvents.js` incluye ambos tópicos en la vista previa y el lote, pero `selected` solo indica elegibilidad por fecha/intentos/lease, no que exista contrato ni que se haya validado el recurso. Un lote puede procesar contratos conocidos y dejar simulaciones en revisión. No ejecutar `--apply` hasta revisar la vista previa. Las pruebas locales cubren validación del proveedor y transiciones puras con respuestas simuladas; queda pendiente comprobar la transacción, eventos duplicados y concurrencia con fixtures propias en testing.
+
+## Sincronizar un contrato existente sin fabricar eventos
+
+Cuando no se recibió una notificación válida para el contrato existente, se puede consultar directamente su suscripción persistida:
+
+```bash
+pnpm billing:sync-subscription <contractId>
+node dist/scripts/billingSyncSubscription.js <contractId>
+```
+
+Es una vista previa por defecto. Requiere `APP_ENV=testing`, el proyecto de base verificado, `BILLING_MP_TEST_ENABLED=true` y la credencial de billing configurada. No requiere activar el webhook ni desactivar el acceso al período pagado: esta herramienta solo sincroniza estado contractual, no acredita pagos ni cambia la política de acceso. No recibe un recurso externo arbitrario: resuelve la suscripción desde el ID interno del contrato solicitado.
+
+La vista previa reconsulta GET `/preapproval/<id>` y `/users/me` con las mismas verificaciones del procesador de eventos. Devuelve `VERIFIED_NOT_APPLIED` junto con estados local y del proveedor, versión y transición prevista. Las condiciones y transiciones se revalidan otra vez bajo bloqueo al aplicar; la vista previa no garantiza que el contrato permanezca sin cambios mientras se revisa.
+
+Solo después de revisar el resultado y autorizar la escritura, repetir con `--apply` al final. Vuelve a consultar los recursos y utiliza la persistencia transaccional compartida con el webhook. Devuelve `UPDATED`, `UNCHANGED` o `STALE`, con el estado y versión efectivos que conserva el contrato. Una repetición coherente no actualiza otra vez el contrato; versiones antiguas no lo hacen retroceder. No reinicia intentos, no crea eventos de webhook ficticios y no modifica ni marca como procesadas las simulaciones ya almacenadas.
+
+No crea ni modifica pagos o períodos ni extiende acceso. El período aprobado ya registrado se conserva independientemente del estado contractual. No completa el circuito automático de cobros y no cancela o reactiva la suscripción en Mercado Pago. Usa la columna `providerUpdatedAt` de la migración anterior; no agrega migraciones nuevas. La extracción de la transacción es compartida con el procesador existente: las pruebas unitarias usan persistencia simulada y no sustituyen una validación controlada de concurrencia en PostgreSQL.
