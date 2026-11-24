@@ -1,0 +1,115 @@
+name: Deploy LAIXIA Testing
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: laixia-testing-backend
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate backend without remote credentials
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - name: Prepare local test configuration
+        run: cp .env.example .env
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm typecheck
+      - name: Tests
+        env:
+          NODE_ENV: test
+        run: pnpm test
+      - run: pnpm build
+
+  migrate-and-deploy:
+    name: Migrate testing before deploying Railway
+    needs: validate
+    if: >-
+      github.ref == 'refs/heads/develop' &&
+      vars.TESTING_DEPLOY_ENABLED == 'true' &&
+      vars.TESTING_RAILWAY_AUTODEPLOY_DISABLED == 'true'
+    environment: 'laixia-deploy-testing / develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - name: Install migration and validation tools
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Railway CLI
+        run: npm install --global @railway/cli@5.75.0
+      - name: Validate deployment destinations without printing secrets
+        working-directory: backend
+        env:
+          DIRECT_URL: ${{ secrets.TESTING_DIRECT_URL }}
+          RAILWAY_TOKEN: ${{ secrets.TESTING_RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.TESTING_RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.TESTING_RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ vars.TESTING_RAILWAY_SERVICE_ID }}
+        run: pnpm exec tsx src/scripts/validateTestingDeploy.ts
+      - name: Reject an obsolete commit before migration
+        run: |
+          set -euo pipefail
+          head_sha=$(git ls-remote origin refs/heads/develop | cut -f1)
+          test "$head_sha" = "$GITHUB_SHA"
+      - name: Apply migrations to verified testing database
+        working-directory: backend
+        env:
+          DIRECT_URL: ${{ secrets.TESTING_DIRECT_URL }}
+        run: pnpm exec prisma migrate deploy
+      - name: Upload the same commit to the verified Railway service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.TESTING_RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.TESTING_RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.TESTING_RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ vars.TESTING_RAILWAY_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          head_sha=$(git ls-remote origin refs/heads/develop | cut -f1)
+          test "$head_sha" = "$GITHUB_SHA"
+          archive_dir=$(mktemp -d "$RUNNER_TEMP/laixia-testing.XXXXXX")
+          git archive "$GITHUB_SHA" | tar -x -C "$archive_dir"
+          railway up "$archive_dir" --path-as-root \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --service "$RAILWAY_SERVICE_ID" \
+            --ci --message "GitHub develop $GITHUB_SHA"
+      - name: Check testing backend health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 5 --retry-delay 10 --retry-all-errors --max-time 20 \
+            https://hotelmanagement-develop.up.railway.app/health
