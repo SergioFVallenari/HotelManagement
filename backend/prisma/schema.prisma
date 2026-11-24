@@ -218,9 +218,12 @@ model OwnerBillingWebhookEvent {
   lastError              String?                   @db.Text
   createdAt              DateTime                  @default(now())
   processedAt            DateTime?
+  nextAttemptAt          DateTime?                 @default(now())
+  lockedUntil            DateTime?
 
   @@unique([provider, providerNotificationId])
   @@index([status, createdAt])
+  @@index([provider, topic, status, nextAttemptAt])
 }
 
 model OwnerBillingCoverage {

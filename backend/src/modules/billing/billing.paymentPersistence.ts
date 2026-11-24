@@ -46,7 +46,7 @@ export async function recordTestBillingPayment(verified: VerifiedTestBillingPaym
       } });
     }
     if (eventId !== undefined) {
-      await tx.ownerBillingWebhookEvent.updateMany({ where: { id: eventId, status: { not: 'PROCESSED' } }, data: { status: 'PROCESSED', processedAt: new Date(), attempts: { increment: 1 }, lastError: null } });
+      await tx.ownerBillingWebhookEvent.updateMany({ where: { id: eventId, status: { not: 'PROCESSED' } }, data: { status: 'PROCESSED', processedAt: new Date(), lockedUntil: null, nextAttemptAt: null, lastError: null } });
     }
     return { result: previousForPayment ? 'ALREADY_RECORDED' : 'RECORDED', startsAt: period.startsAt, endsAt: period.endsAt };
   });
