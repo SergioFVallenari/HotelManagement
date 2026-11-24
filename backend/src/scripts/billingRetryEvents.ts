@@ -10,19 +10,19 @@ async function main(): Promise<void> {
   }
   const { prisma } = await import('../config/prisma.js');
   try {
-    const { BILLING_BATCH_SIZE, BILLING_MAX_ATTEMPTS, billingRetryWhere, runBillingRetryBatch } = await import('../modules/billing/billing.retry.js');
+    const { BILLING_BATCH_SIZE, BILLING_MAX_ATTEMPTS, BILLING_PROCESSABLE_TOPICS, billingRetryWhere, runBillingRetryBatch } = await import('../modules/billing/billing.retry.js');
     const now = new Date();
     const [events, exhausted, unsupported] = await Promise.all([
       prisma.ownerBillingWebhookEvent.findMany({ where: billingRetryWhere(now), orderBy: [{ nextAttemptAt: 'asc' }, { id: 'asc' }], take: BILLING_BATCH_SIZE, select: { id: true } }),
-      prisma.ownerBillingWebhookEvent.count({ where: { provider: 'MERCADOPAGO', topic: 'subscription_authorized_payment', status: { not: 'PROCESSED' }, attempts: { gte: BILLING_MAX_ATTEMPTS } } }),
-      prisma.ownerBillingWebhookEvent.count({ where: { provider: 'MERCADOPAGO', topic: { not: 'subscription_authorized_payment' }, status: { not: 'PROCESSED' } } }),
+      prisma.ownerBillingWebhookEvent.count({ where: { provider: 'MERCADOPAGO', topic: { in: BILLING_PROCESSABLE_TOPICS }, status: { not: 'PROCESSED' }, attempts: { gte: BILLING_MAX_ATTEMPTS } } }),
+      prisma.ownerBillingWebhookEvent.count({ where: { provider: 'MERCADOPAGO', topic: { notIn: BILLING_PROCESSABLE_TOPICS }, status: { not: 'PROCESSED' } } }),
     ]);
     if (!apply) {
       console.log(JSON.stringify({ result: 'PREVIEW', selected: events.length, exhausted, unsupported }));
       return;
     }
-    const { processTestBillingPayment } = await import('../modules/billing/billing.paymentProcessor.js');
-    const summary = await runBillingRetryBatch(events.map((event) => event.id), processTestBillingPayment);
+    const { processTestBillingEvent } = await import('../modules/billing/billing.eventProcessor.js');
+    const summary = await runBillingRetryBatch(events.map((event) => event.id), processTestBillingEvent);
     console.log(JSON.stringify({ result: 'BATCH_COMPLETED', ...summary, exhausted, unsupported }));
     if (summary.failed > 0) process.exitCode = 1;
   } finally {

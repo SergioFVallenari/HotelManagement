@@ -11,7 +11,7 @@ export async function processTestBillingPayment(eventId: number, transport: type
   if (!config.enabled || !config.webhookEnabled || !config.accessToken) throw new AppError(503, 'BILLING_PROCESSOR_DISABLED', 'El procesador de prueba está desactivado.');
   const now = new Date();
   const claimed = await prisma.ownerBillingWebhookEvent.updateMany({
-    where: { id: eventId, ...billingRetryWhere(now) },
+    where: { id: eventId, ...billingRetryWhere(now, 'subscription_authorized_payment') },
     data: { attempts: { increment: 1 }, lockedUntil: new Date(now.getTime() + BILLING_LEASE_MS) },
   });
   if (claimed.count !== 1) return 'DEFERRED';

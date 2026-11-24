@@ -1,6 +1,7 @@
 export const BILLING_MAX_ATTEMPTS = 8;
 export const BILLING_LEASE_MS = 120_000;
 export const BILLING_BATCH_SIZE = 20;
+export const BILLING_PROCESSABLE_TOPICS = ['subscription_authorized_payment', 'subscription_preapproval'];
 
 export function billingRetryAt(attempt: number, now: Date): Date | null {
   if (!Number.isInteger(attempt) || attempt < 1 || !Number.isFinite(now.getTime())) throw new Error('El intento de facturación no es válido.');
@@ -8,10 +9,10 @@ export function billingRetryAt(attempt: number, now: Date): Date | null {
   return new Date(now.getTime() + Math.min(60_000 * 2 ** (attempt - 1), 3_600_000));
 }
 
-export function billingRetryWhere(now: Date) {
+export function billingRetryWhere(now: Date, topic?: 'subscription_authorized_payment' | 'subscription_preapproval') {
   return {
     provider: 'MERCADOPAGO',
-    topic: 'subscription_authorized_payment',
+    topic: topic ?? { in: BILLING_PROCESSABLE_TOPICS },
     status: { in: ['RECEIVED', 'FAILED'] as Array<'RECEIVED' | 'FAILED'> },
     attempts: { lt: BILLING_MAX_ATTEMPTS },
     nextAttemptAt: { lte: now },

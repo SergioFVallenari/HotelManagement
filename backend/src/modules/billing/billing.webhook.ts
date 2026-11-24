@@ -3,7 +3,7 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../config/prisma.js';
 import { AppError } from '../../lib/AppError.js';
 import { verifyBillingNotification } from './providers/mercadoPagoWebhook.js';
-import { processTestBillingPayment } from './billing.paymentProcessor.js';
+import { processTestBillingEvent } from './billing.eventProcessor.js';
 
 export async function receiveTestBillingWebhook(req: Request, res: Response): Promise<void> {
   const config = env.billingMpTest;
@@ -17,8 +17,8 @@ export async function receiveTestBillingWebhook(req: Request, res: Response): Pr
     create: { provider: 'MERCADOPAGO', providerNotificationId: event.fingerprint, topic: event.topic, resourceId: event.resourceId },
     update: {},
   });
-  if (config.enabled && config.accessToken && event.topic === 'subscription_authorized_payment') {
-    await processTestBillingPayment(stored.id);
+  if (config.enabled && config.accessToken) {
+    await processTestBillingEvent(stored.id);
   }
   res.status(200).json({ data: { received: true } });
 }
