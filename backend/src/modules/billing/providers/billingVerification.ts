@@ -45,6 +45,14 @@ export async function verifyDeclaredTestAuthorizedBillingPayment(authorizedPayme
   });
 }
 
+export async function verifyConfiguredTestBillingPayment(authorizedPaymentId: string, dependencies: VerificationDependencies & {
+  configuredAccounts: DeclaredTestAccounts | null;
+  readIdentity: (id: string) => Promise<unknown>;
+}): Promise<VerifiedBillingResult> {
+  if (!dependencies.configuredAccounts) return verifyAuthorizedBillingPayment(authorizedPaymentId, dependencies);
+  return verifyDeclaredTestAuthorizedBillingPayment(authorizedPaymentId, { ...dependencies, declared: dependencies.configuredAccounts });
+}
+
 async function verifyPayment(
   authorizedPaymentId: string,
   dependencies: VerificationDependencies,

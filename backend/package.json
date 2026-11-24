@@ -12,6 +12,7 @@
     "billing:reconcile-payment": "tsx src/scripts/billingReconcilePayment.ts",
     "billing:retry-events": "tsx src/scripts/billingRetryEvents.ts",
     "billing:sync-subscription": "tsx src/scripts/billingSyncSubscription.ts",
+    "billing:preview-payment": "tsx src/scripts/billingPreviewPayment.ts",
     "e2e:booking": "node e2e-booking.mjs",
     "e2e:drop": "tsx prisma/e2e.drop.ts",
     "build": "tsc",

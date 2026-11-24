@@ -8,6 +8,8 @@ async function main(): Promise<void> {
   if (env.appEnv !== 'testing' || !config.enabled || !config.webhookEnabled || !config.accessToken || database.username !== 'postgres.sowbuvdeampxsbpgtgvo' || !database.hostname.endsWith('.pooler.supabase.com')) {
     throw new Error('El reprocesamiento requiere el proyecto de testing y el procesador de prueba habilitado.');
   }
+  const { billingTestAccountPolicy } = await import('../modules/billing/billing.testAccountPolicy.js');
+  const configuredAccounts = billingTestAccountPolicy();
   const { prisma } = await import('../config/prisma.js');
   try {
     const { BILLING_BATCH_SIZE, BILLING_MAX_ATTEMPTS, BILLING_PROCESSABLE_TOPICS, billingRetryWhere, runBillingRetryBatch } = await import('../modules/billing/billing.retry.js');
@@ -18,12 +20,12 @@ async function main(): Promise<void> {
       prisma.ownerBillingWebhookEvent.count({ where: { provider: 'MERCADOPAGO', topic: { notIn: BILLING_PROCESSABLE_TOPICS }, status: { not: 'PROCESSED' } } }),
     ]);
     if (!apply) {
-      console.log(JSON.stringify({ result: 'PREVIEW', selected: events.length, exhausted, unsupported }));
+      console.log(JSON.stringify({ result: 'PREVIEW', selected: events.length, exhausted, unsupported, configuredTestAccounts: configuredAccounts !== null }));
       return;
     }
     const { processTestBillingEvent } = await import('../modules/billing/billing.eventProcessor.js');
     const summary = await runBillingRetryBatch(events.map((event) => event.id), processTestBillingEvent);
-    console.log(JSON.stringify({ result: 'BATCH_COMPLETED', ...summary, exhausted, unsupported }));
+    console.log(JSON.stringify({ result: 'BATCH_COMPLETED', ...summary, exhausted, unsupported, configuredTestAccounts: configuredAccounts !== null }));
     if (summary.failed > 0) process.exitCode = 1;
   } finally {
     await prisma.$disconnect();
