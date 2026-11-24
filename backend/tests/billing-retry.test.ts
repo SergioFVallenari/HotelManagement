@@ -13,14 +13,16 @@ test('reintenta con espera creciente y se detiene después del octavo intento', 
   assert.equal(now.toISOString(), '2026-11-23T12:00:00.000Z');
 });
 
-test('solo reclama eventos pendientes del tópico soportado, vencidos y sin lease activo', () => {
+test('selecciona ambos tópicos soportados y restringe cada reclamo al procesador correcto', () => {
   const now = new Date('2026-11-23T12:00:00Z');
   assert.deepEqual(billingRetryWhere(now), {
-    provider: 'MERCADOPAGO', topic: 'subscription_authorized_payment',
+    provider: 'MERCADOPAGO', topic: { in: ['subscription_authorized_payment', 'subscription_preapproval'] },
     status: { in: ['RECEIVED', 'FAILED'] }, attempts: { lt: 8 }, nextAttemptAt: { lte: now },
     OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
   });
   assert.equal(BILLING_LEASE_MS, 120_000);
+  assert.equal(billingRetryWhere(now, 'subscription_authorized_payment').topic, 'subscription_authorized_payment');
+  assert.equal(billingRetryWhere(now, 'subscription_preapproval').topic, 'subscription_preapproval');
 });
 
 test('un fallo no interrumpe el lote y las ejecuciones son secuenciales', async () => {
