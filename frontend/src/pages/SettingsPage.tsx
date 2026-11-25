@@ -16,6 +16,7 @@ import { ContentSkeleton } from '../components/Skeleton';
 import { useApiError } from '../components/pagination';
 import { RecipientSettings } from '../components/RecipientSettings';
 import { BillingCoverage } from '../components/BillingCoverage';
+import { BILLING_EXPERIENCE_ENABLED } from '../billingConfig';
 import { dateTimeShort, generatePublicLink } from '../lib/format';
 import { serviceRateLabel } from '../lib/services';
 import {
@@ -1019,6 +1020,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; description: string
 function initialTab(): SettingsTab | null {
   if (DEMO_MODE) return 'reservas';
   const value = new URLSearchParams(window.location.search).get('tab');
+  if (value === 'suscripcion' && !BILLING_EXPERIENCE_ENABLED) return null;
   return value === 'pagos' || value === 'redes' || value === 'ia' || value === 'reservas' || value === 'notificaciones' || value === 'suscripcion' ? value : new URLSearchParams(window.location.search).has('mp') ? 'pagos' : null;
 }
 
@@ -1062,7 +1064,7 @@ export function SettingsPage() {
 
       {tab ? <button type="button" className="btn settings-back mb-4" onClick={() => setTab(null)}><IconArrowLeft size={18} aria-hidden="true" /> Volver a configuración</button> : (
         <div className="settings-grid">
-          {SETTINGS_TABS.filter((item) => item.id !== 'suscripcion' || user?.role === 'OWNER').map((item) => <button type="button" className="settings-tile" key={item.id} onClick={() => setTab(item.id)}>
+          {SETTINGS_TABS.filter((item) => item.id !== 'suscripcion' || (BILLING_EXPERIENCE_ENABLED && user?.role === 'OWNER')).map((item) => <button type="button" className="settings-tile" key={item.id} onClick={() => setTab(item.id)}>
             <span className="settings-tile-icon" aria-hidden="true">{item.icon}</span>
             <span className="settings-tile-copy"><strong>{item.label}</strong><span>{item.description}</span></span>
             <IconChevronRight className="settings-tile-arrow" size={20} aria-hidden="true" />
@@ -1070,7 +1072,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {tab === 'suscripcion' && user?.role === 'OWNER' && <BillingCoverage key={user.id} />}
+      {BILLING_EXPERIENCE_ENABLED && tab === 'suscripcion' && user?.role === 'OWNER' && <BillingCoverage key={user.id} />}
 
       {/* Los paneles quedan montados (ocultos con d-none): no se pierde lo
           editado en el form de IA y siguen vivos los listeners del OAuth de

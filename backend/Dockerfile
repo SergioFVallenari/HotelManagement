@@ -26,6 +26,7 @@ FROM public.ecr.aws/docker/library/node:22-slim AS runtime
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 /lambda-adapter /opt/extensions/lambda-adapter
 
 ENV NODE_ENV=production
+ENV APP_ENV=production
 ENV PORT=8080
 ENV READINESS_CHECK_PATH=/health
 

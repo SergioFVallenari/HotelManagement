@@ -219,6 +219,7 @@ jobs:
           VITE_URL_BACKEND: ${{ vars.VITE_URL_BACKEND }}
           VITE_PUBLIC_BOOKING_BASE_URL: ${{ vars.VITE_PUBLIC_BOOKING_BASE_URL }}
           VITE_ALLOW_REGISTER: ${{ vars.VITE_ALLOW_REGISTER }}
+          VITE_BILLING_ENABLED: 'false'
         run: pnpm build
 
       - name: Configure AWS credentials

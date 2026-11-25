@@ -19,6 +19,7 @@ import settingsIcon from '../assets/navigation/configuracion.svg';
 import '../crmTheme.css';
 import { DEMO_MODE, DEMO_PATHS } from '../demo/config';
 import { SubscriptionBanner } from './SubscriptionBanner';
+import { BILLING_EXPERIENCE_ENABLED } from '../billingConfig';
 import { DemoBanner } from '../demo/DemoBanner';
 
 const COLLAPSED_KEY = 'layout.sidebar-collapsed';
@@ -241,7 +242,7 @@ export function Layout() {
         </header>
         {DEMO_MODE && <DemoBanner />}
         <main className="content">
-          {!DEMO_MODE && user?.role === 'OWNER' && <SubscriptionBanner key={user.companyId} companyId={user.companyId} />}
+          {BILLING_EXPERIENCE_ENABLED && !DEMO_MODE && user?.role === 'OWNER' && <SubscriptionBanner key={user.companyId} companyId={user.companyId} />}
           <Outlet />
         </main>
       </div>
