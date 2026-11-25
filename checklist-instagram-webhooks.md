@@ -28,7 +28,7 @@ falta para servir a hoteles de terceros (Advanced Access).
 | Dato | Valor |
 |---|---|
 | Callback URL del webhook | `https://6rpyewmzupirfb545vbhak666a0vhuwm.lambda-url.us-east-2.on.aws/api/integrations/instagram/webhook` |
-| Verify Token | `hotelia_webhook_ig_7f9k2x_misecreto` |
+| Verify Token | `<INSTAGRAM_WEBHOOK_VERIFY_TOKEN: configurar fuera del repositorio>` |
 | Instagram App ID | `1430391189284587` |
 | OAuth redirect URI | `https://6rpyewmzupirfb545vbhak666a0vhuwm.lambda-url.us-east-2.on.aws/api/integrations/instagram/callback` |
 | Cuenta IG profesional conectada | `17841451185970286` (`alojamientoelnomada`, empresa 1 - Posada El Nomada) |
@@ -60,7 +60,7 @@ Son requisito para pasar la app a Live.
 - [ ] Menu izquierdo -> **Messenger -> Configuracion de Instagram**.
 - [ ] En **Webhooks**:
   - [ ] Callback URL = la de la tabla de arriba.
-  - [ ] Verify Token = el de la tabla de arriba.
+  - [ ] Verify Token = el mismo valor de `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` configurado en el backend. No guardarlo en este archivo ni en Git.
   - [ ] Guardar / Verificar (debe pasar el handshake `hub.challenge`).
   - [ ] Suscribir el campo **`messages`** (y `messaging_seen` si queres read receipts).
 - [ ] En el producto **Instagram -> API setup with Instagram login -> Configure webhooks**:
