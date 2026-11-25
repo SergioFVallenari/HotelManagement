@@ -171,3 +171,18 @@ node dist/scripts/billingPreviewPayment.js <authorizedPaymentId>
 No admite `--apply`. Consulta cuota, pago, contrato e identidad; devuelve `VERIFIED_NOT_APPLIED` o `REVIEW`. Indica `testIdentitySource: OPERATOR_CONFIGURATION` si usó las cuentas configuradas, o `STRICT_TEST_MODE` si la política está apagada. No exige apagar el período pagado ni activar el webhook para esta vista previa. Revisar el resultado antes de reenviar desde Mercado Pago una notificación del recurso existente; no generar otro cobro para probar recepción.
 
 No configurar cron ni poner esta flag en producción. El cambio no implementa búsqueda de cobros nunca notificados, actualización de devoluciones/contracargos, cancelación desde la UI ni automatización general de suscripciones. Las pruebas locales simulan recursos y firma; queda pendiente probar recepción real, concurrencia e idempotencia transaccional en testing con la opción activa. No hay migraciones nuevas y la implementación no activa variables remotas.
+
+## Recuperar una cuota no notificada con la política configurada
+
+```bash
+pnpm billing:recover-payment <contractId> <installmentId> <paymentId>
+node dist/scripts/billingRecoverPayment.js <contractId> <installmentId> <paymentId>
+```
+
+Simula por defecto y requiere la política de cuentas configuradas activa, el proyecto de testing verificado y la credencial presente. No recibe cuentas por argumentos ni necesita cambiar `BILLING_PAID_ACCESS_TESTING`. Exige el contrato interno, cuota y pago esperados, periodicidad mensual y todas las comprobaciones de evidencia que utiliza el procesador automático. La simulación devuelve `VERIFIED_NOT_APPLIED`; no verifica aún conflictos transaccionales de persistencia ni garantiza el período final.
+
+Solo tras revisar la evidencia y autorizar escrituras, repetir con `--apply`. Reconsulta cuota, pago e identidad de la credencial, no reutiliza la vista previa. Reutiliza `recordTestBillingPayment`: bloquea contrato y cuenta, revalida condiciones y guarda pago y período atómicamente. Devuelve `RECORDED` o `ALREADY_RECORDED` y las fechas efectivas. Un conflicto o cuota fuera de orden revierte la transacción; no liberar contratos ni cambiar estados para forzarlo.
+
+Con el acceso pago experimental ya activo, registrar un período vigente puede cambiar inmediatamente el acceso efectivo de la cuenta recuperada. No cambia la flag global, cobertura ni estado contractual. No llama a endpoints de creación o modificación de Mercado Pago, no genera cobros ni eventos ficticios y no marca notificaciones anteriores como procesadas. No requiere apagar el webhook y puede coexistir con su procesamiento mediante los bloqueos y claves únicas existentes; esa concurrencia aún debe validarse de forma controlada en PostgreSQL.
+
+Es una recuperación administrativa de una cuota identificada previamente, no búsqueda automática ni cron. No demuestra entrega del webhook y no sustituye la validación del próximo evento real. No modifica el comando anterior de conciliación con cuentas declaradas ni sus restricciones. No agrega migraciones ni ejecuta escrituras remotas durante la implementación; las pruebas locales usan dependencias simuladas.
