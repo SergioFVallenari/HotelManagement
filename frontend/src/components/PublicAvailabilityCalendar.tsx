@@ -58,6 +58,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
 
   const room = data?.rooms.find((item) => item.id === roomId) ?? data?.rooms[0];
   const available = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.available ?? false]));
+  const arrivals = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.arrivals ?? false]));
   const departures = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.departures ?? false]));
   const canContinue = !!start && !!end && !calendarStayError(start, end, available);
   const gridStart = shift(first, -((monthDate.getUTCDay() + 6) % 7));
@@ -117,26 +118,28 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
             <div><h3 className="availability-month-title text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h3><button type="button" className="availability-today-link" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }} disabled={month === today.slice(0, 7)}>Ir a hoy</button></div>
             <div className="availability-month-actions"><button type="button" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button><button type="button" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button></div>
           </div>
-          <p className="availability-calendar-hint">{room.typeName} · La <strong>barra</strong> indica que alguien se va ese día. Mitad roja y verde: queda libre para entrar. Todo rojo con barra: se van, pero entra otra reserva. Elegí entrada y después salida.</p>
+          <p className="availability-calendar-hint">{room.typeName} · Verde: libre. Rojo: ocupada. Rojo/verde: salen y queda libre. Verde/rojo: entran ese día. Rojo/rojo con barra: salen y entran otros huéspedes. Elegí entrada y después salida.</p>
           <div className="availability-calendar-grid">
             {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => <div key={day} className="availability-weekday">{day}</div>)}
             {days.map((day) => {
               const inMonth = day.slice(0, 7) === month;
               const free = available.get(day);
+              const arrival = arrivals.get(day);
               const departure = departures.get(day);
               const selected = day === start || day === end || (!!start && !!end && day > start && day < end);
               const canCheckOut = !!start && !end && day > start && !calendarStayError(start, day, available);
               const disabled = !inMonth || day < today || (!free && !canCheckOut);
               const status = !inMonth || day < today ? 'outside' : free ? 'free' : 'occupied';
-              return <button key={day} type="button" disabled={disabled} className={`availability-day is-${status}${selected ? ' is-selected' : ''}${departure && inMonth && day >= today ? ' is-departure' : ''}`}
+              const transition = arrival && departure ? 'turnover' : arrival ? 'arrival' : departure ? 'departure' : '';
+              return <button key={day} type="button" disabled={disabled} className={`availability-day is-${status}${selected ? ' is-selected' : ''}${transition && inMonth && day >= today ? ` is-${transition}` : ''}`}
                 aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
-                aria-label={`${dateShort(day)}: ${free ? 'noche disponible' : 'noche ocupada'}${departure ? ', salida de otros huéspedes ese día' : ''}${!free && canCheckOut ? ', podés salir por la mañana sin alojarte esa noche' : ''}${day === start ? ', entrada seleccionada' : day === end ? ', salida seleccionada' : ''}`}
+                aria-label={`${dateShort(day)}: ${free ? 'noche disponible' : 'noche ocupada'}${departure ? ', salen huéspedes' : ''}${arrival ? ', entran huéspedes' : ''}${!free && canCheckOut ? ', podés salir por la mañana sin alojarte esa noche' : ''}${day === start ? ', entrada seleccionada' : day === end ? ', salida seleccionada' : ''}`}
                 onClick={() => selectDay(day)}>
                 <span>{Number(day.slice(8))}</span><span className="availability-day-mark" aria-hidden="true">{status === 'outside' ? '\u00a0' : '●'}</span>
               </button>;
             })}
           </div>
-          <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-departure-free" />Salen y queda libre</span><span><i className="is-departure-occupied" />Salen y entra otra reserva</span></div>
+          <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-departure" />Salen y queda libre</span><span><i className="is-arrival" />Entran ese día</span><span><i className="is-turnover" />Salen y entran otros</span></div>
           </div><div className="availability-selection"><h3 className="h6 fw-bold">Tu selección</h3><div className="availability-selection-card" aria-live="polite">
             <strong>{room.name || `Habitación ${room.number}`}</strong>
             {start && <p className="small mb-2">Entrada: <strong>{dateShort(start)}</strong>{end ? <> · Última noche: <strong>{dateShort(shift(end, -1))}</strong> · Salida: <strong>{dateShort(end)}</strong> (por la mañana)</> : ' · Ahora elegí la fecha de salida (no se duerme esa noche).'}</p>}
