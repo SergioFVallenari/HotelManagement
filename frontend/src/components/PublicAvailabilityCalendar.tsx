@@ -139,7 +139,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
               </button>;
             })}
           </div>
-          <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-departure" />Salen y queda libre</span><span><i className="is-arrival" />Entran ese día</span><span><i className="is-turnover" />Salen y entran otros</span></div>
+          <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-transition" />Entrada y salida</span></div>
           </div><div className="availability-selection"><h3 className="h6 fw-bold">Tu selección</h3><div className="availability-selection-card" aria-live="polite">
             <strong>{room.name || `Habitación ${room.number}`}</strong>
             {start && <p className="small mb-2">Entrada: <strong>{dateShort(start)}</strong>{end ? <> · Última noche: <strong>{dateShort(shift(end, -1))}</strong> · Salida: <strong>{dateShort(end)}</strong> (por la mañana)</> : ' · Ahora elegí la fecha de salida (no se duerme esa noche).'}</p>}
