@@ -5,7 +5,8 @@ import { ApiError, api, buildQuery } from '../api/client';
 import type { PublicAvailability, PublicBookingPageConfig, PublicCalendarRoom } from '../api/types';
 import { ErrorBanner } from '../components/Feedback';
 import { ContentSkeleton } from '../components/Skeleton';
-import { dateShort, money } from '../lib/format';
+import { money } from '../lib/format';
+import { formatAvailabilityDate } from '../lib/availabilityCalendar';
 import { bookingThemeFromConfig, bookingThemeStyle } from '../lib/bookingTheme';
 import { buildAvailabilityMessage } from '../lib/availabilityShare';
 import { serviceQuantityLabel, serviceRateLabel } from '../lib/services';
@@ -151,7 +152,7 @@ export function PublicAvailabilityPage() {
         <div className="card availability-stay-card"><div className="card-body">
           <div className="availability-section-heading"><div><span className="availability-section-label">Tu estadía</span><h3>{selectedRoom?.name || `Habitación ${selectedRoom?.number}`}</h3><p>{selectedRoom?.typeName} · Hasta {selectedRoom?.capacity} personas{extraBedsEnabled ? ` · ${selectedRoom.maxExtraBeds} cama(s) extra disponibles` : ''}</p></div>
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={loading} onClick={() => { setStep('calendar'); setResult(null); setError(null); }}>Cambiar fechas o habitación</button></div>
-          <div className="availability-date-pair"><div><span>Entrada</span><strong>{dateShort(checkIn)}</strong></div><div><span>Salida · por la mañana</span><strong>{dateShort(checkOut)}</strong></div></div>
+          <div className="availability-date-pair"><div><span>Entrada</span><strong>{formatAvailabilityDate(checkIn)}</strong></div><div><span>Salida · por la mañana</span><strong>{formatAvailabilityDate(checkOut)}</strong></div></div>
           <p className="availability-stay-note">La noche de salida no se cobra.</p>
         </div></div>
         <form onSubmit={search} className="availability-details-form">
@@ -228,13 +229,13 @@ export function PublicAvailabilityPage() {
         {step === 'quote' && result && quote && !loading && (
           <section className="availability-quote-view" aria-live="polite">
             <h2 className="visually-hidden" ref={quoteHeading} tabIndex={-1}>Cotización</h2>
-            {quote.combination && <div className="availability-quote-intro"><span className="availability-section-label">Tu consulta está lista</span><h3>{quote.stay.nights} {quote.stay.nights === 1 ? 'noche' : 'noches'} en {quote.stay.room?.name || `Habitación ${quote.stay.room?.number ?? ''}`}</h3><p>{dateShort(quote.stay.checkIn)} → {dateShort(quote.stay.checkOut)} · {quote.stay.persons} {quote.stay.persons === 1 ? 'huésped' : 'huéspedes'}</p></div>}
+            {quote.combination && <div className="availability-quote-intro"><span className="availability-section-label">Tu consulta está lista</span><h3>{quote.stay.nights} {quote.stay.nights === 1 ? 'noche' : 'noches'} en {quote.stay.room?.name || `Habitación ${quote.stay.room?.number ?? ''}`}</h3><p>{formatAvailabilityDate(quote.stay.checkIn)} → {formatAvailabilityDate(quote.stay.checkOut)} · {quote.stay.persons} {quote.stay.persons === 1 ? 'huésped' : 'huéspedes'}</p></div>}
             {quote.combination && <div className="availability-quote-grid">
               <article className="card availability-quote-breakdown"><div className="card-body">
                 <h3 className="availability-section-title">Detalle de la cotización</h3>
                 <dl className="availability-quote-details">
                   <div><dt>Habitación</dt><dd>{quote.stay.room?.name || `Habitación ${quote.stay.room?.number ?? ''}`}{quote.stay.roomType ? ` · ${quote.stay.roomType}` : ''}</dd></div>
-                  <div><dt>Entrada / salida</dt><dd>{dateShort(quote.stay.checkIn)} → {dateShort(quote.stay.checkOut)}</dd></div>
+                  <div><dt>Entrada / salida</dt><dd>{formatAvailabilityDate(quote.stay.checkIn)} → {formatAvailabilityDate(quote.stay.checkOut)}</dd></div>
                   <div><dt>Duración</dt><dd>{quote.stay.nights} {quote.stay.nights === 1 ? 'noche' : 'noches'}</dd></div>
                   <div><dt>Huéspedes</dt><dd>{quote.stay.persons} {quote.stay.persons === 1 ? 'persona' : 'personas'}</dd></div>
                   {quote.combination.rooms.map((room, index) => !!room.amenities?.length && <div key={index}><dt>Comodidades de la habitación · {room.roomType}</dt><dd>{room.amenities.join(', ')}</dd></div>)}
