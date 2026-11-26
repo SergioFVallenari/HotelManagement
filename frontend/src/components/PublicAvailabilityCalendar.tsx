@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, api, buildQuery } from '../api/client';
 import { ErrorBanner } from './Feedback';
 import { ContentSkeleton } from './Skeleton';
-import { dateShort } from '../lib/format';
-import { calendarIso as iso, shiftCalendarDay as shift, calendarStayError } from '../lib/availabilityCalendar';
+import { calendarIso as iso, shiftCalendarDay as shift, calendarStayError, formatAvailabilityDate } from '../lib/availabilityCalendar';
 import type { PublicCalendarRoom } from '../api/types';
 
 interface PublicCalendar {
@@ -118,7 +117,6 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
             <div><h3 className="availability-month-title text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h3><button type="button" className="availability-today-link" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }} disabled={month === today.slice(0, 7)}>Ir a hoy</button></div>
             <div className="availability-month-actions"><button type="button" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button><button type="button" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button></div>
           </div>
-          <p className="availability-calendar-hint">{room.typeName} · Verde: libre. Rojo: ocupada. Rojo/verde: salen y queda libre. Verde/rojo: entran ese día. Rojo/rojo con barra: salen y entran otros huéspedes. Elegí entrada y después salida.</p>
           <div className="availability-calendar-grid">
             {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => <div key={day} className="availability-weekday">{day}</div>)}
             {days.map((day) => {
@@ -133,7 +131,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
               const transition = arrival && departure ? 'turnover' : arrival ? 'arrival' : departure ? 'departure' : '';
               return <button key={day} type="button" disabled={disabled} className={`availability-day is-${status}${selected ? ' is-selected' : ''}${transition && inMonth && day >= today ? ` is-${transition}` : ''}`}
                 aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
-                aria-label={`${dateShort(day)}: ${free ? 'noche disponible' : 'noche ocupada'}${departure ? ', salen huéspedes' : ''}${arrival ? ', entran huéspedes' : ''}${!free && canCheckOut ? ', podés salir por la mañana sin alojarte esa noche' : ''}${day === start ? ', entrada seleccionada' : day === end ? ', salida seleccionada' : ''}`}
+                aria-label={`${formatAvailabilityDate(day)}: ${free ? 'noche disponible' : 'noche ocupada'}${departure ? ', salen huéspedes' : ''}${arrival ? ', entran huéspedes' : ''}${!free && canCheckOut ? ', podés salir por la mañana sin alojarte esa noche' : ''}${day === start ? ', entrada seleccionada' : day === end ? ', salida seleccionada' : ''}`}
                 onClick={() => selectDay(day)}>
                 <span>{Number(day.slice(8))}</span><span className="availability-day-mark" aria-hidden="true">{status === 'outside' ? '\u00a0' : '●'}</span>
               </button>;
@@ -142,7 +140,7 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
           <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-transition" />Entrada y salida</span></div>
           </div><div className="availability-selection"><h3 className="h6 fw-bold">Tu selección</h3><div className="availability-selection-card" aria-live="polite">
             <strong>{room.name || `Habitación ${room.number}`}</strong>
-            {start && <p className="small mb-2">Entrada: <strong>{dateShort(start)}</strong>{end ? <> · Última noche: <strong>{dateShort(shift(end, -1))}</strong> · Salida: <strong>{dateShort(end)}</strong> (por la mañana)</> : ' · Ahora elegí la fecha de salida (no se duerme esa noche).'}</p>}
+            {start && <p className="small mb-2">Entrada: <strong>{formatAvailabilityDate(start)}</strong>{end ? <> · Última noche: <strong>{formatAvailabilityDate(shift(end, -1))}</strong> · Salida: <strong>{formatAvailabilityDate(end)}</strong> (por la mañana)</> : ' · Ahora elegí la fecha de salida (no se duerme esa noche).'}</p>}
             {!start && <p className="small text-secondary mb-0">Primero elegí la entrada en el calendario. Después, la salida.</p>}
             {selectionError && <ErrorBanner message={selectionError} />}
           </div>

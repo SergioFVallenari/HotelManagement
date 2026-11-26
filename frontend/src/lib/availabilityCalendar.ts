@@ -2,6 +2,8 @@ export const calendarIso = (date: Date) => date.toISOString().slice(0, 10);
 
 export const shiftCalendarDay = (day: string, offset: number) => calendarIso(new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86400000));
 
+export const formatAvailabilityDate = (iso: string | null | undefined): string => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—';
+
 export function calendarStayError(start: string, end: string, available: ReadonlyMap<string, boolean>): string | null {
   if (end <= start) return 'La salida debe ser posterior a la entrada.';
   if (end > shiftCalendarDay(start, 30)) return 'La estadía no puede superar las 30 noches.';
