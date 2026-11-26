@@ -2012,7 +2012,7 @@ const paths: Record<string, Json> = {
     get: op({
       tags: ['Disponibilidad pública'],
       summary: 'Consultar calendario público por tipo de habitación',
-      description: 'Público. Habitaciones activas del hotel con número y nombre reales. Cada celda contiene únicamente available (disponibilidad por noche); no expone reservas ni huéspedes. Bloquean PENDING, RESERVED y CHECKED_IN, incluidas reservas grupales. Rango inclusivo de hasta 62 días. Rate limit: 120 / 10 min por IP.',
+      description: 'Público. Habitaciones activas del hotel con número y nombre reales. Cada celda contiene available (disponibilidad por noche) y departures (si una reserva sale ese día). Una salida y una nueva entrada el mismo día pueden dar departures=true y available=false. No expone reservas ni huéspedes. Bloquean PENDING, RESERVED y CHECKED_IN, incluidas reservas grupales. Rango inclusivo de hasta 62 días. Rate limit: 120 / 10 min por IP.',
       security: publicSecurity,
       parameters: [
         { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
@@ -2027,7 +2027,7 @@ const paths: Record<string, Json> = {
           rooms: { type: 'array', items: { type: 'object', properties: {
             id: { type: 'integer' }, number: { type: 'string' }, name: { type: ['string', 'null'] }, typeName: { type: ['string', 'null'] },
             capacity: { type: 'integer', minimum: 1 }, maxExtraBeds: { type: 'integer', minimum: 0 },
-            cells: { type: 'array', items: { type: 'object', properties: { available: { type: 'boolean' } }, required: ['available'] } },
+            cells: { type: 'array', items: { type: 'object', properties: { available: { type: 'boolean' }, departures: { type: 'boolean' } }, required: ['available', 'departures'] } },
           }, required: ['id', 'number', 'name', 'typeName', 'capacity', 'maxExtraBeds', 'cells'] } },
         }, required: ['from', 'to', 'days', 'rooms'] }),
         ...errors({ '404': '`NOT_FOUND`: alojamiento inexistente' }),
