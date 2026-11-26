@@ -215,7 +215,7 @@ export interface PublicCalendarRoom {
   typeName: string | null;
   capacity: number;
   maxExtraBeds: number;
-  cells: { available: boolean; departures: boolean }[];
+  cells: { available: boolean; arrivals: boolean; departures: boolean }[];
 }
 
 export interface PublicAvailability {

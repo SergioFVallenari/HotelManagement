@@ -16,22 +16,22 @@ export function calendarCells(days: string[], reservations: CalendarReservation[
     const occupied = reservations.filter((reservation) => reservation.checkIn <= day && day < reservation.checkOut);
     const checkIns = reservations.filter((reservation) => reservation.checkIn === day);
     const checkOuts = reservations.filter((reservation) => reservation.checkOut === day);
-    if (checkIns.length && checkOuts.length) return { status: 'TURNOVER' as const, departures: true, reservations: [...checkOuts, ...checkIns] };
-    if (occupied.length) return { status: 'OCCUPIED' as const, departures: checkOuts.length > 0, reservations: occupied };
-    return { status: 'AVAILABLE' as const, departures: checkOuts.length > 0, reservations: [] };
+    if (checkIns.length && checkOuts.length) return { status: 'TURNOVER' as const, arrivals: true, departures: true, reservations: [...checkOuts, ...checkIns] };
+    if (occupied.length) return { status: 'OCCUPIED' as const, arrivals: checkIns.length > 0, departures: checkOuts.length > 0, reservations: occupied };
+    return { status: 'AVAILABLE' as const, arrivals: false, departures: checkOuts.length > 0, reservations: [] };
   });
 }
 
 export function publicCalendarData(calendar: {
   from: string; to: string; days: string[];
-  rooms: { id: number; number: string; name: string | null; capacity: number; maxExtraBeds: number; typeName: string | null; cells: { status: string; departures: boolean }[] }[];
+  rooms: { id: number; number: string; name: string | null; capacity: number; maxExtraBeds: number; typeName: string | null; cells: { status: string; arrivals: boolean; departures: boolean }[] }[];
 }) {
   return {
     from: calendar.from, to: calendar.to, days: calendar.days,
     rooms: calendar.rooms.map((room) => ({
       id: room.id, number: room.number, name: room.name, typeName: room.typeName,
       capacity: room.capacity, maxExtraBeds: room.maxExtraBeds,
-      cells: room.cells.map((cell) => ({ available: cell.status === 'AVAILABLE', departures: cell.departures })),
+      cells: room.cells.map((cell) => ({ available: cell.status === 'AVAILABLE', arrivals: cell.arrivals, departures: cell.departures })),
     })),
   };
 }

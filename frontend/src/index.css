@@ -1464,9 +1464,10 @@ body {
 .availability-day.is-occupied { background: light-dark(#f9e2e7, #3a2838); color: light-dark(#9d2543, #ff91a5); }
 .availability-day.is-outside { opacity: 0.35; }
 .availability-day.is-selected { border-color: var(--booking-primary); box-shadow: inset 0 0 0 1px var(--booking-primary); }
-.availability-day.is-departure { position: relative; }
-.availability-day.is-departure::after { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, transparent 46%, var(--booking-primary) 47% 52%, transparent 53%); content: ''; pointer-events: none; }
+.availability-day.is-arrival, .availability-day.is-departure, .availability-day.is-turnover { position: relative; color: light-dark(#1a1d25, #fff); }
+.availability-day.is-arrival::after, .availability-day.is-departure::after, .availability-day.is-turnover::after { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, transparent 46%, var(--booking-primary) 47% 52%, transparent 53%); content: ''; pointer-events: none; }
 .availability-day.is-free.is-departure { background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 49%, light-dark(#e0f3e8, #193d36) 51%); }
+.availability-day.is-occupied.is-arrival { background: linear-gradient(135deg, light-dark(#e0f3e8, #193d36) 49%, light-dark(#f9e2e7, #3a2838) 51%); }
 .availability-day:disabled { cursor: default; }
 .availability-day:not(:disabled):hover, .availability-day:focus-visible { outline: 2px solid var(--booking-primary); outline-offset: 1px; }
 .availability-day-mark { font-size: 9px; }
@@ -1474,8 +1475,9 @@ body {
 .availability-calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .availability-calendar-legend i { width: 10px; height: 10px; border-radius: 50%; background: light-dark(#086b43, #67edb9); }
 .availability-calendar-legend i.is-occupied { background: light-dark(#9d2543, #ff91a5); }
-.availability-calendar-legend i.is-departure-free, .availability-calendar-legend i.is-departure-occupied { width: 16px; height: 16px; border-radius: 3px; background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 45%, var(--booking-primary) 46% 54%, light-dark(#e0f3e8, #193d36) 55%); }
-.availability-calendar-legend i.is-departure-occupied { background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 45%, var(--booking-primary) 46% 54%, light-dark(#f9e2e7, #3a2838) 55%); }
+.availability-calendar-legend i.is-departure, .availability-calendar-legend i.is-arrival, .availability-calendar-legend i.is-turnover { width: 16px; height: 16px; border-radius: 3px; background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 45%, var(--booking-primary) 46% 54%, light-dark(#e0f3e8, #193d36) 55%); }
+.availability-calendar-legend i.is-arrival { background: linear-gradient(135deg, light-dark(#e0f3e8, #193d36) 45%, var(--booking-primary) 46% 54%, light-dark(#f9e2e7, #3a2838) 55%); }
+.availability-calendar-legend i.is-turnover { background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 45%, var(--booking-primary) 46% 54%, light-dark(#f9e2e7, #3a2838) 55%); }
 .availability-selection-card { padding: 18px; border: 1px solid var(--bs-border-color); border-radius: 12px; box-shadow: var(--availability-shadow-small); }
 .availability-selection-card p { margin-top: 10px; }
 .availability-card .card { border-radius: 14px; box-shadow: var(--availability-shadow) !important; }
