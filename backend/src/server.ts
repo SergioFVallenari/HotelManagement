@@ -13,6 +13,18 @@ process.on('unhandledRejection', (reason) => {
 
 const app = createApp();
 
+if (!env.isProduction) {
+  try {
+    await Promise.all([
+      prisma.$queryRaw`SELECT 1`,
+      prisma.$queryRaw`SELECT 1`,
+      prisma.$queryRaw`SELECT 1`,
+    ]);
+  } catch (error) {
+    console.warn('[GH] No se pudo preparar la conexión a la base de datos:', error instanceof Error ? error.message : error);
+  }
+}
+
 const server = app.listen(env.port, () => {
   console.log(`API de gestión de alojamiento escuchando en http://localhost:${env.port}`);
 });

@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarStayError, shiftCalendarDay } from '../src/lib/availabilityCalendar.ts';
+import { calendarStayError, formatAvailabilityDate, shiftCalendarDay } from '../src/lib/availabilityCalendar.ts';
+
+test('muestra las fechas de la disponibilidad con barras sin alterar el ISO', () => {
+  assert.equal(formatAvailabilityDate('2026-11-29'), '29/11/2026');
+  assert.equal(formatAvailabilityDate('2026-11-29T00:00:00.000Z'), '29/11/2026');
+  assert.equal(formatAvailabilityDate(null), '—');
+});
 
 test('permite salir en una fecha ocupada si las noches anteriores están libres', () => {
   assert.equal(calendarStayError('2026-11-03', '2026-11-05', new Map([

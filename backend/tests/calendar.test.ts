@@ -26,7 +26,23 @@ test('el calendario público conserva identificación real y elimina toda refere
   const data = publicCalendarData({ from: days[0]!, to: days[1]!, days, rooms: [{
     id: 1, number: '101', name: 'Vista al jardín', typeName: 'Doble', capacity: 2, maxExtraBeds: 1, cells: calendarCells(days, [reservation]),
   }] });
-  assert.deepEqual(data.rooms, [{ id: 1, number: '101', name: 'Vista al jardín', typeName: 'Doble', capacity: 2, maxExtraBeds: 1, cells: [{ available: false }, { available: true }] }]);
+  assert.deepEqual(data.rooms, [{ id: 1, number: '101', name: 'Vista al jardín', typeName: 'Doble', capacity: 2, maxExtraBeds: 1, cells: [{ available: false, arrivals: true, departures: false }, { available: true, arrivals: false, departures: true }] }]);
   assert.equal(JSON.stringify(data).includes(reservation.guestName), false);
   assert.equal(JSON.stringify(data).includes(reservation.code), false);
+});
+
+test('el calendario público distingue ocupación, entrada, salida y recambio', () => {
+  const next = { ...reservation, id: 10, checkIn: '2026-11-05', checkOut: '2026-11-07' };
+  const days = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07'];
+  const data = publicCalendarData({ from: days[0]!, to: days[2]!, days, rooms: [{
+    id: 1, number: '101', name: null, typeName: 'Doble', capacity: 2, maxExtraBeds: 0, cells: calendarCells(days, [reservation, next]),
+  }] });
+  assert.deepEqual(data.rooms[0]?.cells, [
+    { available: true, arrivals: false, departures: false },
+    { available: false, arrivals: true, departures: false },
+    { available: false, arrivals: false, departures: false },
+    { available: false, arrivals: true, departures: true },
+    { available: false, arrivals: false, departures: false },
+    { available: true, arrivals: false, departures: true },
+  ]);
 });
