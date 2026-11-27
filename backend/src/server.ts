@@ -18,6 +18,7 @@ if (!env.isProduction) {
     await Promise.all([
       prisma.$queryRaw`SELECT 1`,
       prisma.$queryRaw`SELECT 1`,
+      prisma.$queryRaw`SELECT 1`,
     ]);
   } catch (error) {
     console.warn('[GH] No se pudo preparar la conexión a la base de datos:', error instanceof Error ? error.message : error);
