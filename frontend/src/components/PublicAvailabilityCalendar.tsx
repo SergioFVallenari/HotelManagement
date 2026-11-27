@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, api, buildQuery } from '../api/client';
 import { ErrorBanner } from './Feedback';
 import { ContentSkeleton } from './Skeleton';
-import { dateShort } from '../lib/format';
-import { calendarIso as iso, shiftCalendarDay as shift, calendarStayError } from '../lib/availabilityCalendar';
+import { calendarIso as iso, shiftCalendarDay as shift, calendarStayError, formatAvailabilityDate } from '../lib/availabilityCalendar';
 import type { PublicCalendarRoom } from '../api/types';
 
 interface PublicCalendar {
@@ -58,6 +57,8 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
 
   const room = data?.rooms.find((item) => item.id === roomId) ?? data?.rooms[0];
   const available = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.available ?? false]));
+  const arrivals = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.arrivals ?? false]));
+  const departures = new Map(data?.days.map((day, index) => [day, room?.cells[index]?.departures ?? false]));
   const canContinue = !!start && !!end && !calendarStayError(start, end, available);
   const gridStart = shift(first, -((monthDate.getUTCDay() + 6) % 7));
   const gridLength = Math.ceil((Number(last.slice(8)) + (monthDate.getUTCDay() + 6) % 7) / 7) * 7;
@@ -111,33 +112,36 @@ export function PublicAvailabilityCalendar({ slug, roomTypeId, roomTypes, onType
               <strong>{item.name || `Habitación ${item.number}`}</strong><span>Hasta {item.capacity} huéspedes</span>
             </button>)}
           </div>
-          <div className="availability-calendar-layout"><div>
-          <div className="availability-month mb-3">
-            <span className="fw-semibold text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
-            <div className="d-flex gap-1"><button type="button" className="btn btn-sm btn-outline-secondary" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button><button type="button" className="btn btn-sm btn-outline-secondary" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button><button type="button" className="btn btn-sm btn-outline-primary" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }}>Hoy</button></div>
+          <div className="availability-calendar-layout"><div className="availability-calendar-panel">
+          <div className="availability-month">
+            <div><h3 className="availability-month-title text-capitalize" aria-live="polite">{monthDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h3><button type="button" className="availability-today-link" onClick={() => { setMonth(today.slice(0, 7)); resetSelection(); }} disabled={month === today.slice(0, 7)}>Ir a hoy</button></div>
+            <div className="availability-month-actions"><button type="button" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => changeMonth(-1)}>‹</button><button type="button" aria-label="Mes siguiente" onClick={() => changeMonth(1)}>›</button></div>
           </div>
-          <p className="small text-secondary availability-calendar-hint">{room.typeName} · Elegí entrada y luego salida. La disponibilidad corresponde a cada noche.</p>
-          <div className="d-flex flex-wrap gap-3 small mb-3 availability-calendar-legend"><span>● Disponible</span><span className="text-secondary">× Sin disponibilidad</span></div>
           <div className="availability-calendar-grid">
-            {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => <div key={day} className="text-center small fw-semibold">{day}</div>)}
+            {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => <div key={day} className="availability-weekday">{day}</div>)}
             {days.map((day) => {
               const inMonth = day.slice(0, 7) === month;
               const free = available.get(day);
+              const arrival = arrivals.get(day);
+              const departure = departures.get(day);
               const selected = day === start || day === end || (!!start && !!end && day > start && day < end);
-              const canCheckOut = !!start && !end && day > start;
+              const canCheckOut = !!start && !end && day > start && !calendarStayError(start, day, available);
               const disabled = !inMonth || day < today || (!free && !canCheckOut);
-              return <button key={day} type="button" disabled={disabled} className={`btn p-1 ${selected ? 'btn-primary' : free && inMonth && day >= today ? 'btn-outline-success' : 'btn-light text-secondary'}`}
-                style={{ opacity: inMonth ? 1 : 0.35 }} aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
-                aria-label={`${dateShort(day)}: ${free ? 'disponible' : 'sin disponibilidad'}${day === start ? ', entrada' : day === end ? ', salida' : ''}`}
+              const status = !inMonth || day < today ? 'outside' : free ? 'free' : 'occupied';
+              const transition = arrival && departure ? 'turnover' : arrival ? 'arrival' : departure ? 'departure' : '';
+              return <button key={day} type="button" disabled={disabled} className={`availability-day is-${status}${selected ? ' is-selected' : ''}${transition && inMonth && day >= today ? ` is-${transition}` : ''}`}
+                aria-pressed={selected} aria-current={day === today ? 'date' : undefined}
+                aria-label={`${formatAvailabilityDate(day)}: ${free ? 'noche disponible' : 'noche ocupada'}${departure ? ', salen huéspedes' : ''}${arrival ? ', entran huéspedes' : ''}${!free && canCheckOut ? ', podés salir por la mañana sin alojarte esa noche' : ''}${day === start ? ', entrada seleccionada' : day === end ? ', salida seleccionada' : ''}`}
                 onClick={() => selectDay(day)}>
-                <span className="d-block">{Number(day.slice(8))}</span><span className="d-block small" aria-hidden="true">{inMonth && day >= today ? free ? '●' : '×' : '\u00a0'}</span>
+                <span>{Number(day.slice(8))}</span><span className="availability-day-mark" aria-hidden="true">{status === 'outside' ? '\u00a0' : '●'}</span>
               </button>;
             })}
           </div>
+          <div className="availability-calendar-legend"><span><i className="is-free" />Libre</span><span><i className="is-occupied" />Ocupada</span><span><i className="is-transition" />Entrada y salida</span></div>
           </div><div className="availability-selection"><h3 className="h6 fw-bold">Tu selección</h3><div className="availability-selection-card" aria-live="polite">
             <strong>{room.name || `Habitación ${room.number}`}</strong>
-            {start && <p className="small mb-2">Entrada: <strong>{dateShort(start)}</strong>{end ? <> · Salida: <strong>{dateShort(end)}</strong></> : ' · Ahora elegí la fecha de salida.'}</p>}
-            {!start && <p className="small text-secondary mb-0">Elegí una fecha de entrada y una de salida.</p>}
+            {start && <p className="small mb-2">Entrada: <strong>{formatAvailabilityDate(start)}</strong>{end ? <> · Última noche: <strong>{formatAvailabilityDate(shift(end, -1))}</strong> · Salida: <strong>{formatAvailabilityDate(end)}</strong> (por la mañana)</> : ' · Ahora elegí la fecha de salida (no se duerme esa noche).'}</p>}
+            {!start && <p className="small text-secondary mb-0">Primero elegí la entrada en el calendario. Después, la salida.</p>}
             {selectionError && <ErrorBanner message={selectionError} />}
           </div>
           {start && <button type="button" className="btn btn-link px-0" onClick={resetSelection}>Limpiar fechas</button>}
