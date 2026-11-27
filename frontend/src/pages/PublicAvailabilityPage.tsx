@@ -119,7 +119,7 @@ export function PublicAvailabilityPage() {
   }
 
   return (
-    <div className="availability-screen public-booking-theme" style={themeStyle}>
+    <div className="availability-screen public-booking-theme" style={themeStyle} data-availability-scheme={themeStyle.colorScheme === 'dark' ? 'dark' : 'light'}>
       <header className="availability-header">
         <span className="availability-brand-icon" aria-hidden="true">{pageConfig.hotel.name.trim().charAt(0).toUpperCase()}</span>
         <div><strong>{pageConfig.hotel.name}</strong>{pageConfig.hotel.slogan && <span>{pageConfig.hotel.slogan}</span>}</div>

@@ -1459,23 +1459,23 @@ body {
 .availability-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .availability-weekday { padding: 7px 0; color: var(--bs-secondary-color); font-size: 11px; font-weight: 700; text-align: center; }
 .availability-day { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; min-height: 44px; padding: 3px; overflow: hidden; border: 2px solid transparent; border-radius: 10px; background: var(--booking-muted); background-clip: padding-box; color: var(--bs-secondary-color); font-size: 13px; line-height: 1.2; }
-.availability-day.is-free { background-color: light-dark(#e0f3e8, #193d36); color: light-dark(#086b43, #67edb9); }
-.availability-day.is-occupied { background-color: light-dark(#f9e2e7, #3a2838); color: light-dark(#9d2543, #ff91a5); }
+.availability-day.is-free { background-color: var(--availability-free-bg); color: var(--availability-free-text); }
+.availability-day.is-occupied { background-color: var(--availability-occupied-bg); color: var(--availability-occupied-text); }
 .availability-day.is-outside { opacity: 0.35; }
 .availability-day.is-selected { border-color: var(--booking-primary); box-shadow: inset 0 0 0 1px var(--booking-primary); }
-.availability-day.is-arrival, .availability-day.is-departure, .availability-day.is-turnover { position: relative; color: light-dark(#1a1d25, #fff); }
+.availability-day.is-arrival, .availability-day.is-departure, .availability-day.is-turnover { position: relative; color: var(--availability-transition-text); }
 .availability-day.is-arrival::after, .availability-day.is-departure::after, .availability-day.is-turnover::after { position: absolute; inset: 2px; border-radius: 8px; background: linear-gradient(135deg, transparent calc(50% - 1px), var(--booking-primary) 50%, transparent calc(50% + 1px)); content: ''; pointer-events: none; }
 .availability-day > span { position: relative; z-index: 1; }
-.availability-day.is-free.is-departure { background-image: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 50%, light-dark(#e0f3e8, #193d36) 50%); }
-.availability-day.is-occupied.is-arrival { background-image: linear-gradient(135deg, light-dark(#e0f3e8, #193d36) 50%, light-dark(#f9e2e7, #3a2838) 50%); }
+.availability-day.is-free.is-departure { background-image: linear-gradient(135deg, var(--availability-occupied-bg) 50%, var(--availability-free-bg) 50%); }
+.availability-day.is-occupied.is-arrival { background-image: linear-gradient(135deg, var(--availability-free-bg) 50%, var(--availability-occupied-bg) 50%); }
 .availability-day:disabled { cursor: default; }
 .availability-day:not(:disabled):hover, .availability-day:focus-visible { outline: 2px solid var(--booking-primary); outline-offset: 1px; }
 .availability-day-mark { font-size: 9px; }
 .availability-calendar-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--bs-border-color); color: var(--bs-secondary-color); font-size: 11px; }
 .availability-calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.availability-calendar-legend i { width: 10px; height: 10px; border-radius: 50%; background: light-dark(#086b43, #67edb9); }
-.availability-calendar-legend i.is-occupied { background: light-dark(#9d2543, #ff91a5); }
-.availability-calendar-legend i.is-transition { width: 16px; height: 16px; border-radius: 3px; background: linear-gradient(135deg, light-dark(#f9e2e7, #3a2838) 50%, light-dark(#e0f3e8, #193d36) 50%); }
+.availability-calendar-legend i { width: 10px; height: 10px; border-radius: 50%; background: var(--availability-free-text); }
+.availability-calendar-legend i.is-occupied { background: var(--availability-occupied-text); }
+.availability-calendar-legend i.is-transition { width: 16px; height: 16px; border-radius: 3px; background: linear-gradient(135deg, var(--availability-occupied-bg) 50%, var(--availability-free-bg) 50%); }
 .availability-selection-card { padding: 18px; border: 1px solid var(--bs-border-color); border-radius: 12px; box-shadow: var(--availability-shadow-small); }
 .availability-selection-card p { margin-top: 10px; }
 .availability-card .card { border-radius: 14px; box-shadow: var(--availability-shadow) !important; }
@@ -1567,8 +1567,13 @@ body {
 
 .public-booking-theme {
   --booking-muted: color-mix(in srgb, var(--booking-surface), var(--booking-text) 6%);
-  --availability-shadow: 0 12px 32px light-dark(rgba(26, 24, 20, 0.12), rgba(0, 0, 0, 0.32)), 0 2px 6px light-dark(rgba(26, 24, 20, 0.06), rgba(0, 0, 0, 0.18));
-  --availability-shadow-small: 0 4px 12px light-dark(rgba(26, 24, 20, 0.09), rgba(0, 0, 0, 0.22));
+  --availability-free-bg: #e0f3e8;
+  --availability-free-text: #086b43;
+  --availability-occupied-bg: #f9e2e7;
+  --availability-occupied-text: #9d2543;
+  --availability-transition-text: #1a1d25;
+  --availability-shadow: 0 12px 32px rgba(26, 24, 20, 0.12), 0 2px 6px rgba(26, 24, 20, 0.06);
+  --availability-shadow-small: 0 4px 12px rgba(26, 24, 20, 0.09);
   --gh-primary: var(--booking-primary);
   --gh-primary-hover: var(--booking-secondary);
   --gh-primary-active: var(--booking-secondary);
@@ -1580,6 +1585,16 @@ body {
   --bs-border-color: color-mix(in srgb, var(--booking-secondary), transparent 65%);
   background: var(--booking-background);
   color: var(--booking-text);
+}
+
+.public-booking-theme[data-availability-scheme='dark'] {
+  --availability-free-bg: #193d36;
+  --availability-free-text: #67edb9;
+  --availability-occupied-bg: #3a2838;
+  --availability-occupied-text: #ff91a5;
+  --availability-transition-text: #fff;
+  --availability-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --availability-shadow-small: 0 4px 12px rgba(0, 0, 0, 0.22);
 }
 
 .public-booking-theme .text-secondary {
